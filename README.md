@@ -27,7 +27,7 @@ See sourcekit-bsp in action with seamless code navigation and jump-to-definition
 ## Installation
 
 ### Manual Installation
-1. Download the latest release from [GitHub Releases](https://github.com/wang.lun/sourcekit-bsp/releases)
+1. Download the latest release from [GitHub Releases](https://github.com/aelam/sourcekit-bsp/releases)
 2. Extract and move to your PATH:
    ```bash
    tar -xzf sourcekit-bsp-macos-universal.tar.gz
