@@ -17,7 +17,11 @@ extension XcodeProjectManager: @preconcurrency ProjectManager {
         "xcodeproj"
     }
 
-    public func updateBuildGraph() async {}
+    public func updateBuildGraph() async {
+        // Invalidate cached project data so the next source / compiler-argument
+        // query re-reads the (possibly changed) project from disk.
+        clearCaches()
+    }
 
     public func buildIndex(for targets: [BSPBuildTargetIdentifier]) async {
         // TODO: await startBuild(targetIdentifiers: targets)

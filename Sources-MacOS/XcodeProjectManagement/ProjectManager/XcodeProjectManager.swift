@@ -95,6 +95,13 @@ public actor XcodeProjectManager {
         return xcodeProj
     }
 
+    /// Invalidate cached parsed projects and source-file maps so the next
+    /// query re-reads them from disk. Called when watched files change.
+    public func clearCaches() {
+        xcodeProjCache.removeAll()
+        sourceFileMapCache.removeAll()
+    }
+
     public init(
         rootURL: URL,
         xcodeProjectReference: XcodeProjectReference? = nil,
