@@ -6,29 +6,43 @@ on:
   pull_request:
     branches: [ main ]
 
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: macos-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 env:
-  SWIFT_VERSION: 6.1
-  XCODE_VERSION: 16.2
+  # Use the newest stable Xcode on the runner. Pinning an exact version (e.g.
+  # 16.2) breaks once the runner image drops it, and older Xcodes ship a Swift
+  # too old for this package's swift-tools-version. `latest-stable` tracks a
+  # Swift that stays backward-compatible with the declared 6.1 floor.
+  # On macOS the Swift toolchain comes from Xcode, so we do NOT install Swift
+  # separately (that conflicts with the selected Xcode).
+  XCODE_VERSION: latest-stable
 
 jobs:
   macos-build-and-test:
     name: macOS Build and Test
     runs-on: macos-latest
-    
+    timeout-minutes: 30
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-      
+
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
       with:
         xcode-version: ${{ env.XCODE_VERSION }}
-        
-    - name: Setup Swift
-      uses: swift-actions/setup-swift@v2
-      with:
-        swift-version: ${{ env.SWIFT_VERSION }}
-    
+
+    - name: Print toolchain versions
+      run: |
+        xcodebuild -version
+        swift --version
+
     - name: Cache Swift Package Manager
       uses: actions/cache@v4
       with:
@@ -38,17 +52,12 @@ jobs:
         key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
         restore-keys: |
           ${{ runner.os }}-spm-
-    
+
     - name: Resolve Dependencies
       run: swift package resolve
 
-    - name: Build
-      run: swift build -v
-      
-    - name: Run Tests
+    - name: Build and Test
       run: |
-        echo "CI environment variable: $CI"
-        xcodebuild -version
         echo "Running tests in macOS CI mode..."
         swift test --enable-code-coverage
       env:
@@ -57,15 +66,15 @@ jobs:
 
     - name: Install LLVM
       run: brew install llvm
-      
+
     - name: Generate coverage report
       run: |
         # Use Homebrew LLVM tools for better version compatibility
         LLVM_COV="/opt/homebrew/opt/llvm/bin/llvm-cov"
         LLVM_PROFDATA="/opt/homebrew/opt/llvm/bin/llvm-profdata"
-        
+
         TEST_BINARY=$(find .build -path "*/Contents/MacOS/*PackageTests" -type f -perm +111 | head -1)
-        
+
         # Try merging profraw files with newer LLVM tools
         if find .build -name "*.profraw" | head -1 >/dev/null 2>&1; then
           echo "Merging profraw files with Homebrew LLVM..."
@@ -80,7 +89,7 @@ jobs:
           echo "⚠️ No profraw files found"
           echo "# No coverage data available" > coverage.info
         fi
-        
+
     - name: Upload to Codecov
       uses: codecov/codecov-action@v4
       with:
@@ -89,25 +98,21 @@ jobs:
         name: codecov-umbrella
         fail_ci_if_error: false
         verbose: true
-        
+
   lint:
     name: Code Quality
-    runs-on: macos-14
-    
+    runs-on: macos-latest
+    timeout-minutes: 20
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-      
+
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
       with:
         xcode-version: ${{ env.XCODE_VERSION }}
-        
-    - name: Setup Swift
-      uses: swift-actions/setup-swift@v2
-      with:
-        swift-version: ${{ env.SWIFT_VERSION }}
-      
+
     - name: Cache Mint packages
       uses: actions/cache@v4
       with:
@@ -134,41 +139,45 @@ jobs:
 
   security-scan:
     name: Security Scan
-    runs-on: macos-latest
+    # No Xcode / Swift needed — run on Linux, which is much faster and cheaper
+    # than a macOS runner for a Python + grep based scan.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-      
+
     - name: Install Semgrep
       run: |
-        brew install semgrep
-        
+        python3 -m pip install --user --upgrade semgrep
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
     - name: Run Semgrep Security Scan
       run: |
         semgrep --config=p/swift --config=p/security-audit --config=p/secrets . || echo "Semgrep scan completed with findings"
-        
+
     - name: Check for hardcoded secrets
       run: |
         echo "Checking for potential secrets..."
-        
+
         SECRETS_FOUND=false
-        
-        if grep -ri "api[_-]\?key\s*[:=]\s*['\"][^'\"]*['\"]" Sources/ Tests/ --include="*.swift" 2>/dev/null; then
+
+        if grep -rEi "api[_-]?key\s*[:=]\s*['\"][^'\"]*['\"]" Sources/ Tests/ --include="*.swift" 2>/dev/null; then
           echo "::warning::Potential API key pattern found"
           SECRETS_FOUND=true
         fi
-        
-        if grep -ri "token\s*[:=]\s*['\"][^'\"]*['\"]" Sources/ Tests/ --include="*.swift" 2>/dev/null; then
+
+        if grep -rEi "token\s*[:=]\s*['\"][^'\"]*['\"]" Sources/ Tests/ --include="*.swift" 2>/dev/null; then
           echo "::warning::Potential token pattern found"
           SECRETS_FOUND=true
         fi
-        
-        if grep -ri "password\s*[:=]\s*['\"][^'\"]*['\"]" Sources/ Tests/ --include="*.swift" 2>/dev/null; then
+
+        if grep -rEi "password\s*[:=]\s*['\"][^'\"]*['\"]" Sources/ Tests/ --include="*.swift" 2>/dev/null; then
           echo "::warning::Potential password pattern found"
           SECRETS_FOUND=true
         fi
-        
+
         if [ "$SECRETS_FOUND" = false ]; then
           echo "✅ No obvious secrets found"
         fi
