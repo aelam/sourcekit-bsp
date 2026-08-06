@@ -29,6 +29,10 @@ public extension XcodeProjectManager {
         }
 
         // 4. Start lldb-dap + (simulator) launch --wait-for-debugger.
+        // TODO(debug-followup): the manager is created per request and not
+        // retained, so `terminateAll()` is not yet wired to build/shutdown. The
+        // lldb-dap process is torn down when the client disconnects the DAP
+        // socket. Retaining sessions for explicit stop/cancel is a follow-up.
         let manager = DebugSessionManager(
             adapter: LLDBDAPServer(),
             simulatorLauncher: SimulatorDebugLauncher()
