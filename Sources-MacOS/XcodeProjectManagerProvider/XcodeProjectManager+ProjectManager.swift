@@ -35,14 +35,20 @@ extension XcodeProjectManager: @preconcurrency ProjectManager {
             return []
         }
 
-        return xcodeProjectBaseInfo.xcodeTargets.compactMap { $0.asBSPBuildTarget() }
+        var dependenciesByTarget: [XcodeTargetIdentifier: [XcodeTargetIdentifier]] = [:]
+        if resolveDependencies {
+            dependenciesByTarget = resolveDirectDependencies()
+        }
+
+        return xcodeProjectBaseInfo.xcodeTargets.compactMap { target in
+            let dependencies = (dependenciesByTarget[target.targetIdentifier] ?? []).map(\.bspIdentifier)
+            return target.asBSPBuildTarget(dependencies: dependencies)
+        }
     }
 
     public func getSourceFileList(targetIdentifiers: [BSPBuildTargetIdentifier]) async throws
         -> [BuildServerProtocol.SourcesItem] {
-        let xcodeTargetIdentifiers = targetIdentifiers.map { identifier in
-            XcodeTargetIdentifier(rawValue: identifier.uri.stringValue)
-        }
+        let xcodeTargetIdentifiers = targetIdentifiers.map { XcodeTargetIdentifier($0) }
         let xcodeSourceItems = getSourcesItems(targetIdentifiers: xcodeTargetIdentifiers)
         return try xcodeSourceItems.compactMap {
             try $0.asBSPSourcesItems()
@@ -56,7 +62,7 @@ extension XcodeProjectManager: @preconcurrency ProjectManager {
 }
 
 extension XcodeTarget {
-    func asBSPBuildTarget() -> BSPBuildTarget? {
+    func asBSPBuildTarget(dependencies: [BSPBuildTargetIdentifier] = []) -> BSPBuildTarget? {
         let capabilities = BuildTargetCapabilities(
             canCompile: true,
             canTest: self.xcodeProductType.isTestBundle,
@@ -65,12 +71,12 @@ extension XcodeTarget {
         )
 
         return try? BSPBuildTarget(
-            id: BSPBuildTargetIdentifier(uri: URI(string: self.targetIdentifier)),
+            id: self.targetIdentifier.bspIdentifier,
             displayName: self.targetName,
             baseDirectory: URI(self.projectURL.deletingLastPathComponent()),
             tags: [],
             languageIds: [.swift, .objective_c, .cpp, .c],
-            dependencies: [],
+            dependencies: dependencies,
             capabilities: capabilities,
             dataKind: BuildTargetDataKind(rawValue: "sourceKit"),
             data: createXcodeData()

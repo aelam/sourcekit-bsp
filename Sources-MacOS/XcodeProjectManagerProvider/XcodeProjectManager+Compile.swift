@@ -14,7 +14,7 @@ public extension XcodeProjectManager {
         var results: [XcodeBuildExitCode] = []
 
         for identifier in targetIdentifiers {
-            let xcodeTargetIdentifier = XcodeTargetIdentifier(rawValue: identifier.uri.stringValue)
+            let xcodeTargetIdentifier = XcodeTargetIdentifier(identifier)
 
             let xcodeBuildResult = try await compileTarget(
                 targetIdentifier: xcodeTargetIdentifier,

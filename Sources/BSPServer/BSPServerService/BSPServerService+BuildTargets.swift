@@ -21,7 +21,7 @@ extension BSPServerService {
 
         return await projectManager.getTargetList(
             resolveSourceFiles: false,
-            resolveDependencies: false
+            resolveDependencies: true
         )
     }
 

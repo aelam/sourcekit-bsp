@@ -12,7 +12,7 @@ public extension XcodeProjectManager {
         environmentVariables: [String: String]?,
         workingDirectory: URI?
     ) async -> StatusCode {
-        let xcodeTargetIdentifier = XcodeTargetIdentifier(rawValue: targetIdentifier.uri.stringValue)
+        let xcodeTargetIdentifier = XcodeTargetIdentifier(targetIdentifier)
 
         let result = await run(
             xcodeTargetIdentifier: xcodeTargetIdentifier,
@@ -21,13 +21,11 @@ public extension XcodeProjectManager {
             workingDirectory: workingDirectory?.fileURL
         )
 
-        let statuCode: StatusCode = switch result.statusCode {
+        return switch result.statusCode {
         case .success:
             .ok
         case .error:
             .error
         }
-
-        return statuCode
     }
 }
