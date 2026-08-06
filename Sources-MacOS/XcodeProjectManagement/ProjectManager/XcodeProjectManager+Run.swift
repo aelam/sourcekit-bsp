@@ -141,7 +141,7 @@ extension XcodeProjectManager {
         }
     }
 
-    private func getOutputPath(
+    func getOutputPath(
         buildSettings: [String: String],
         productType: XcodeProductType,
         isMacApp: Bool = true
@@ -216,7 +216,7 @@ extension XcodeProjectManager {
 
     // MARK: simulators / real device
 
-    private func installOnNonMac(isSimulator: Bool, outputPath: String, deviceID: String) async throws {
+    func installOnNonMac(isSimulator: Bool, outputPath: String, deviceID: String) async throws {
         let installer: AppInstaller = isSimulator ? SimulatorInstaller() : DeviceInstaller()
         _ = try await installer.installApp(
             appPath: outputPath,
