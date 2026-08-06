@@ -5,38 +5,39 @@ on:
     tags:
       - 'v*.*.*'
 
+permissions:
+  contents: write
+
 env:
-  SWIFT_VERSION: '6.1'
-  XCODE_VERSION: '16.2'
+  # See ci.yml: pin to the newest stable Xcode instead of an exact version so
+  # the release doesn't break when the runner image rotates Xcode versions.
+  # Swift comes from Xcode on macOS — do not install it separately.
+  XCODE_VERSION: latest-stable
 
 jobs:
   build-release:
     name: Build Release Binaries
     runs-on: macos-latest
+    timeout-minutes: 40
 
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-      
+
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
       with:
         xcode-version: ${{ env.XCODE_VERSION }}
-  
-    - name: Setup Swift
-      uses: swift-actions/setup-swift@v2
-      with:
-        swift-version: ${{ env.SWIFT_VERSION }}
 
     - name: Verify Swift Version
       run: |
         swift --version
         which swift
-    
+
     - name: Build for macOS (Universal)
       run: |
         swift build -c release --arch arm64 --arch x86_64
-        
+
     - name: Create Release Archive
       run: |
         mkdir -p release
@@ -55,7 +56,7 @@ jobs:
       run: |
         shasum -a 256 sourcekit-bsp-macos-universal.tar.gz > checksums.txt
         shasum -a 256 sourcekit-bsp-macos-universal.zip >> checksums.txt
-        
+
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
@@ -67,26 +68,26 @@ jobs:
         prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
         body: |
           ## Changes in this Release
-          
+
           ### Installation
-          
+
           #### Homebrew (Recommended)
           ```bash
           # Coming soon
           brew install sourcekit-bsp
           ```
-          
+
           #### Manual Installation
           1. Download the appropriate archive for your platform
           2. Extract the binary: `tar -xzf sourcekit-bsp-macos-universal.tar.gz`
           3. Move to PATH: `mv sourcekit-bsp /usr/local/bin/`
           4. Make executable: `chmod +x /usr/local/bin/sourcekit-bsp`
-          
+
           ### Usage
           ```bash
           sourcekit-bsp --help
           ```
-          
+
           ### Checksums
           Verify your download with the checksums provided in `checksums.txt`.
       env:

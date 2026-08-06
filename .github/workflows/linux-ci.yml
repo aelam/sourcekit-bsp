@@ -6,24 +6,34 @@ on:
   pull_request:
     branches: [ main ]
 
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: linux-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   test-linux:
     name: Test (Linux, Swift ${{ matrix.swift }})
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     container:
       image: swift:${{ matrix.swift }}
     strategy:
       fail-fast: false
       matrix:
+        # 6.1 is the swift-tools-version floor declared in Package.swift.
         swift: [ "6.1" ]
-    
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-    
+
     - name: Print Swift version
       run: swift --version
-    
+
     - name: Build
       run: |
         echo "Building on Linux with Swift ${{ matrix.swift }}"
@@ -31,7 +41,7 @@ jobs:
       env:
         CI: true
         LINUX_CI: true
-    
+
     - name: Run Tests
       run: |
         echo "Running tests on Linux with Swift ${{ matrix.swift }}"
