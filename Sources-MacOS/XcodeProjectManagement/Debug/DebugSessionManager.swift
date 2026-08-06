@@ -21,6 +21,7 @@ public enum DebugSessionError: Error, LocalizedError {
     case buildFailed
     case missingBundleId
     case missingSimulatorUDID
+    case unresolvedPlatform
     case unsupportedPlatform(Platform)
 
     public var errorDescription: String? {
@@ -28,6 +29,7 @@ public enum DebugSessionError: Error, LocalizedError {
         case .buildFailed: "Build failed before starting the debug session"
         case .missingBundleId: "Could not resolve the app's bundle identifier"
         case .missingSimulatorUDID: "No simulator destination selected"
+        case .unresolvedPlatform: "Could not resolve the target's platform (PLATFORM_NAME)"
         case let .unsupportedPlatform(p): "Debugging is not supported for platform \(p.rawValue)"
         }
     }

@@ -23,7 +23,7 @@ public extension XcodeProjectManager {
 
         // 3. Simulator: install the freshly built .app before launching. macOS
         //    needs no install — lldb launches the binary directly.
-        if Self.isSimulator(product.platform) {
+        if product.platform.isSimulator {
             guard let udid = product.simulatorUDID else { throw DebugSessionError.missingSimulatorUDID }
             try await installOnNonMac(isSimulator: true, outputPath: product.binaryPath, deviceID: udid)
         }
@@ -66,7 +66,7 @@ public extension XcodeProjectManager {
             let platformName = buildSettings["PLATFORM_NAME"],
             let platform = Platform(rawValue: platformName)
         else {
-            throw DebugSessionError.unsupportedPlatform(.macOS)
+            throw DebugSessionError.unresolvedPlatform
         }
 
         guard let binaryPath = getOutputPath(
@@ -104,12 +104,5 @@ public extension XcodeProjectManager {
         }
         let destination = arguments[index + 1]
         return destination.hasPrefix("id=") ? String(destination.dropFirst(3)) : nil
-    }
-
-    private static func isSimulator(_ platform: Platform) -> Bool {
-        switch platform {
-        case .iOSSimulator, .watchSimulator, .tvSimulator, .visionSimulator: true
-        default: false
-        }
     }
 }
