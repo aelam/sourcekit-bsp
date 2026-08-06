@@ -19,6 +19,9 @@ private let requestTypes: [any RequestType.Type] = [
     BuildTargetTestRequest.self, // buildTarget/test
     BuildTargetOutputPathsRequest.self, // buildTarget/outputPaths
 
+    // debugSession
+    DebugSessionStartRequest.self, // debugSession/start
+
     // textDocument
     TextDocumentRegisterForChangeRequest.self, // textDocument/registerForChange
     TextDocumentSourceKitOptionsRequest.self, // textDocument/sourceKitOptions
