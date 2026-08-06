@@ -60,12 +60,14 @@ struct DeviceLauncher: AppLauncher {
 }
 
 /// Launch seam that spawns the app paused for the debugger and returns its PID.
-protocol WaitForDebuggerLaunching: Sendable {
+public protocol WaitForDebuggerLaunching: Sendable {
     func launchWaitingForDebugger(deviceID: String, appIdentifier: String) async throws -> Int
 }
 
-struct SimulatorDebugLauncher: WaitForDebuggerLaunching {
-    func launchWaitingForDebugger(deviceID: String, appIdentifier: String) async throws -> Int {
+public struct SimulatorDebugLauncher: WaitForDebuggerLaunching {
+    public init() {}
+
+    public func launchWaitingForDebugger(deviceID: String, appIdentifier: String) async throws -> Int {
         let executor = ProcessExecutor()
         _ = try? await executor.execute(
             executable: "/usr/bin/xcrun",
