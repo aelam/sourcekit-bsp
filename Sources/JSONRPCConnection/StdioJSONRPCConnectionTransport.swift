@@ -20,6 +20,14 @@ public final class StdioJSONRPCConnectionTransport: JSONRPCServerTransport, @unc
 
     private let jsonRPCParser = JSONPRCParser()
 
+    /// Serial queue for all stdout writes. Responses are produced concurrently
+    /// (JSONRPCConnection spawns a task per request), so without serialization
+    /// two messages' `write(header)` / `write(data)` calls interleave on the
+    /// shared stdout fd and corrupt the JSON-RPC framing — which makes the
+    /// client (SourceKit-LSP) read a mis-framed message and crash. A serial
+    /// queue guarantees each message is written atomically and in order.
+    private let writeQueue = DispatchQueue(label: "com.sourcekit-bsp.jsonrpc.stdout")
+
     // Stream continuations for async streams
     private var messageContinuation: AsyncStream<JSONRPCMessage>.Continuation?
     private var errorContinuation: AsyncStream<JSONRPCTransportError>.Continuation?
@@ -165,7 +173,10 @@ public final class StdioJSONRPCConnectionTransport: JSONRPCServerTransport, @unc
             group.addTask {
                 // Write operations with timeout protection
                 try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                    DispatchQueue.global(qos: .userInitiated).async {
+                    // Serial queue: header + data + flush for one message are
+                    // written atomically relative to other messages, so the
+                    // JSON-RPC framing on stdout is never interleaved.
+                    self.writeQueue.async {
                         self.output.write(headerData)
                         self.output.write(data)
                         // Try to flush the output
