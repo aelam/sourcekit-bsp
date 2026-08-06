@@ -59,6 +59,42 @@ struct DeviceLauncher: AppLauncher {
     }
 }
 
+/// Launch seam that spawns the app paused for the debugger and returns its PID.
+protocol WaitForDebuggerLaunching: Sendable {
+    func launchWaitingForDebugger(deviceID: String, appIdentifier: String) async throws -> Int
+}
+
+struct SimulatorDebugLauncher: WaitForDebuggerLaunching {
+    func launchWaitingForDebugger(deviceID: String, appIdentifier: String) async throws -> Int {
+        let executor = ProcessExecutor()
+        _ = try? await executor.execute(
+            executable: "/usr/bin/xcrun",
+            arguments: ["simctl", "boot", deviceID]
+        )
+        let result = try await executor.execute(
+            executable: "/usr/bin/xcrun",
+            arguments: ["simctl", "launch", "--wait-for-debugger", deviceID, appIdentifier]
+        )
+        guard result.exitCode == 0, let pid = Self.parsePID(from: result.output) else {
+            throw XcodeRunError.failedToLaunchApp(
+                "Failed to launch \(appIdentifier) on simulator \(deviceID) for debugging"
+            )
+        }
+        return pid
+    }
+
+    /// Parse the PID from `simctl launch` output "<bundleId>: <pid>".
+    static func parsePID(from output: String) -> Int? {
+        for line in output.split(whereSeparator: \.isNewline) {
+            if let colon = line.lastIndex(of: ":") {
+                let tail = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+                if let pid = Int(tail) { return pid }
+            }
+        }
+        return nil
+    }
+}
+
 struct SimulatorLauncher: AppLauncher {
     func launchApp(
         deviceID: String,
