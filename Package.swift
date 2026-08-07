@@ -54,7 +54,9 @@ let multiPlatformTargets: [Target] = [
     .testTarget(
         name: "BSPServerTests",
         dependencies: [
-            "BSPServer"
+            "BSPServer",
+            "JSONRPCConnection",
+            "BuildServerProtocol",
         ]
     ),
 ]
