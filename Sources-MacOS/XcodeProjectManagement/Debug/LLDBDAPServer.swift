@@ -45,12 +45,52 @@ public struct LLDBDAPServer: DebugAdapterServing {
         } catch {
             throw LLDBDAPError.failedToStart(error.localizedDescription)
         }
-        logger.info("Started lldb-dap on tcp://127.0.0.1:\(port) (pid \(process.processIdentifier))")
+
+        // Block until lldb-dap is actually accepting connections. Without this
+        // we return the tcp:// URI before the listen socket is bound; the client
+        // (VS Code) then connects too early, gets ECONNREFUSED, and the debug
+        // session dies silently — leaving a `--wait-for-debugger` app suspended
+        // forever with no visible session in the editor.
+        try Self.waitUntilListening(port: port, process: process, timeout: 10)
+        logger.info("lldb-dap listening on tcp://127.0.0.1:\(port) (pid \(process.processIdentifier))")
 
         return DebugAdapterEndpoint(
             uri: "tcp://127.0.0.1:\(port)",
             terminate: { if process.isRunning { process.terminate() } }
         )
+    }
+
+    /// Poll-connect to 127.0.0.1:<port> until lldb-dap accepts, the process
+    /// exits, or the timeout elapses. Retries every 50ms.
+    static func waitUntilListening(port: Int, process: Process, timeout: TimeInterval) throws {
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        while Date() < deadline {
+            guard process.isRunning else {
+                throw LLDBDAPError
+                    .failedToStart("lldb-dap exited before listening (status \(process.terminationStatus))")
+            }
+            if canConnect(port: port) { return }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        throw LLDBDAPError.failedToStart("lldb-dap did not start listening on port \(port) within \(Int(timeout))s")
+    }
+
+    /// One connect() attempt to the loopback port; true if the socket accepts.
+    private static func canConnect(port: Int) -> Bool {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        addr.sin_port = in_port_t(UInt16(port)).bigEndian
+        let result = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Foundation.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        return result == 0
     }
 
     /// `xcrun --find lldb-dap`.
