@@ -11,9 +11,12 @@ public extension XcodeProjectManager {
         arguments: [String]?
     ) async throws -> DebugSessionConnection {
         // 1. Build (Debug). The compile path injects a platform-correct destination.
+        // Pass configuration: nil — the `-configuration` flag is already in
+        // `arguments`. Passing it here too would duplicate `-configuration` on
+        // the xcodebuild command line (which xcodebuild rejects with exit 64).
         let exitCode = try await compileTarget(
             targetIdentifier: xcodeTargetIdentifier,
-            configuration: debugConfiguration(from: arguments),
+            configuration: nil,
             arguments: arguments
         )
         guard exitCode == 0 else { throw DebugSessionError.buildFailed }
