@@ -27,7 +27,7 @@ public struct ProcessExecutionResult: Sendable {
 typealias ProcessProgress = @Sendable (ProcessProgressEvent) -> Void
 
 /// Events that can be reported during process execution
-enum ProcessProgressEvent: Sendable {
+enum ProcessProgressEvent {
     case outputLine(String)
     case errorLine(String)
 }
@@ -156,15 +156,25 @@ public actor ProcessExecutor {
         let startTime = Date()
 
         // Handle timeout if specified
-        let exitCode: Int32 = if let timeout {
-            try await withTimeout(timeout) {
-                try await self.streamProcessOutput(
-                    process: process,
-                    progress: progress
-                )
+        let exitCode: Int32
+        if let timeout {
+            do {
+                exitCode = try await withTimeout(timeout) {
+                    try await self.streamProcessOutput(
+                        process: process,
+                        progress: progress
+                    )
+                }
+            } catch {
+                // On timeout (or cancellation) the Swift task is cancelled but
+                // the underlying OS process keeps running — terminate it so we
+                // don't leak wedged children (e.g. a hung `simctl install`,
+                // which otherwise piles up and blocks the whole BSP channel).
+                if process.isRunning { process.terminate() }
+                throw error
             }
         } else {
-            try await streamProcessOutput(
+            exitCode = try await streamProcessOutput(
                 process: process,
                 progress: progress
             )

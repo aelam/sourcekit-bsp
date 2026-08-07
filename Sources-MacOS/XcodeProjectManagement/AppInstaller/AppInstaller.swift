@@ -28,13 +28,19 @@ struct SimulatorInstaller: AppInstaller {
     ) async throws -> ProcessExecutionResult {
         let executor = ProcessExecutor()
 
+        // Bounded so a wedged CoreSimulator install daemon can't hang the whole
+        // BSP request forever (it would block the client's debugSession/start
+        // with no error). A healthy boot/install is seconds; these are generous
+        // ceilings after which we surface a timeout instead of hanging.
         _ = try? await executor.execute(
             executable: "/usr/bin/xcrun",
-            arguments: ["simctl", "boot", deviceID]
+            arguments: ["simctl", "boot", deviceID],
+            timeout: 90
         )
         return try await executor.execute(
             executable: "/usr/bin/xcrun",
-            arguments: ["simctl", "install", deviceID, appPath]
+            arguments: ["simctl", "install", deviceID, appPath],
+            timeout: 120
         )
     }
 }
