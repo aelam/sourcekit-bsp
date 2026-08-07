@@ -13,7 +13,7 @@ import Support
 /// Manages BSP task lifecycle including taskStart, taskProgress, and taskFinish notifications
 public final class BSPTaskManager: @unchecked Sendable {
     private let taskState = CrossPlatformLock(initialState: TaskState())
-    private weak var notificationService: BSPNotificationService?
+    weak var notificationService: BSPNotificationService?
 
     private struct TaskState {
         var activeTasks: [String: BSPTask] = [:]

@@ -119,27 +119,24 @@ public struct SimulatorDebugLauncher: WaitForDebuggerLaunching {
 struct SimulatorLauncher: AppLauncher {
     func launchApp(
         deviceID: String,
-        appIdentifier: String,
+        appIdentifier: String
     ) async throws -> ProcessExecutionResult {
         let executor = ProcessExecutor()
 
-        var isLaunched = false
-        for _ in 0 ..< 30 {
-            let result = try await executor.execute(
-                executable: "/usr/bin/xcrun",
-                arguments: ["simctl", "launch", "--console", deviceID, appIdentifier]
+        // IMPORTANT: no `--console`. `--console` attaches to the app's stdout and
+        // blocks until the app exits, which hangs `run` forever for a GUI app.
+        // Launch detached and return immediately; the app keeps running in the
+        // simulator (its logs can be streamed separately via notifications).
+        let result = try await executor.execute(
+            executable: "/usr/bin/xcrun",
+            arguments: ["simctl", "launch", deviceID, appIdentifier]
+        )
+        guard result.exitCode == 0 else {
+            throw XcodeRunError.failedToLaunchApp(
+                "simctl launch failed for \(appIdentifier) on \(deviceID) " +
+                    "(exit \(result.exitCode)): \(result.error ?? result.output)"
             )
-            if result.exitCode == 0 {
-                isLaunched = true
-                break
-            }
-            try? await Task.sleep(nanoseconds: 1_000_000_000) // 等待 1 秒再试
         }
-
-        if !isLaunched {
-            throw XcodeRunError.failedToLaunchApp("Failed to launch app \(appIdentifier) on simulator \(deviceID)")
-        } else {
-            return ProcessExecutionResult(output: "App launched", error: nil, exitCode: 0)
-        }
+        return result
     }
 }

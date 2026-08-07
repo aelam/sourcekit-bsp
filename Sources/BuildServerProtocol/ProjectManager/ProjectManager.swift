@@ -39,7 +39,8 @@ public protocol ProjectManager: AnyObject, Sendable {
 
     func startBuild(
         targetIdentifiers: [BSPBuildTargetIdentifier],
-        arguments: [String]?
+        arguments: [String]?,
+        logHandler: (@Sendable (String) -> Void)?
     ) async throws -> StatusCode
 
     func run(
