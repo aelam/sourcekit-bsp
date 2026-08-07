@@ -18,13 +18,13 @@ public protocol ProjectManager: AnyObject, Sendable {
 
     func initialize() async throws
 
-    // workspace/buildTargets
+    /// workspace/buildTargets
     func getTargetList(
         resolveSourceFiles: Bool,
         resolveDependencies: Bool
     ) async -> [BSPBuildTarget]
 
-    // buildTarget/sources
+    /// buildTarget/sources
     func getSourceFileList(targetIdentifiers: [BSPBuildTargetIdentifier]) async throws
         -> [SourcesItem]
 
@@ -39,7 +39,8 @@ public protocol ProjectManager: AnyObject, Sendable {
 
     func startBuild(
         targetIdentifiers: [BSPBuildTargetIdentifier],
-        arguments: [String]?
+        arguments: [String]?,
+        logHandler: (@Sendable (String) -> Void)?
     ) async throws -> StatusCode
 
     func run(
@@ -55,6 +56,11 @@ public protocol ProjectManager: AnyObject, Sendable {
         environmentVariables: [String: String]?,
         workingDirectory: URI?
     ) async throws -> StatusCode
+
+    func startDebugSession(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?
+    ) async throws -> DebugSessionConnection
 }
 
 public struct ProjectInfo: Sendable {
