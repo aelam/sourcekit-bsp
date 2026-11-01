@@ -10,16 +10,10 @@ extension XcodeProjectManager {
         buildConfiguration: String = "Debug"
     ) throws -> XcodeScheme {
         if target.xcodeProductType.isTestBundle {
-            let scheme = schemes.first { scheme in
-                scheme.primaryBuildTargetProjectURL == target.projectURL &&
-                    (scheme.primaryProductName == target.productNameWithExtension ||
-                        scheme.primaryTarget == target.productName
-                    )
-            }
-
-            if let scheme {
+            if let scheme = schemes.first(where: { containsTestTarget(scheme: $0, target: target) }) {
                 return scheme
             }
+            return try createScheme(for: target, buildConfiguration: buildConfiguration)
         }
 
         let scheme = schemes.first { scheme in
@@ -37,6 +31,24 @@ extension XcodeProjectManager {
             for: target,
             buildConfiguration: buildConfiguration
         )
+    }
+
+    private func containsTestTarget(scheme: XcodeScheme, target: XcodeTarget) -> Bool {
+        guard let nativeTarget = loadXcodeProjCache(projectURL: target.projectURL)?
+            .pbxproj.nativeTargets.first(where: { $0.name == target.name }),
+            let parsed = try? XCScheme(pathString: scheme.path.path) else { return false }
+        let components = scheme.path.pathComponents
+        guard let containerIndex = components.lastIndex(where: {
+            $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace")
+        }) else { return false }
+        let container = URL(fileURLWithPath: NSString.path(withComponents: Array(components[..<containerIndex])))
+        return parsed.testAction?.testables.contains { testable in
+            let reference = testable.buildableReference
+            let projectPath = reference.referencedContainer.replacingOccurrences(of: "container:", with: "")
+            return reference.blueprintIdentifier == nativeTarget.uuid && !testable.skipped &&
+                container.appendingPathComponent(projectPath).standardizedFileURL == target.projectURL
+                .standardizedFileURL
+        } == true
     }
 
     private func isSchemeContainedTarget(scheme: XcodeScheme, target: XcodeTarget) -> Bool {

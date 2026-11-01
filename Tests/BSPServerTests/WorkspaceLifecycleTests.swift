@@ -1,0 +1,204 @@
+import BuildServerProtocol
+import Foundation
+import JSONRPCConnection
+import Testing
+@testable import BSPServer
+
+private actor RefreshProjectManager: ProjectManager {
+    let rootURL = URL(fileURLWithPath: "/tmp/BSPWorkspace")
+    nonisolated let projectType = "test"
+    var revision = 0
+    var failReload = false
+    var projectInfo: ProjectInfo? {
+        ProjectInfo(
+            rootURL: rootURL,
+            name: "Test",
+            targets: [],
+            derivedDataPath: rootURL.appendingPathComponent("DerivedData"),
+            indexStoreURL: rootURL.appendingPathComponent("IndexStore"),
+            indexDatabaseURL: rootURL.appendingPathComponent("IndexDatabase")
+        )
+    }
+
+    func setFailure(_ fail: Bool) {
+        failReload = fail
+    }
+
+    func getProjectState() -> ProjectState {
+        .init()
+    }
+
+    func initialize() async throws {}
+    func updateBuildGraph() async throws {
+        if failReload { throw BuildServerError.invalidConfiguration("Incomplete project") }
+        revision += 1
+    }
+
+    func getTargetList(resolveSourceFiles: Bool, resolveDependencies: Bool) -> [BSPBuildTarget] {
+        ["Keep", revision == 0 ? "Removed" : "Added"].map {
+            BSPBuildTarget(
+                id: .init(uri: URI(rootURL.appendingPathComponent($0))),
+                tags: [],
+                languageIds: [.swift],
+                dependencies: [],
+                capabilities: .init()
+            )
+        }
+    }
+
+    func getSourceFileList(targetIdentifiers: [BSPBuildTargetIdentifier]) async throws -> [SourcesItem] {
+        []
+    }
+
+    func getCompileArguments(targetIdentifier: String, sourceFileURL: URL) async throws -> [String] {
+        []
+    }
+
+    func buildIndex(for targetIdentifiers: [BSPBuildTargetIdentifier]) async throws -> [BSPBuildTargetIdentifier] {
+        []
+    }
+
+    func startBuild(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        logHandler: (@Sendable (String) -> Void)?
+    ) async throws -> StatusCode {
+        .ok
+    }
+
+    func run(
+        targetIdentifier: BSPBuildTargetIdentifier,
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?
+    ) async throws -> StatusCode {
+        .ok
+    }
+
+    func test(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        logHandler: (@Sendable (String) -> Void)?
+    ) async throws -> StatusCode {
+        logHandler?("Test runner output")
+        return .error
+    }
+
+    func startDebugSession(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?
+    ) async throws -> DebugSessionConnection {
+        throw BuildServerError.invalidConfiguration("Unused test method")
+    }
+}
+
+private extension BSPServerService {
+    func useTestManager(_ manager: any ProjectManager) {
+        projectManager = manager
+    }
+}
+
+struct WorkspaceLifecycleTests {
+    private struct Harness {
+        let service: BSPServerService
+        let handler: BSPMessageHandler
+        let manager: RefreshProjectManager
+        let transport: MemoryTransport
+    }
+
+    private func setup() async -> Harness {
+        let transport = MemoryTransport()
+        let handler = BSPMessageHandler()
+        let connection = JSONRPCConnection(transport: transport, messageRegistry: bspRegistry, messageHandler: handler)
+        let service = BSPServerService(projectManagerProvider: ProjectManagerFactory(), jsonrpcConnection: connection)
+        let manager = RefreshProjectManager()
+        await service.useTestManager(manager)
+        handler.setBSPServerService(service)
+        return Harness(service: service, handler: handler, manager: manager, transport: transport)
+    }
+
+    @Test
+    func fileEventsReloadTargetsAndInvalidSavesCanBeRetried() async throws {
+        let harness = await setup()
+        let service = harness.service
+        let handler = harness.handler
+        let manager = harness.manager
+        let transport = harness.transport
+        let ignored = #"{"params":{"changes":[{"uri":"file:///tmp/BSPWorkspace/DerivedData/Generated.swift","type":1},{"uri":"file:///tmp/BSPWorkspace/.build/Input.swift","type":3},{"uri":"file:///tmp/BSPWorkspace/Edited.swift","type":2}]}}"#
+        let notification = try JSONDecoder().decode(
+            WorkspaceDidChangeWatchedFilesNotification.self,
+            from: Data(ignored.utf8)
+        )
+        try await notification.handle(contextualHandler: handler)
+        #expect(await manager.revision == 0)
+        let changed = #"{"params":{"changes":[{"uri":"file:///tmp/BSPWorkspace/New.swift","type":1}]}}"#
+        let update = try JSONDecoder().decode(WorkspaceDidChangeWatchedFilesNotification.self, from: Data(changed.utf8))
+        try await update.handle(contextualHandler: handler)
+        try await service.waitForBuildSystemUpdates()
+        #expect(await manager.revision == 1)
+        let data = try #require(await transport.sent.first)
+        let event = try JSONDecoder().decode(
+            ServerJSONRPCNotification<BuildTargetDidChangeNotification.Params>.self,
+            from: data
+        )
+        let changes = try #require(event.params.changes)
+        let kinds = Dictionary(uniqueKeysWithValues: changes.map { (
+            $0.target.uri.fileURL?.lastPathComponent,
+            $0.kind
+        ) })
+        #expect(kinds["Added"] == .created)
+        #expect(kinds["Removed"] == .deleted)
+        #expect(kinds["Keep"] == .changed)
+
+        await manager.setFailure(true)
+        await #expect(throws: (any Error).self) { try await update.handle(contextualHandler: handler) }
+        #expect(await manager.revision == 1)
+        await #expect(throws: (any Error).self) { try await service.waitForBuildSystemUpdates() }
+        await manager.setFailure(false)
+        let reload = WorkspaceReloadRequest(jsonrpc: "2.0", id: .int(1), params: nil)
+        #expect(await reload.handle(contextualHandler: handler, id: .int(1)) is VoidResponse)
+        try await service.waitForBuildSystemUpdates()
+        #expect(await manager.revision == 2)
+    }
+
+    @Test
+    func capabilitiesMatchHandlersAndTestsReportFailureWithLogs() async throws {
+        let harness = await setup()
+        let handler = harness.handler
+        let transport = harness.transport
+        let data = Data(
+            #"{"id":1,"params":{"rootUri":"file:///tmp/BSPWorkspace","capabilities":{"languageIds":["swift"]}}}"#
+                .utf8
+        )
+        let initialize = try JSONDecoder().decode(BuildInitializeRequest.self, from: data)
+        let response = try #require(await initialize.handle(
+            contextualHandler: handler,
+            id: .int(1)
+        ) as? BuildInitializeResponse)
+        let capabilities = response.result.capabilities
+        #expect(capabilities.inverseSourcesProvider == false)
+        #expect(capabilities.dependencySourcesProvider == false)
+        #expect(capabilities.resourcesProvider == false)
+        #expect(capabilities.canReload == true)
+        #expect(bspRegistry.requestType(for: "workspace/reload") != nil)
+        #expect(response.result.data.watchers.allSatisfy { !$0.globPattern.hasPrefix("!") })
+        let request = BuildTargetTestRequest(
+            id: .int(2),
+            jsonrpc: "2.0",
+            params: .init(targets: [], originId: "test-origin")
+        )
+        let result = try #require(await request.handle(
+            contextualHandler: handler,
+            id: .int(2)
+        ) as? BuildTargetTestResponse)
+        #expect(result.result.statusCode == .error)
+        #expect(result.result.originId == "test-origin")
+        let notifications = try await transport.sent
+            .map { try JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        #expect(notifications.first??["method"] as? String == "build/taskStart")
+        #expect(notifications.last??["method"] as? String == "build/taskFinish")
+        #expect(notifications.contains { $0?["method"] as? String == "build/logMessage" })
+    }
+}

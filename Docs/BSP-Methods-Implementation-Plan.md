@@ -1,5 +1,9 @@
 # BSP Methods — Cross-Repo Implementation Plan
 
+> Historical plan from August 2026. Its implementation status is out of date.
+> See [current protocol support](wiki/Protocol-Support.md) and
+> [BSP lifecycle](BSP-Lifecycle.md) for the current server behavior.
+
 > Plan for the BSP methods that are **advertised but not (fully) implemented**,
 > covering BOTH sides of the protocol. Snapshot: 2026-08-06.
 > Re-verify file paths/line numbers before acting — they drift.

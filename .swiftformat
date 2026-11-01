@@ -22,6 +22,8 @@
 
 # Rules to disable
 --disable redundantSelf
+# Keep explicit concurrency contracts in protocol payloads.
+--disable redundantSendable
 --disable trailingCommas
 --disable unusedArguments
 --disable wrapMultilineStatementBraces

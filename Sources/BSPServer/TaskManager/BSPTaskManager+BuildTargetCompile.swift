@@ -10,7 +10,6 @@ import JSONRPCConnection
 
 public extension BSPTaskManager {
     /// Execute build with progress parsed from xcodebuild output
-    /// 避免在 Actor 上下文中长时间等待，使用 Task.detached 在独立上下文中执行构建
     func executeCompileWithProgress(
         using projectManager: any ProjectManager,
         targets: [BSPBuildTargetIdentifier],
@@ -19,9 +18,19 @@ public extension BSPTaskManager {
     ) async throws -> StatusCode {
         let targetNames = targets.map(\.uri.stringValue).joined(separator: ", ")
 
+        return try await executeWithProgress(originId: originId, message: "Compile targets: \(targetNames)") { log in
+            try await projectManager.startBuild(targetIdentifiers: targets, arguments: arguments, logHandler: log)
+        }
+    }
+
+    internal func executeWithProgress(
+        originId: String?,
+        message: String,
+        operation: @Sendable (@escaping @Sendable (String) -> Void) async throws -> StatusCode
+    ) async throws -> StatusCode {
         let task = try await startTask(
             originId: originId,
-            message: "compile targets: \(targetNames)"
+            message: message
         )
 
         let taskId = task.taskId
@@ -46,19 +55,18 @@ public extension BSPTaskManager {
         }
         func stopStreaming() async {
             flusher.cancel()
+            await flusher.value
             await sendBatch(batcher.drain()) // flush the remainder
         }
 
         do {
-            let status = try await projectManager.startBuild(
-                targetIdentifiers: targets,
-                arguments: arguments
-            ) { batcher.append($0) }
+            let status = try await operation { batcher.append($0) }
+            try Task.checkCancellation()
             await stopStreaming()
             try await finishTask(
                 taskId: taskId,
                 status: status,
-                message: status == .ok ? "Build completed successfully" : "Build completed with errors"
+                message: status == .ok ? "Task completed successfully" : "Task completed with errors"
             )
 
             return status
@@ -66,8 +74,8 @@ public extension BSPTaskManager {
             await stopStreaming()
             try await finishTask(
                 taskId: taskId,
-                status: .error,
-                message: "Build failed: \(error.localizedDescription)"
+                status: error is CancellationError ? .cancelled : .error,
+                message: error is CancellationError ? "Task cancelled" : "Task failed: \(error.localizedDescription)"
             )
             throw error
         }

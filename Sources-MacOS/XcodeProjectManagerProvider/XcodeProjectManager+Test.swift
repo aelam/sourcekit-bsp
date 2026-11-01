@@ -10,24 +10,24 @@ public extension XcodeProjectManager {
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?, // e.g. ["-configuration", "Debug"]
         environmentVariables: [String: String]?,
-        workingDirectory: URI?
-    ) async -> StatusCode {
+        workingDirectory: URI?,
+        logHandler: (@Sendable (String) -> Void)? = nil
+    ) async throws -> StatusCode {
         let xcodeTargetIdentifiers = targetIdentifiers.map { XcodeTargetIdentifier(rawValue: $0.uri.stringValue) }
 
-        let result = await test(
+        let result = try await test(
             xcodeTargetIdentifiers: xcodeTargetIdentifiers,
             arguments: arguments,
             environmentVariables: environmentVariables,
-            workingDirectory: workingDirectory?.fileURL
+            workingDirectory: workingDirectory?.fileURL,
+            outputHandler: logHandler.map { ClosureOutputHandler(onLine: $0) }
         )
 
-        let statuCode: StatusCode = switch result.statusCode {
+        return switch result.statusCode {
         case .success:
             .ok
         case .error:
             .error
         }
-
-        return statuCode
     }
 }

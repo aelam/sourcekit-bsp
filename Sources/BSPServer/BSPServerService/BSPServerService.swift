@@ -17,6 +17,7 @@ public actor BSPServerService: ProjectStateObserver, BSPNotificationService {
     lazy var taskManager: BSPTaskManager = .init(notificationService: self)
 
     var projectManager: (any ProjectManager)?
+    var graphUpdateTask: Task<Void, Error>?
 
     /// Service state tracking
     public enum ServiceState {

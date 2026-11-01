@@ -40,17 +40,9 @@ public struct XcodeProjectManagerProvider: ProjectManagerProvider {
             return toolchain
         }.value
 
-        let preferredProjectInfoURL = rootURL.appendingPathComponent(".sourcekit-bsp/project.json")
-        let xcodeProjectReference: XcodeProjectReference? =
-            try? JSONDecoder().decode(
-                XcodeProjectReference.self,
-                from: Data(contentsOf: preferredProjectInfoURL)
-            )
-
         // Initialize the project manager
         let projectManager = XcodeProjectManager(
             rootURL: rootURL,
-            xcodeProjectReference: xcodeProjectReference,
             toolchain: toolchain,
             projectLocator: XcodeProjectLocator(),
             settingsLoader: XcodeSettingsLoader(

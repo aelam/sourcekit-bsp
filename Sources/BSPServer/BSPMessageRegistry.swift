@@ -33,6 +33,7 @@ private let requestTypes: [any RequestType.Type] = [
     // workspace
     WorkspaceBuildTargetsRequest.self,
     WorkspaceWaitForBuildSystemUpdatesRequest.self,
+    WorkspaceReloadRequest.self,
 ]
 
 private let notificationTypes: [NotificationType.Type] = [
@@ -40,7 +41,6 @@ private let notificationTypes: [NotificationType.Type] = [
     OnBuildExitNotification.self, // build/exit
     // workspace
     WorkspaceDidChangeWatchedFilesNotification.self, // workspace/didChangeWatchedFiles
-    WorkspaceReloadNotification.self, // workspace/reload
 
     // build
     BuildSourceKitOptionsChangedNotification.self, // build/sourceKitOptionsChanged

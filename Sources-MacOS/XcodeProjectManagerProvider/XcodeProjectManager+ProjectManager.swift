@@ -17,7 +17,9 @@ extension XcodeProjectManager: @preconcurrency ProjectManager {
         "xcodeproj"
     }
 
-    public func updateBuildGraph() async {}
+    public func updateBuildGraph() async throws {
+        try await reloadProject()
+    }
 
     public func shutdown() async {
         await stopIndexPreparation()

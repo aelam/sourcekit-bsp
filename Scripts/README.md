@@ -34,6 +34,22 @@ python3 Scripts/bsp_client.py --project /path/to/project \
 # List available simulator identifiers.
 xcrun simctl list devices available
 
+# Run an existing application build with the same destination as compilation.
+python3 Scripts/bsp_client.py --project /path/to/project \
+  --method buildTarget/run --target Hello --destination id=SIMULATOR-UDID
+
+# Build and execute a test bundle.
+python3 Scripts/bsp_client.py --project /path/to/project \
+  --method buildTarget/test --target HelloTests --destination id=SIMULATOR-UDID
+
+# Restrict execution to a suite within that test bundle.
+python3 Scripts/bsp_client.py --project /path/to/project \
+  --method buildTarget/test --target HelloTests --destination id=SIMULATOR-UDID \
+  --build-setting=-only-testing:HelloTests/HelloTests
+
+# Reload project metadata in this connection.
+python3 Scripts/bsp_client.py --project /path/to/project --method workspace/reload
+
 # Verify simulator debugging, including a breakpoint and stack trace.
 python3 Scripts/bsp_client.py --project /path/to/project \
   --method debugSession/start --target Hello --destination id=SIMULATOR-UDID \
@@ -56,10 +72,19 @@ options control build arguments. An `arguments` array in `--params` takes
 precedence over those options. Requests that need file URIs or other fields can
 receive them through `--params`.
 
-This client sends requests. It does not implement an interactive editor or
-continuous workspace notifications. A successful response only verifies the
-returned result; a method that is still a stub can return success without doing
-the requested work. Debug validation also checks the breakpoint, threads, and stack.
+This client sends one request per connection. It does not implement an interactive
+editor, continuous workspace notifications, or interactive cancellation. Reloading
+through this script does not reload another editor's server connection. The script
+checks JSON-RPC errors and non-success `statusCode` results. Debug validation also
+checks the breakpoint, threads, and stack.
+
+`buildTarget/test` invokes `xcodebuild test` for all selected test targets. It
+validates the full target list, applies `-only-testing`/`-skip-testing` filters,
+streams Xcode logs, and reports failures. No separate compile request is required.
+Use a concrete simulator or device destination; a generic destination cannot run
+tests. Individual test events and structured test-count reports are not yet
+implemented. See [BSP lifecycle](../Docs/BSP-Lifecycle.md) for cancellation and
+refresh payloads.
 
 `buildTarget/prepare` waits for an incremental Xcode build with indexing enabled
 and code signing disabled. It uses the server's configured build configuration,
@@ -102,5 +127,5 @@ Preparation, compiler arguments, and the initialization response use the same
 project DerivedData and index-store paths. BSP passes `-derivedDataPath` explicitly
 to Xcode. A manual `xcodebuild` command must use that same path to share its products;
 Xcode preferences or another `-derivedDataPath` can otherwise select a different
-directory. Per-request `--derived-data` overrides for compile/run/debug do not move
+directory. Per-request `--derived-data` overrides for compile/run/test/debug do not move
 the language server's indexing directory.
