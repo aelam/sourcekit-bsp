@@ -52,9 +52,8 @@ public extension BSPTaskManager {
         do {
             let status = try await projectManager.startBuild(
                 targetIdentifiers: targets,
-                arguments: arguments,
-                logHandler: { batcher.append($0) }
-            )
+                arguments: arguments
+            ) { batcher.append($0) }
             await stopStreaming()
             try await finishTask(
                 taskId: taskId,

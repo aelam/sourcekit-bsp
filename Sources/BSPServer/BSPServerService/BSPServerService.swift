@@ -199,7 +199,8 @@ public extension BSPServerService {
         } catch {
             logger
                 .warning(
-                    "Failed to send notification for project state event \(String(describing: event)): \(String(describing: error))"
+                    "Failed to send notification for project state event \(String(describing: event)): " +
+                        "\(String(describing: error))"
                 )
         }
     }
