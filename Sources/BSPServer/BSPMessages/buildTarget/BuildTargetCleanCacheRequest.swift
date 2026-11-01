@@ -8,8 +8,8 @@ import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
 
-/// https://build-server-protocol.github.io/docs/specification.html
-/// https://github.com/microsoft/build-server-for-gradle
+// https://build-server-protocol.github.io/docs/specification.html
+// https://github.com/microsoft/build-server-for-gradle
 
 public struct BuildTargetCleanCacheRequest: ContextualRequestType, Sendable {
     public typealias RequiredContext = BSPServerService
@@ -37,16 +37,25 @@ public struct BuildTargetCleanCacheRequest: ContextualRequestType, Sendable {
         contextualHandler: Handler,
         id: RequestID
     ) async -> ResponseType? where Handler.Context == BSPServerService {
-        await contextualHandler.withContext { _ in
+        await contextualHandler.withContext { context in
             logger.debug("clean cache targets: \(params.targets)")
 
-            return JSONRPCErrorResponse(
-                id: id,
-                error: JSONRPCError(
-                    code: -32603,
-                    message: "Not implemented",
+            do {
+                let result = try await context.cleanBuildTargetCaches(targets: params.targets)
+                return BuildTargetCleanCacheResponse(
+                    jsonrpc: jsonrpc,
+                    id: id,
+                    result: result
                 )
-            )
+            } catch {
+                return JSONRPCErrorResponse(
+                    id: id,
+                    error: JSONRPCError(
+                        code: -32603,
+                        message: "failed to clean cache: \(error)"
+                    )
+                )
+            }
         }
     }
 }

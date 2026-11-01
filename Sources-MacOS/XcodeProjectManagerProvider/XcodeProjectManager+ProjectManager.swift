@@ -19,6 +19,10 @@ extension XcodeProjectManager: @preconcurrency ProjectManager {
 
     public func updateBuildGraph() async {}
 
+    public func shutdown() async {
+        await stopDebugSessions()
+    }
+
     public func buildIndex(for targets: [BSPBuildTargetIdentifier]) async {
         // TODO: await startBuild(targetIdentifiers: targets)
     }
@@ -67,7 +71,7 @@ extension XcodeTarget {
             canCompile: true,
             canTest: self.xcodeProductType.isTestBundle,
             canRun: self.xcodeProductType.isApplication,
-            canDebug: self.xcodeProductType.isApplication || self.xcodeProductType.isTestBundle
+            canDebug: self.xcodeProductType.isApplication
         )
 
         return try? BSPBuildTarget(
@@ -146,9 +150,7 @@ extension XcodeTarget {
             metadata["version"] = .string(version)
         }
 
-        let destinationArgument = if destination.id.contains("generic") {
-            "platform=\(destination.platform.rawValue)"
-        } else if destination.id.contains("platform=") {
+        let destinationArgument = if destination.id.contains("platform=") {
             destination.id
         } else {
             "id=\(destination.id)"

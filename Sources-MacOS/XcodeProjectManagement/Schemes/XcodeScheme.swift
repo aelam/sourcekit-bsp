@@ -58,6 +58,9 @@ public extension XcodeScheme {
         self.path = path
         self.buildConfiguration = xcscheme.launchAction?.buildConfiguration ?? "Debug"
         let runnableReference = xcscheme.launchAction?.runnable?.buildableReference
+            ?? xcscheme.launchAction?.macroExpansion
+            ?? xcscheme.buildAction?.buildActionEntries.first?.buildableReference
+            ?? xcscheme.testAction?.testables.first?.buildableReference
         if let referencedContainer = runnableReference?.referencedContainer {
             let relativePath = referencedContainer.replacingOccurrences(of: "container:", with: "")
             self.primaryBuildTargetProjectURL = projectURL.deletingLastPathComponent()

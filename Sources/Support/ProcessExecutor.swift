@@ -24,10 +24,10 @@ public struct ProcessExecutionResult: Sendable {
 }
 
 /// Progress callback for real-time process output
-typealias ProcessProgress = @Sendable (ProcessProgressEvent) -> Void
+typealias ProcessProgress = @Sendable (ProcessProgressEvent) async -> Void
 
 /// Events that can be reported during process execution
-enum ProcessProgressEvent: Sendable {
+enum ProcessProgressEvent {
     case outputLine(String)
     case errorLine(String)
 }
@@ -119,9 +119,7 @@ public actor ProcessExecutor {
             environment: environment,
             timeout: timeout
         ) { event in
-            Task {
-                await result.append(event: event)
-            }
+            await result.append(event: event)
         }
 
         return await result.getResult(exitCode: exitCode)
@@ -156,15 +154,25 @@ public actor ProcessExecutor {
         let startTime = Date()
 
         // Handle timeout if specified
-        let exitCode: Int32 = if let timeout {
-            try await withTimeout(timeout) {
-                try await self.streamProcessOutput(
-                    process: process,
-                    progress: progress
-                )
+        let exitCode: Int32
+        if let timeout {
+            do {
+                exitCode = try await withTimeout(timeout) {
+                    try await self.streamProcessOutput(
+                        process: process,
+                        progress: progress
+                    )
+                }
+            } catch {
+                // On timeout (or cancellation) the Swift task is cancelled but
+                // the underlying OS process keeps running — terminate it so we
+                // don't leak wedged children (e.g. a hung `simctl install`,
+                // which otherwise piles up and blocks the whole BSP channel).
+                if process.isRunning { process.terminate() }
+                throw error
             }
         } else {
-            try await streamProcessOutput(
+            exitCode = try await streamProcessOutput(
                 process: process,
                 progress: progress
             )
@@ -228,7 +236,7 @@ public actor ProcessExecutor {
 
         await StreamingFileHandleReader.streamPipe(fileHandle) { line in
             let event: ProcessProgressEvent = isError ? .errorLine(line + "\n") : .outputLine(line + "\n")
-            progress?(event)
+            await progress?(event)
             logger.debug("Finished reading from \(isError ? "error" : "output") pipe")
         }
     }

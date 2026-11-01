@@ -59,6 +59,10 @@ public struct BuildTargetRunRequest: ContextualRequestType, Sendable {
                 )
             } catch {
                 logger.error("Failed to run target: \(params.target), error: \(error)")
+                try? await context.sendNotification(ServerJSONRPCNotification(
+                    method: "build/logMessage",
+                    params: BuildLogMessageParams(type: 1, message: "Run failed: \(error.localizedDescription)")
+                ))
                 return BuildTargetRunResponse(
                     id: id,
                     result: .init(originId: nil, statusCode: .error)
