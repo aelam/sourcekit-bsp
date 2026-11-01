@@ -8,14 +8,14 @@
 import BuildServerProtocol
 import JSONRPCConnection
 
-struct BuildTargetDidChangeNotification: ContextualNotificationType, Sendable {
+struct BuildTargetDidChangeNotification: ContextualNotificationType {
     typealias RequiredContext = BSPServerService
 
     static func method() -> String {
-        "build/targetDidChange"
+        "buildTarget/didChange"
     }
 
-    struct Params: Codable, Sendable {
+    struct Params: Codable {
         let changes: [BuildTargetEvent]?
     }
 

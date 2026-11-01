@@ -35,21 +35,21 @@ public struct BuildTargetPrepareRequest: ContextualRequestType, Sendable {
         id: RequestID
     ) async -> ResponseType? where Handler.Context == BSPServerService {
         await contextualHandler.withContext { context in
-            // Prepare build targets for background indexing
-            // This may include ensuring compiler outputs, index databases, etc. are up to date
             let targetURIs = params.targets.map(\.uri.stringValue)
             logger.debug("Preparing build targets for background indexing: \(targetURIs)")
             do {
-                // trigger xcodebuild to build the selected scheme in background
                 try await context.buildTargetForIndex(targets: params.targets)
-                logger.debug("Successfully started build preparation for targets")
+                logger.debug("Completed build preparation for targets")
+                return BuildTargetPrepareResponse(jsonrpc: jsonrpc, id: id)
             } catch {
-                logger.error("Failed to start build targets preparation: \(error)")
+                let message = "Index preparation failed: \(error.localizedDescription)"
+                logger.error(message)
+                try? await context.sendNotification(ServerJSONRPCNotification(
+                    method: "build/logMessage",
+                    params: BuildLogMessageParams(type: 1, message: message)
+                ))
+                return JSONRPCErrorResponse(id: id, error: JSONRPCError(code: -32603, message: message))
             }
-            return BuildTargetPrepareResponse(
-                jsonrpc: jsonrpc,
-                id: id
-            )
         }
     }
 }

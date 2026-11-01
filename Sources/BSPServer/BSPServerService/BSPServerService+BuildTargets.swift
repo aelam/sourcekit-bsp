@@ -31,7 +31,15 @@ extension BSPServerService {
             throw BuildServerError.invalidConfiguration("Project not initialized")
         }
 
-        await projectManager.buildIndex(for: targets)
+        let changedTargets = try await projectManager.buildIndex(for: targets)
+        if !changedTargets.isEmpty {
+            try await sendNotification(ServerJSONRPCNotification(
+                method: BuildTargetDidChangeNotification.method(),
+                params: BuildTargetDidChangeNotification.Params(changes: changedTargets.map {
+                    BuildTargetEvent(target: $0, kind: .changed, dataKind: nil, data: nil)
+                })
+            ))
+        }
     }
 
     func outputPaths(

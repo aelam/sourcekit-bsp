@@ -1,4 +1,10 @@
-enum BuildServerError: Error, CustomStringConvertible {
+import Foundation
+
+enum BuildServerError: Error, LocalizedError, CustomStringConvertible {
+    var errorDescription: String? {
+        description
+    }
+
     case missingConfigFile
     case missingWorkspace
     case missingProject

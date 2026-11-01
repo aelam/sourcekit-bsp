@@ -12,9 +12,9 @@ public extension XcodeProjectManager {
         let projectFilePath = targetIdentifier.projectFilePath
         let targetName = targetIdentifier.targetName
 
+        let projectURL = URL(fileURLWithPath: projectFilePath)
         guard
             let xcodeProjectBaseInfo,
-            let projectURL = URL(string: projectFilePath),
             let xcodeProj = loadXcodeProjCache(projectURL: projectURL)
         else {
             return []
