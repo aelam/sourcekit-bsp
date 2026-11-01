@@ -39,19 +39,14 @@ public extension XcodeProjectManager {
         }
         guard !targets.isEmpty else { return [] }
 
-        // Actor reentrancy must not start two preparations in the same build database.
-        let previous = indexPreparationTail
         let id = UUID()
         let preparation = Task {
-            if let previous { _ = try? await previous.value }
             try Task.checkCancellation()
             return try await self.prepareIndexTargets(targets, logHandler: logHandler)
         }
-        indexPreparationTail = preparation
         indexPreparationTasks[id] = preparation
         defer {
             indexPreparationTasks[id] = nil
-            if indexPreparationTasks.isEmpty { indexPreparationTail = nil }
         }
         return try await withTaskCancellationHandler {
             try await preparation.value

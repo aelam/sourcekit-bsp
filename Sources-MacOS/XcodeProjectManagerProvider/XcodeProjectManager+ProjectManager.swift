@@ -22,6 +22,7 @@ extension XcodeProjectManager: @preconcurrency ProjectManager {
     }
 
     public func shutdown() async {
+        await shutdownBuilds()
         await stopIndexPreparation()
         await stopDebugSessions()
     }

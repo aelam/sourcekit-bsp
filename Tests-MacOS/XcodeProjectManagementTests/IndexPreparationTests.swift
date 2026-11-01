@@ -37,7 +37,11 @@ struct IndexPreparationTests {
         // Concurrent requests must share the build database without lock errors.
         async let first = manager.prepareForIndexing(targetIdentifiers: [app.targetIdentifier, app.targetIdentifier])
         async let second = manager.prepareForIndexing(targetIdentifiers: [app.targetIdentifier])
-        _ = try await (first, second)
+        async let compile = manager.compileTarget(
+            targetIdentifier: app.targetIdentifier, configuration: nil, arguments: ["CODE_SIGNING_ALLOWED=NO"]
+        )
+        let (_, _, compileStatus) = try await (first, second, compile)
+        #expect(compileStatus == 0)
         let units = base.xcodeGlobalSettings.indexStoreURL.appendingPathComponent("v5/units")
         #expect(try !FileManager.default.contentsOfDirectory(atPath: units.path).isEmpty)
         let settings = try await manager.resolvedBuildSettings(for: app, arguments: arguments)

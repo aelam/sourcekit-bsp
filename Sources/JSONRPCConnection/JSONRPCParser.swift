@@ -1,58 +1,60 @@
 import Foundation
 
-actor JSONPRCParser {
+/// Parses consecutive frames. The transport feeds bytes from one ordered consumer.
+struct JSONRPCParser {
     typealias Result = Swift.Result<JSONRPCMessage, JSONRPCTransportError>
 
     private let jsonDecoder = JSONDecoder()
-    private let separator = "\r\n\r\n"
+    private let separator = Data("\r\n\r\n".utf8)
     private var buffer = Data()
+    private var failed = false
 
-    nonisolated(unsafe) var handler: ((Result) -> Void)?
-
-    func feed(chunk: Data) {
+    mutating func feed(chunk: Data) -> [Result] {
+        guard !failed else { return [] }
         buffer.append(chunk)
-
-        while true {
-            // 找到 header/body 分隔符
-            guard let range = buffer.range(of: separator.data(using: .utf8)!) else {
-                break // header 不完整
+        var results: [Result] = []
+        do {
+            while let range = buffer.range(of: separator) {
+                let headerEnd = range.upperBound
+                let length = try contentLength(in: buffer.subdata(in: 0 ..< range.lowerBound))
+                guard length <= Int.max - headerEnd else { throw JSONRPCTransportError.invalidContentLength }
+                let end = headerEnd + length
+                guard buffer.count >= end else { break }
+                let body = buffer.subdata(in: headerEnd ..< end)
+                buffer.removeSubrange(0 ..< end)
+                guard let request = try? jsonDecoder.decode(JSONRPCRequest.self, from: body) else {
+                    throw JSONRPCTransportError.invalidMessage
+                }
+                results.append(.success(JSONRPCMessage(request: request, rawData: body)))
             }
-
-            let headerData = buffer.subdata(in: 0 ..< range.lowerBound)
-            guard let headerString = String(data: headerData, encoding: .utf8) else {
-                handler?(.failure(JSONRPCTransportError.invalidHeader))
-                return
-            }
-
-            // 提取 Content-Length
-            guard let lengthLine = headerString
-                .split(separator: separator)
-                .first(where: { $0.lowercased().hasPrefix("content-length") }),
-                let lengthValue = lengthLine.split(separator: ":").last,
-                let contentLength = Int(lengthValue.trimmingCharacters(in: .whitespaces)) else {
-                handler?(.failure(JSONRPCTransportError.missingContentLength))
-                return
-            }
-
-            let headerEnd = range.upperBound
-            let totalLength = headerEnd + contentLength
-
-            // body 不完整
-            guard buffer.count >= totalLength else {
-                break
-            }
-
-            // 提取 body
-            let bodyData = buffer.subdata(in: headerEnd ..< totalLength)
-
-            do {
-                let message = try jsonDecoder.decode(JSONRPCRequest.self, from: bodyData)
-                handler?(.success(JSONRPCMessage(request: message, rawData: bodyData)))
-            } catch {
-                handler?(.failure(.invalidHeader))
-            }
-
-            buffer.removeSubrange(0 ..< totalLength)
+        } catch {
+            failed = true
+            buffer.removeAll()
+            results.append(.failure(error as? JSONRPCTransportError ?? .invalidMessage))
         }
+        return results
+    }
+
+    func finish() -> JSONRPCTransportError? {
+        !failed && !buffer.isEmpty ? .receiveFailed : nil
+    }
+
+    private func contentLength(in header: Data) throws -> Int {
+        guard let text = String(data: header, encoding: .ascii) else {
+            throw JSONRPCTransportError.invalidHeader
+        }
+        var length: Int?
+        for line in text.components(separatedBy: "\r\n") {
+            guard let colon = line.firstIndex(of: ":") else { throw JSONRPCTransportError.invalidHeader }
+            let name = line[..<colon].trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty else { throw JSONRPCTransportError.invalidHeader }
+            guard name.lowercased() == "content-length" else { continue }
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            guard length == nil, !value.isEmpty, value.utf8.allSatisfy({ (48 ... 57).contains($0) }),
+                  let parsed = Int(value) else { throw JSONRPCTransportError.invalidContentLength }
+            length = parsed
+        }
+        guard let length else { throw JSONRPCTransportError.missingContentLength }
+        return length
     }
 }

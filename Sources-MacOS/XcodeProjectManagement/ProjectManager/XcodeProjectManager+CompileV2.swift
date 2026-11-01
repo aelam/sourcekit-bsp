@@ -1,74 +1,10 @@
 import Foundation
-import Logger
-import Support
 
 public enum BuildError: Error, Sendable {
     case buildFailed(exitCode: Int32, output: String)
 }
 
 public extension XcodeProjectManager {
-    // MARK: - Generic Xcode Process Execution
-
-    internal func executeXcodeProcess(
-        command: [String],
-        environment: [String: String] = [:],
-        workingDirectory: URL? = nil,
-        outputHandler: ProcessOutputHandler? = nil
-    ) async throws -> XcodeBuildExitCode {
-        let process = try await toolchain.createXcodeBuildProcess(
-            arguments: command,
-            workingDirectory: workingDirectory ?? rootURL,
-            xcodeBuildEnvironments: environment
-        )
-
-        process.standardInput = FileHandle.nullDevice
-        // Setup pipes
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-
-        let exits = AsyncStream<Int32> { continuation in
-            process.terminationHandler = { process in
-                continuation.yield(process.terminationStatus)
-                continuation.finish()
-            }
-        }
-        try Task.checkCancellation()
-        try process.run()
-        // Cancellation must still wait for termination before reading the exit status.
-        let exitTask = Task {
-            for await _ in exits {}
-        }
-
-        let effectiveHandler = outputHandler ?? DefaultOutputHandler()
-
-        await withTaskCancellationHandler {
-            if Task.isCancelled, process.isRunning { process.terminate() }
-            await withTaskGroup(of: Void.self) { group in
-                // 启动管道读取任务
-                group.addTask {
-                    await effectiveHandler.handleProcess(
-                        output: outputPipe.fileHandleForReading,
-                        error: errorPipe.fileHandleForReading
-                    )
-                }
-
-                // Wait without blocking a Swift concurrency worker.
-                group.addTask {
-                    await exitTask.value
-                }
-            }
-        } onCancel: {
-            if process.isRunning { process.terminate() }
-        }
-
-        await effectiveHandler.handleCompletion(process.terminationStatus)
-        try Task.checkCancellation()
-
-        return process.terminationStatus
-    }
-
     // MARK: - Compile Target
 
     func compileTarget(
@@ -110,8 +46,9 @@ public extension XcodeProjectManager {
             options: options
         )
 
-        return try await executeXcodeProcess(
+        return try await buildExecutor.execute(
             command: command,
+            workingDirectory: rootURL,
             outputHandler: outputHandler
         )
     }

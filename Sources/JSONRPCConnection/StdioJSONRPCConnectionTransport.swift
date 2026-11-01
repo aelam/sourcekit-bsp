@@ -11,14 +11,11 @@ import Logger
 public final class StdioJSONRPCConnectionTransport: JSONRPCServerTransport, @unchecked Sendable {
     private let input: FileHandle
     private let output: FileHandle
-    private let jsonDecoder = JSONDecoder()
     private let jsonEncoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return encoder
     }()
-
-    private let jsonRPCParser = JSONPRCParser()
 
     /// Serial queue for all stdout writes. Responses are produced concurrently
     /// (JSONRPCConnection spawns a task per request), so without serialization
@@ -28,117 +25,105 @@ public final class StdioJSONRPCConnectionTransport: JSONRPCServerTransport, @unc
     /// queue guarantees each message is written atomically and in order.
     private let writeQueue = DispatchQueue(label: "com.sourcekit-bsp.jsonrpc.stdout")
 
-    // Stream continuations for async streams
-    private var messageContinuation: AsyncStream<JSONRPCMessage>.Continuation?
-    private var errorContinuation: AsyncStream<JSONRPCTransportError>.Continuation?
+    private let messageContinuation: AsyncStream<JSONRPCMessage>.Continuation
+    private let errorContinuation: AsyncStream<JSONRPCTransportError>.Continuation
+    private let inputChunks: AsyncStream<Data>
+    private let inputContinuation: AsyncStream<Data>.Continuation
 
-    // Streams exposed to consumers
     public let messageStream: AsyncStream<JSONRPCMessage>
     public let errorStream: AsyncStream<JSONRPCTransportError>
 
-    // State management (thread-safe)
     private let stateLock = NSLock()
     private var _isListening = false
-    private var _closeContinuation: CheckedContinuation<Void, Never>?
+    private var isClosed = false
+    private var closeContinuation: CheckedContinuation<Void, Error>?
+    private var inputTask: Task<Void, Never>?
 
     private var isListening: Bool {
-        get {
-            stateLock.lock()
-            defer { stateLock.unlock() }
-            return _isListening
-        }
-        set {
-            stateLock.lock()
-            defer { stateLock.unlock() }
-            _isListening = newValue
-        }
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return _isListening
     }
 
-    private var closeContinuation: CheckedContinuation<Void, Never>? {
-        get {
-            stateLock.lock()
-            defer { stateLock.unlock() }
-            return _closeContinuation
-        }
-        set {
-            stateLock.lock()
-            defer { stateLock.unlock() }
-            _closeContinuation = newValue
-        }
-    }
-
-    public init() {
-        input = .standardInput
-        output = .standardOutput
-
-        // Initialize message stream
-        var messageCont: AsyncStream<JSONRPCMessage>.Continuation?
-        messageStream = AsyncStream<JSONRPCMessage> { continuation in
-            messageCont = continuation
-        }
-        messageContinuation = messageCont
-
-        // Initialize error stream
-        var errorCont: AsyncStream<JSONRPCTransportError>.Continuation?
-        errorStream = AsyncStream<JSONRPCTransportError> { continuation in
-            errorCont = continuation
-        }
-        errorContinuation = errorCont
+    public init(input: FileHandle = .standardInput, output: FileHandle = .standardOutput) {
+        self.input = input
+        self.output = output
+        (messageStream, messageContinuation) = AsyncStream.makeStream()
+        (errorStream, errorContinuation) = AsyncStream.makeStream()
+        (inputChunks, inputContinuation) = AsyncStream.makeStream()
     }
 
     public func listen() async throws {
-        guard !isListening else {
-            throw JSONRPCTransportError.listenFailed
-        }
-
-        isListening = true
-
-        jsonRPCParser.handler = { [weak self] result in
-            switch result {
-            case let .success(message):
-                self?.messageContinuation?.yield(message)
-            case let .failure(error):
-                self?.errorContinuation?.yield(error)
-            }
-        }
-
-        // Set up file handle reading
-        input.readabilityHandler = { [weak self] handle in
-            self?.handleIncomingData(from: handle)
-        }
-
-        // Start waiting for data
-        input.waitForDataInBackgroundAndNotify()
-
-        // Keep the transport running using proper async pattern
-        await withTaskCancellationHandler {
-            // Use a continuation that will be resumed when transport is closed
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                self.closeContinuation = continuation
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                stateLock.lock()
+                guard !_isListening, !isClosed else {
+                    let error: JSONRPCTransportError = isClosed ? .transportClosed : .listenFailed
+                    stateLock.unlock()
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard !Task.isCancelled else {
+                    stateLock.unlock()
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                _isListening = true
+                closeContinuation = continuation
+                inputTask = Task { [weak self] in
+                    await self?.readMessages()
+                }
+                input.readabilityHandler = { [weak self] handle in
+                    self?.handleIncomingData(from: handle)
+                }
+                stateLock.unlock()
             }
         } onCancel: {
-            Task { self.close() }
+            self.close()
         }
     }
 
     public func close() {
-        guard isListening else { return }
-
-        isListening = false
-        input.readabilityHandler = nil
-
-        // Close streams
-        messageContinuation?.finish()
-        errorContinuation?.finish()
-
-        messageContinuation = nil
-        errorContinuation = nil
-
-        // Resume the listen continuation to exit the listen method
-        closeContinuation?.resume()
+        stateLock.lock()
+        guard !isClosed else {
+            stateLock.unlock()
+            return
+        }
+        isClosed = true
+        _isListening = false
+        let continuation = closeContinuation
         closeContinuation = nil
+        let task = inputTask
+        inputTask = nil
+        stateLock.unlock()
 
-        // Note: We don't close stdio handles as they are managed by the system
+        input.readabilityHandler = nil
+        inputContinuation.finish()
+        task?.cancel()
+        messageContinuation.finish()
+        errorContinuation.finish()
+        continuation?.resume()
+    }
+
+    private func readMessages() async {
+        var parser = JSONRPCParser()
+        for await chunk in inputChunks {
+            guard !Task.isCancelled else { return }
+            for result in parser.feed(chunk: chunk) {
+                switch result {
+                case let .success(message):
+                    messageContinuation.yield(message)
+                case let .failure(error):
+                    errorContinuation.yield(error)
+                    logger.error("Invalid JSON-RPC input; closing connection: \(error)")
+                    close()
+                    return
+                }
+            }
+        }
+        guard !Task.isCancelled else { return }
+        if let error = parser.finish() { errorContinuation.yield(error) }
+        close()
     }
 
     public func send(response: ResponseType) async throws {
@@ -194,14 +179,12 @@ public final class StdioJSONRPCConnectionTransport: JSONRPCServerTransport, @unc
 
     private func handleIncomingData(from fileHandle: FileHandle) {
         let data = fileHandle.availableData
-        guard !data.isEmpty else {
-            return
+        if data.isEmpty {
+            fileHandle.readabilityHandler = nil
+            inputContinuation.finish()
+        } else {
+            // One consumer preserves byte order across separate header and body writes.
+            inputContinuation.yield(data)
         }
-
-        Task {
-            await jsonRPCParser.feed(chunk: data)
-        }
-        // Continue waiting for more data
-        fileHandle.waitForDataInBackgroundAndNotify()
     }
 }

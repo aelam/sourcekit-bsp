@@ -20,6 +20,13 @@ let schemes = try await manager.getAvailableSchemes()
 let configurations = try await manager.getAvailableConfigurations()
 ```
 
+### XcodeBuildExecutor
+
+An internal executor runs compile, test, index preparation, and builds before debug.
+It handles process cancellation and output. A shared scheduler serializes builds
+by DerivedData directory within the server. Each manager owns its executor, so
+shutdown cancels only that manager's builds.
+
 ### XcodeBuildCommandBuilder  
 
 Generates xcodebuild command arguments with type-safe options.

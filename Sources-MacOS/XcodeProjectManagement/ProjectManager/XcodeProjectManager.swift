@@ -55,11 +55,11 @@ public actor XcodeProjectManager {
     public let rootURL: URL
     let projectLocator: XcodeProjectLocator
     let toolchain: XcodeToolchain
+    let buildExecutor: XcodeBuildExecutor
     let settingsLoader: XcodeSettingsLoader
     let schemeLoader: XCSchemeLoader
     let destinationLoader = XcodeDestinationLoader()
     var debugSessionManager: DebugSessionManager?
-    var indexPreparationTail: Task<[XcodeTargetIdentifier], Error>?
     var indexPreparationTasks: [UUID: Task<[XcodeTargetIdentifier], Error>] = [:]
 
     private let xcodeProjectReference: XcodeProjectReference?
@@ -91,9 +91,15 @@ public actor XcodeProjectManager {
         self.xcodeProjectReference = xcodeProjectReference
         self.currentProjectReference = xcodeProjectReference
         self.toolchain = toolchain
+        self.buildExecutor = XcodeBuildExecutor(toolchain: toolchain)
         self.projectLocator = projectLocator
         self.settingsLoader = settingsLoader
         self.schemeLoader = schemeLoader
+    }
+
+    /// Cancel this manager's builds and reject further build requests.
+    public func shutdownBuilds() async {
+        await buildExecutor.shutdown()
     }
 
     public func initialize() async throws {

@@ -17,10 +17,10 @@ extension XcodeProjectManager {
         }
         for command in commands {
             try Task.checkCancellation()
-            let exitCode = try await executeXcodeProcess(
+            let exitCode = try await buildExecutor.execute(
                 command: command,
                 environment: environment,
-                workingDirectory: workingDirectory,
+                workingDirectory: workingDirectory ?? rootURL,
                 outputHandler: outputHandler
             )
             failed = failed || exitCode != 0
