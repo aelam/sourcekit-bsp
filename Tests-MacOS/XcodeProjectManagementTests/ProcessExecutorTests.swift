@@ -34,32 +34,80 @@ struct ProcessExecutorTests {
     @Test("ProcessExecutor timeout test")
     func timeoutError() async throws {
         let processExecutor = ProcessExecutor()
-        let start = ContinuousClock.now
+        let probe = try TerminationProbe()
+        defer { probe.removeFiles() }
         let error = try await #require(throws: ProcessExecutorError.self) {
             try await processExecutor.execute(
-                executable: "/bin/sleep",
-                arguments: ["30"],
+                executable: "/bin/sh",
+                arguments: probe.arguments,
                 workingDirectory: nil,
                 environment: [:],
-                timeout: 0.1
+                timeout: 1.0
             )
         }
         #expect(error.isTimeout)
-        #expect(ContinuousClock.now - start < .seconds(5))
+        try probe.expectTerminated()
     }
 
     @Test
     func cancelsRunningProcess() async throws {
         let executor = ProcessExecutor()
-        let start = ContinuousClock.now
+        let probe = try TerminationProbe()
+        defer { probe.removeFiles() }
         let task = Task {
-            try await executor.execute(executable: "/bin/sleep", arguments: ["30"])
+            try await executor.execute(executable: "/bin/sh", arguments: probe.arguments)
         }
-        try await Task.sleep(for: .milliseconds(100))
+        defer { task.cancel() }
+        let deadline = ContinuousClock.now + .seconds(30)
+        while !FileManager.default.fileExists(atPath: probe.pidFile.path), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(FileManager.default.fileExists(atPath: probe.pidFile.path))
         task.cancel()
         await #expect(throws: CancellationError.self) {
             try await task.value
         }
-        #expect(ContinuousClock.now - start < .seconds(5))
+        try probe.expectTerminated()
+    }
+}
+
+private struct TerminationProbe {
+    let directory: URL
+    var pidFile: URL {
+        directory.appendingPathComponent("pid")
+    }
+
+    var resultFile: URL {
+        directory.appendingPathComponent("result")
+    }
+
+    init() throws {
+        directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    var arguments: [String] {
+        [
+            "-c", """
+            trap 'kill "$child" 2>/dev/null; wait "$child" 2>/dev/null; printf terminated > "$2"; exit 0' TERM
+            sleep 30 &
+            child=$!
+            printf '%s' "$$" > "$1"
+            wait "$child"
+            printf completed > "$2"
+            """,
+            "bsp-process-test", pidFile.path, resultFile.path
+        ]
+    }
+
+    func expectTerminated() throws {
+        #expect(try String(contentsOf: resultFile, encoding: .utf8) == "terminated")
+        let pid = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8)))
+        #expect(kill(pid, 0) == -1)
+        #expect(errno == ESRCH)
+    }
+
+    func removeFiles() {
+        try? FileManager.default.removeItem(at: directory)
     }
 }
