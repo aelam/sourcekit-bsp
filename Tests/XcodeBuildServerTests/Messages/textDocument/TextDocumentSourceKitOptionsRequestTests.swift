@@ -88,7 +88,7 @@ struct TextDocumentSourceKitOptionsRequestTests {
     // MARK: - Response Tests
 
     @Test
-    func responseWithCompilerArguments() throws {
+    func responseWithCompilerArguments() {
         let arguments = [
             "-module-name", "Hello",
             "-Onone",
@@ -151,7 +151,7 @@ struct TextDocumentSourceKitOptionsRequestTests {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         let data = try encoder.encode(response)
-        let jsonString = String(data: data, encoding: .utf8)!
+        let jsonString = try #require(String(data: data, encoding: .utf8))
 
         #expect(jsonString.contains("\"compilerArguments\""))
         #expect(jsonString.contains("\"workingDirectory\""))

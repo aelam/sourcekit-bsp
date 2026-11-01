@@ -8,7 +8,7 @@
 import Foundation
 import Testing
 
-/// `.bsp/xcode.json`
+// `.bsp/xcode.json`
 @testable import XcodeProjectManagement
 
 struct XcodeProjectLocatorTests {
@@ -17,9 +17,9 @@ struct XcodeProjectLocatorTests {
         ("HelloProject", "Hello.xcodeproj"),
     ])
     func xcodeProjectLocator(_ root: String, _ suffix: String) throws {
-        let projectFolder = Bundle.module.resourceURL!
+        let projectFolder = try #require(Bundle.module.resourceURL?
             .appendingPathComponent("DemoProjects")
-            .appendingPathComponent(root)
+            .appendingPathComponent(root))
         let locator = XcodeProjectLocator()
         let projectLocation = try locator.resolveProjectType(rootURL: projectFolder)
         #expect(projectLocation.workspaceOrProjectFileURL.path.hasSuffix(suffix))
@@ -27,9 +27,9 @@ struct XcodeProjectLocatorTests {
 
     @Test
     func xcodeProjectLocatorNoProjectFile() throws {
-        let projectFolder = Bundle.module.resourceURL!
+        let projectFolder = try #require(Bundle.module.resourceURL?
             .appendingPathComponent("DemoProjects")
-            .appendingPathComponent("NoProjectFile")
+            .appendingPathComponent("NoProjectFile"))
         let locator = XcodeProjectLocator()
         do {
             _ = try locator.resolveProjectType(rootURL: projectFolder)

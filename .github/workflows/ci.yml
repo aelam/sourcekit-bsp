@@ -135,7 +135,7 @@ jobs:
 
     - name: Check Swift Format
       run: |
-        mint run swiftformat . --lint-only
+        mint run swiftformat . --lint
 
   security-scan:
     name: Security Scan

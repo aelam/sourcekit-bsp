@@ -47,7 +47,7 @@ struct DerivedSourcesProvider: CompileArgProvider, Sendable {
         ]
     }
 
-    // swift only
+    /// swift only
     private func buildGeneratedAssetSymbols(settings: [String: String], compiler: CompilerType) -> [String] {
         guard
             compiler == .swift,

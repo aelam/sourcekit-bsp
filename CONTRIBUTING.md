@@ -75,8 +75,9 @@ This project adheres to a [Code of Conduct](CODE_OF_CONDUCT.md). By participatin
 
 5. **Run code quality checks**:
    ```bash
-   swiftlint
-   swift-format lint --recursive Sources Tests
+   mint bootstrap
+   mint run swiftlint --strict
+   mint run swiftformat . --lint
    ```
 
 6. **Commit your changes** with clear, descriptive messages:

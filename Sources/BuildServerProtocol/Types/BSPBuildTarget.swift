@@ -91,10 +91,10 @@ public struct BSPBuildTarget: Codable, Hashable, Sendable {
     }
 }
 
-/// A unique identifier for a target, can use any URI-compatible encoding as long as it is unique within the workspace.
-/// Clients should not infer metadata out of the URI structure such as the path or query parameters, use `BuildTarget`
-/// instead.
-///
+// A unique identifier for a target, can use any URI-compatible encoding as long as it is unique within the workspace.
+// Clients should not infer metadata out of the URI structure such as the path or query parameters, use `BuildTarget`
+// instead.
+//
 
 /// A list of predefined tags that can be used to categorize build targets.
 public struct BuildTargetTag: Codable, Hashable, RawRepresentable, Sendable {

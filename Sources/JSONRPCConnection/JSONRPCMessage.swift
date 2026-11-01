@@ -56,7 +56,7 @@ public struct JSONRPCError: Codable, Sendable, Error {
         self.data = data
     }
 
-    // Standard JSON-RPC error codes
+    /// Standard JSON-RPC error codes
     static func parseError(_ message: String) -> JSONRPCError {
         JSONRPCError(code: -32700, message: "Parse error: \(message)")
     }

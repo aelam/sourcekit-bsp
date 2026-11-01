@@ -28,8 +28,10 @@ public struct XcodeTarget: Sendable, Hashable, Codable {
         return productName + "." + fileExtension
     }
 
-    // Computed property for legacy compatibility
-    public var targetName: String { name }
+    /// Computed property for legacy compatibility
+    public var targetName: String {
+        name
+    }
 
     public init(
         targetIdentifier: XcodeTargetIdentifier,

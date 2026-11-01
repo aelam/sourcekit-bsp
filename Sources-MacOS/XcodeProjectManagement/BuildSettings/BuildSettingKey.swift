@@ -74,16 +74,16 @@ enum BuildSettingKey: String, CaseIterable {
 
     case enableModuleVerifier = "ENABLE_MODULE_VERIFIER"
     case alwaysSearchUserPaths = "ALWAYS_SEARCH_USER_PATHS" // NO
-    // case infoPlistFile = "INFOPLIST_FILE" // =
-    // UserStickersShareExtension/Info.plist;
+    /// case infoPlistFile = "INFOPLIST_FILE" // =
+    /// UserStickersShareExtension/Info.plist;
     case ldRunPathSearchPaths =
         "LD_RUNPATH_SEARCH_PATHS" // = ( "$(inherited)",
-    // "@executable_path/Frameworks",
-    // "@executable_path/../../Frameworks",);
+    /// "@executable_path/Frameworks",
+    /// "@executable_path/../../Frameworks",);
     case productBundleIdentifier =
         "PRODUCT_BUNDLE_IDENTIFIER" // = com.linecorp.creatorsstudio.shareextension;
 
-    // Dynamic/implicit
+    /// Dynamic/implicit
     case batchMode = "BATCH_MODE"
     // -target arm64-apple-ios18.5 ← ARCHS + SDKROOT +
     // IPHONEOS_DEPLOYMENT_TARGET
@@ -92,15 +92,15 @@ enum BuildSettingKey: String, CaseIterable {
         "ENFORCE_EXCLUSIVITY_FLAG" // -enforce-exclusivity=checked if -Onone
     case enableTestability = "ENABLE_TESTABILITY" // -enable-testing
 
-    // -DDEBUG
+    /// -DDEBUG
     case swiftActiveCompilationConditions = "SWIFT_ACTIVE_COMPILATION_CONDITIONS"
 
     case configuration = "CONFIGURATION" // = Debug | Release
 
-    // ${derivedDataPath}/Build/Products/Debug-iphoneos
+    /// ${derivedDataPath}/Build/Products/Debug-iphoneos
     case configurationBuildDir = "CONFIGURATION_BUILD_DIR"
 
-    // ${derivedDataPath}/Build/Intermediates.noindex/<ProjectName>.build/<Configuration>-<SDK>/<TargetName>.build
+    /// ${derivedDataPath}/Build/Intermediates.noindex/<ProjectName>.build/<Configuration>-<SDK>/<TargetName>.build
     case configurationTempDir = "CONFIGURATION_TEMP_DIR"
 
     // BUILT_PRODUCTS_DIR
@@ -121,23 +121,23 @@ enum BuildSettingKey: String, CaseIterable {
     case project = "PROJECT"
 
     case projectDir = "PROJECT_DIR"
-    // ${derivedDataPath}/Build/Intermediates.noindex/${PROJECT}.build",
+    /// ${derivedDataPath}/Build/Intermediates.noindex/${PROJECT}.build",
     case projectTempDir = "PROJECT_TEMP_DIR"
-    // ${derivedDataPath}/Build/Intermediates.noindex"
+    /// ${derivedDataPath}/Build/Intermediates.noindex"
     case projectTempRoot = "PROJECT_TEMP_ROOT"
 
     // MARK: - SDK
 
-    // -sdk /.../iPhoneOS18.5.sdk
+    /// -sdk /.../iPhoneOS18.5.sdk
     case sdkRoot = "SDKROOT" // = iphoneos;
-    // ${derivedDataPath}/Build/Products
+    /// ${derivedDataPath}/Build/Products
     case symRoot = "SYMROOT"
 
     // MARK: - SDK_STAT_CACHE
 
     case sdkStatCacheEnable = "SDK_STAT_CACHE_ENABLE"
-    // "${HOME}/Library/Developer/Xcode/DerivedData"
+    /// "${HOME}/Library/Developer/Xcode/DerivedData"
     case sdkStatCacheDir = "SDK_STAT_CACHE_DIR"
-    // ${sdkStatCacheDir}/SDKStatCaches.noindex/{sdkRoot}{iPhoneDeploymentTarget}-22F76-7fa4eea80a99bbfdc046826b63ec4baf.sdkstatcache
+    /// ${sdkStatCacheDir}/SDKStatCaches.noindex/{sdkRoot}{iPhoneDeploymentTarget}-22F76-7fa4eea80a99bbfdc046826b63ec4baf.sdkstatcache
     case sdkStatCachePath = "SDK_STAT_CACHE_PATH"
 }
