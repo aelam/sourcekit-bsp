@@ -31,18 +31,35 @@ struct ProcessExecutorTests {
         #expect(result.exitCode == 0)
     }
 
-    @Test("ProcessExecutor timeout test", .disabled("Skipping timeout test in CI"))
+    @Test("ProcessExecutor timeout test")
     func timeoutError() async throws {
         let processExecutor = ProcessExecutor()
+        let start = ContinuousClock.now
         let error = try await #require(throws: ProcessExecutorError.self) {
             try await processExecutor.execute(
-                executable: "/usr/bin/yes",
-                arguments: [],
+                executable: "/bin/sleep",
+                arguments: ["30"],
                 workingDirectory: nil,
                 environment: [:],
                 timeout: 0.1
             )
         }
         #expect(error.isTimeout)
+        #expect(ContinuousClock.now - start < .seconds(5))
+    }
+
+    @Test
+    func cancelsRunningProcess() async throws {
+        let executor = ProcessExecutor()
+        let start = ContinuousClock.now
+        let task = Task {
+            try await executor.execute(executable: "/bin/sleep", arguments: ["30"])
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        task.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+        #expect(ContinuousClock.now - start < .seconds(5))
     }
 }
