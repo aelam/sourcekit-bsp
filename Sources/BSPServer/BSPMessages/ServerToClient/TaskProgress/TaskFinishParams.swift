@@ -4,9 +4,9 @@ import Foundation
 public struct TaskFinishParams: Codable, Sendable {
     public static let method = "build/taskFinish"
 
-    public let taskId: String
+    public let taskId: TaskIdentifier
     public let originId: String?
-    public let eventTime: TimeInterval?
+    public let eventTime: Int64?
     public let message: String?
     public let status: StatusCode
     public let dataKind: TaskFinishDataKind?
@@ -15,13 +15,13 @@ public struct TaskFinishParams: Codable, Sendable {
     public init(
         taskId: String,
         originId: String? = nil,
-        eventTime: TimeInterval? = nil,
+        eventTime: Int64? = nil,
         message: String? = nil,
         status: StatusCode,
         dataKind: TaskFinishDataKind? = nil,
         data: Data? = nil
     ) {
-        self.taskId = taskId
+        self.taskId = TaskIdentifier(id: taskId)
         self.originId = originId
         self.eventTime = eventTime
         self.message = message

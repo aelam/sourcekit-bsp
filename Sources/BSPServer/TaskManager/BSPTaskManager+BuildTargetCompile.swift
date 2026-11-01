@@ -1,24 +1,15 @@
-//
-//  BSPTaskManager+BuildTargetCompile.swift
-//
-//  Copyright © 2024 Wang Lun.
-//
-
 import BuildServerProtocol
 import Foundation
-import JSONRPCConnection
 
 public extension BSPTaskManager {
-    /// Execute build with progress parsed from xcodebuild output
     func executeCompileWithProgress(
         using projectManager: any ProjectManager,
         targets: [BSPBuildTargetIdentifier],
         originId: String? = nil,
         arguments: [String]? = nil
     ) async throws -> StatusCode {
-        let targetNames = targets.map(\.uri.stringValue).joined(separator: ", ")
-
-        return try await executeWithProgress(originId: originId, message: "Compile targets: \(targetNames)") { log in
+        let context = await BuildOutputContext.load(using: projectManager, targets: targets)
+        return try await executeWithProgress(originId: originId, message: "Compile targets", context: context) { log in
             try await projectManager.startBuild(targetIdentifiers: targets, arguments: arguments, logHandler: log)
         }
     }
@@ -26,54 +17,51 @@ public extension BSPTaskManager {
     internal func executeWithProgress(
         originId: String?,
         message: String,
+        context: BuildOutputContext = BuildOutputContext(),
         operation: @Sendable (@escaping @Sendable (String) -> Void) async throws -> StatusCode
     ) async throws -> StatusCode {
-        let task = try await startTask(
-            originId: originId,
-            message: message
-        )
+        try await executeTask(originId: originId, message: message, context: context) { log in
+            let status = try await operation(log)
+            return (status, status)
+        }
+    }
 
-        let taskId = task.taskId
-
-        // Batch build output and stream it to the client via `build/logMessage`
-        // on a ~100ms cadence (see BuildLogBatcher: we don't send per line, to
-        // avoid head-of-line contention with normal BSP traffic on stdout).
+    internal func executeTask<Result: Sendable>(
+        originId: String?,
+        message: String,
+        context: BuildOutputContext,
+        operation: @Sendable (@escaping @Sendable (String) -> Void) async throws -> (Result, StatusCode)
+    ) async throws -> Result {
+        let task = try await startTask(originId: originId, message: message)
+        let reporter = BuildOutputReporter(manager: self, task: task, context: context)
+        await reporter.start(context: context)
         let batcher = BuildLogBatcher()
-        let sendBatch: @Sendable ([String])
-            async -> Void = { [weak self] lines in
-                guard let self, !lines.isEmpty else { return }
-                try? await self.notificationService?.sendNotification(ServerJSONRPCNotification(
-                    method: "build/logMessage",
-                    params: BuildLogMessageParams(originId: originId, message: lines.joined(separator: "\n"))
-                ))
-            }
         let flusher = Task {
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 100_000_000)
-                await sendBatch(batcher.drain())
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { break }
+                await reporter.consume(batcher.drain())
             }
         }
         func stopStreaming() async {
             flusher.cancel()
             await flusher.value
-            await sendBatch(batcher.drain()) // flush the remainder
+            await reporter.consume(batcher.drain())
+            await reporter.finish()
         }
-
         do {
-            let status = try await operation { batcher.append($0) }
+            let (result, status) = try await operation { batcher.append($0) }
             try Task.checkCancellation()
             await stopStreaming()
             try await finishTask(
-                taskId: taskId,
+                taskId: task.taskId,
                 status: status,
                 message: status == .ok ? "Task completed successfully" : "Task completed with errors"
             )
-
-            return status
+            return result
         } catch {
             await stopStreaming()
             try await finishTask(
-                taskId: taskId,
+                taskId: task.taskId,
                 status: error is CancellationError ? .cancelled : .error,
                 message: error is CancellationError ? "Task cancelled" : "Task failed: \(error.localizedDescription)"
             )

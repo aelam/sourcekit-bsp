@@ -14,7 +14,10 @@ extension BSPServerService {
             throw BuildServerError.invalidConfiguration("Project not initialized")
         }
 
-        return try await getTaskManager().executeWithProgress(originId: originId, message: "Run tests") { log in
+        let context = await BuildOutputContext.load(using: projectManager, targets: targetIdentifiers)
+        return try await getTaskManager().executeWithProgress(
+            originId: originId, message: "Run tests", context: context
+        ) { log in
             try await projectManager.test(
                 targetIdentifiers: targetIdentifiers,
                 arguments: arguments,
