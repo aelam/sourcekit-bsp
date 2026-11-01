@@ -26,7 +26,7 @@
 
 **Modify:**
 - `Sources/BuildServerProtocol/ProjectManager/ProjectManager.swift` — add `startDebugSession` protocol requirement.
-- `Sources/SwiftPMProjectManagerProvider/SwiftPMProjectManagerProvider.swift` (or its `ProjectManager` conformance file) — stub throwing `.notImplemented`.
+  (No SwiftPM change — it has no `ProjectManager` conformer; `XcodeProjectManager` is the only one.)
 - `Sources/BSPServer/BSPMessageRegistry.swift` — register `DebugSessionStartRequest`.
 - `Sources-MacOS/XcodeProjectManagement/AppInstaller/AppInstaller.swift` — add a wait-for-debugger simulator launch returning a PID.
 
@@ -82,18 +82,9 @@ In `Sources/BuildServerProtocol/ProjectManager/ProjectManager.swift`, add to the
     ) async throws -> DebugSessionConnection
 ```
 
-- [ ] **Step 3: Stub it in the SwiftPM provider**
+- [ ] **Step 3: (No SwiftPM stub needed — confirmed)**
 
-In the SwiftPM provider's `ProjectManager` conformance (same file/extension as its other `throw ... .notImplemented` methods), add:
-
-```swift
-    public func startDebugSession(
-        targetIdentifiers: [BSPBuildTargetIdentifier],
-        arguments: [String]?
-    ) async throws -> DebugSessionConnection {
-        throw SwiftPMProjectManagerProviderError.notImplemented
-    }
-```
+The SwiftPM provider has **no** concrete `ProjectManager` conformer: `SwiftPMProjectManagerProvider` conforms only to the factory protocol `ProjectManagerProvider`, and its `createProjectManager` throws `.notImplemented` (returns no manager). `XcodeProjectManager` is the **only** type conforming to `ProjectManager`. So adding the requirement needs only the Xcode-side stub in the next step — do not touch `Sources/SwiftPMProjectManagerProvider`.
 
 - [ ] **Step 4: Add a throwing stub in the Xcode provider (keeps the build green until Task 6)**
 
@@ -126,8 +117,8 @@ Expected: PASS (both providers now satisfy the protocol; Xcode side is a stub).
 - [ ] **Step 6: Commit**
 
 ```bash
-git add Sources/BuildServerProtocol Sources/SwiftPMProjectManagerProvider Sources-MacOS/XcodeProjectManagerProvider/XcodeProjectManager+DebugSession.swift
-git commit -m "feat(debug): add DebugSessionConnection + ProjectManager.startDebugSession requirement (+ stubs)"
+git add Sources/BuildServerProtocol Sources-MacOS/XcodeProjectManagerProvider/XcodeProjectManager+DebugSession.swift
+git commit -m "feat(debug): add DebugSessionConnection + ProjectManager.startDebugSession requirement (+ Xcode stub)"
 ```
 
 ---

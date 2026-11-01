@@ -17,6 +17,7 @@ private let requestTypes: [any RequestType.Type] = [
     BuildTargetCompileRequest.self, // buildTarget/compile
     BuildTargetRunRequest.self, // buildTarget/run
     BuildTargetTestRequest.self, // buildTarget/test
+    BuildTargetCleanCacheRequest.self, // buildTarget/cleanCache
     BuildTargetOutputPathsRequest.self, // buildTarget/outputPaths
 
     // debugSession

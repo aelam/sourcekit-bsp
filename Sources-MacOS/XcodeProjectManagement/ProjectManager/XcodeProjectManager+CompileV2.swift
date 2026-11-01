@@ -26,7 +26,7 @@ public extension XcodeProjectManager {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
-        process.launch()
+        try process.run()
 
         let effectiveHandler = outputHandler ?? DefaultOutputHandler()
 
@@ -69,7 +69,8 @@ public extension XcodeProjectManager {
             return 1
         }
 
-        let scheme = findOrCreateScheme(for: xcodeTarget, in: xcodeProjectBaseInfo.schemes)
+        let projectBuildConfiguration = try buildConfiguration(for: xcodeTarget)
+        let arguments = buildArguments(for: xcodeTarget, configuration: configuration, arguments: arguments)
 
         let buildAction: XcodeBuildCommand.BuildAction = xcodeTarget.xcodeProductType.isTestBundle ?
             .buildForTesting : .build
@@ -78,26 +79,13 @@ public extension XcodeProjectManager {
                 action: buildAction,
                 sdk: nil,
                 destination: nil,
-                configuration: configuration,
+                configuration: nil,
                 derivedDataPath: nil,
                 resultBundlePath: nil
             ),
             flags: XcodeBuildFlags(),
-            customFlags: arguments ?? []
+            customFlags: arguments
         )
-
-        let projectBuildConfiguration: XcodeProjectConfiguration = switch xcodeProjectBaseInfo.projectLocation {
-        case let .explicitWorkspace(url):
-            .workspace(
-                workspaceURL: url,
-                scheme: scheme.name
-            )
-        case let .implicitWorkspace(projectURL: url, workspaceURL: _), let .standaloneProject(url: url):
-            .project(
-                projectURL: url,
-                buildMode: .scheme(targetIdentifier.targetName)
-            )
-        }
 
         let commandBuilder = XcodeBuildCommandBuilder()
         let command = commandBuilder.buildCommand(
@@ -109,5 +97,68 @@ public extension XcodeProjectManager {
             command: command,
             outputHandler: outputHandler
         )
+    }
+
+    internal func resolvedBuildSettings(
+        for target: XcodeTarget,
+        arguments: [String]?
+    ) async throws -> [String: String] {
+        let settings = try await settingsLoader.loadBuildSettings(
+            rootURL: rootURL,
+            project: buildConfiguration(for: target),
+            sdk: nil,
+            configuration: nil,
+            customFlags: buildArguments(for: target, configuration: nil, arguments: arguments)
+        )
+        guard let buildSettings = settings.first(where: { $0.target == target.name })?.buildSettings else {
+            throw XcodeProjectError.buildSettingsNotFound
+        }
+        return buildSettings
+    }
+
+    internal func buildConfiguration(for target: XcodeTarget) throws -> XcodeProjectConfiguration {
+        guard let base = xcodeProjectBaseInfo else {
+            throw XcodeProjectError.invalidConfig("Project not initialized")
+        }
+        let scheme = try findOrCreateScheme(for: target, in: base.schemes)
+        return switch base.projectLocation {
+        case let .explicitWorkspace(url):
+            .workspace(
+                workspaceURL: url,
+                scheme: scheme.name
+            )
+        case let .implicitWorkspace(projectURL: url, workspaceURL: _), let .standaloneProject(url: url):
+            .project(
+                projectURL: url,
+                buildMode: .scheme(scheme.name)
+            )
+        }
+    }
+
+    internal func buildArguments(
+        for target: XcodeTarget,
+        configuration: String?,
+        arguments: [String]?
+    ) -> [String] {
+        var result = arguments ?? []
+        if !result.contains("-configuration") {
+            result += ["-configuration", configuration ?? xcodeProjectBaseInfo?.configuration ?? "Debug"]
+        }
+        if !result.contains("-destination"), !result.contains("-sdk") {
+            let platform = target.xcodeTargetPlatform.simulatorVariant
+            let destination = switch platform {
+            case .macOS: "platform=macOS"
+            case .iOSSimulator: "generic/platform=iOS Simulator"
+            case .watchSimulator: "generic/platform=watchOS Simulator"
+            case .tvSimulator: "generic/platform=tvOS Simulator"
+            case .visionSimulator: "generic/platform=visionOS Simulator"
+            default: "generic/platform=iOS Simulator"
+            }
+            result += ["-destination", destination]
+        }
+        if !result.contains("-derivedDataPath"), let base = xcodeProjectBaseInfo {
+            result += ["-derivedDataPath", base.xcodeGlobalSettings.derivedDataPath.path]
+        }
+        return result
     }
 }

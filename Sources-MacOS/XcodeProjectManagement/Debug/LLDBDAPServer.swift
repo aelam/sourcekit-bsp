@@ -29,29 +29,39 @@ public enum LLDBDAPError: Error, LocalizedError {
 /// teardown closure. lldb-dap is long-lived, so we spawn it with `Process` and
 /// do NOT wait for it to exit.
 public struct LLDBDAPServer: DebugAdapterServing {
-    public init() {}
+    private let developerDirectory: URL?
+
+    public init(developerDirectory: URL? = nil) {
+        self.developerDirectory = developerDirectory
+    }
 
     public func start() async throws -> DebugAdapterEndpoint {
-        let lldbDAPPath = try Self.locateLLDBDAP()
+        let lldbDAPPath = try Self.locateLLDBDAP(developerDirectory: developerDirectory)
         let port = try Self.reserveFreePort()
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: lldbDAPPath)
         process.arguments = ["--connection", "listen://127.0.0.1:\(port)"]
+        if let developerDirectory {
+            var environment = ProcessInfo.processInfo.environment
+            environment["DEVELOPER_DIR"] = developerDirectory.path
+            process.environment = environment
+        }
         // Long-lived: do NOT wait for exit. Detach stdin so it doesn't touch ours.
         process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
         do {
             try process.run()
         } catch {
             throw LLDBDAPError.failedToStart(error.localizedDescription)
         }
 
-        // Block until lldb-dap is actually accepting connections. Without this
-        // we return the tcp:// URI before the listen socket is bound; the client
-        // (VS Code) then connects too early, gets ECONNREFUSED, and the debug
-        // session dies silently — leaving a `--wait-for-debugger` app suspended
-        // forever with no visible session in the editor.
-        try Self.waitUntilListening(port: port, process: process, timeout: 10)
+        do {
+            try await Self.waitUntilListening(port: port, process: process, timeout: 10)
+        } catch {
+            if process.isRunning { process.terminate() }
+            throw error
+        }
         logger.info("lldb-dap listening on tcp://127.0.0.1:\(port) (pid \(process.processIdentifier))")
 
         return DebugAdapterEndpoint(
@@ -60,23 +70,21 @@ public struct LLDBDAPServer: DebugAdapterServing {
         )
     }
 
-    /// Poll-connect to 127.0.0.1:<port> until lldb-dap accepts, the process
-    /// exits, or the timeout elapses. Retries every 50ms.
-    static func waitUntilListening(port: Int, process: Process, timeout: TimeInterval) throws {
+    /// Check the bound port without consuming the adapter's only client connection.
+    static func waitUntilListening(port: Int, process: Process, timeout: TimeInterval) async throws {
         let deadline = Date(timeIntervalSinceNow: timeout)
         while Date() < deadline {
             guard process.isRunning else {
                 throw LLDBDAPError
                     .failedToStart("lldb-dap exited before listening (status \(process.terminationStatus))")
             }
-            if canConnect(port: port) { return }
-            Thread.sleep(forTimeInterval: 0.05)
+            if isPortBound(port: port) { return }
+            try await Task.sleep(for: .milliseconds(50))
         }
         throw LLDBDAPError.failedToStart("lldb-dap did not start listening on port \(port) within \(Int(timeout))s")
     }
 
-    /// One connect() attempt to the loopback port; true if the socket accepts.
-    private static func canConnect(port: Int) -> Bool {
+    private static func isPortBound(port: Int) -> Bool {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { return false }
         defer { close(fd) }
@@ -87,21 +95,30 @@ public struct LLDBDAPServer: DebugAdapterServing {
         addr.sin_port = in_port_t(UInt16(port)).bigEndian
         let result = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Foundation.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                Foundation.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
             }
         }
-        return result == 0
+        return result == -1 && errno == EADDRINUSE
     }
 
     /// `xcrun --find lldb-dap`.
-    static func locateLLDBDAP() throws -> String {
+    static func locateLLDBDAP(developerDirectory: URL? = nil) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
         process.arguments = ["--find", "lldb-dap"]
+        if let developerDirectory {
+            var environment = ProcessInfo.processInfo.environment
+            environment["DEVELOPER_DIR"] = developerDirectory.path
+            process.environment = environment
+        }
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
-        try? process.run()
+        do {
+            try process.run()
+        } catch {
+            throw LLDBDAPError.notFound
+        }
         process.waitUntilExit()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

@@ -8,11 +8,10 @@ extension XcodeProjectManager {
         for target: XcodeTarget,
         in schemes: [XcodeScheme],
         buildConfiguration: String = "Debug"
-    ) -> XcodeScheme {
+    ) throws -> XcodeScheme {
         if target.xcodeProductType.isTestBundle {
             let scheme = schemes.first { scheme in
                 scheme.primaryBuildTargetProjectURL == target.projectURL &&
-                    scheme.buildConfiguration == buildConfiguration &&
                     (scheme.primaryProductName == target.productNameWithExtension ||
                         scheme.primaryTarget == target.productName
                     )
@@ -25,7 +24,6 @@ extension XcodeProjectManager {
 
         let scheme = schemes.first { scheme in
             scheme.primaryBuildTargetProjectURL == target.projectURL &&
-                scheme.buildConfiguration == buildConfiguration &&
                 (scheme.primaryProductName == target.productNameWithExtension ||
                     scheme.primaryTarget == target.productName
                 )
@@ -35,7 +33,7 @@ extension XcodeProjectManager {
             return scheme
         }
 
-        return createScheme(
+        return try createScheme(
             for: target,
             buildConfiguration: buildConfiguration
         )
@@ -54,14 +52,18 @@ extension XcodeProjectManager {
     private func createScheme(
         for xcodeTarget: XcodeTarget,
         buildConfiguration: String
-    ) -> XcodeScheme {
-        let schemeName = xcodeTarget.name
+    ) throws -> XcodeScheme {
+        guard let nativeTarget = loadXcodeProjCache(projectURL: xcodeTarget.projectURL)?
+            .pbxproj.nativeTargets.first(where: { $0.name == xcodeTarget.name }) else {
+            throw XcodeProjectError.invalidConfig("Target not found: \(xcodeTarget.name)")
+        }
+        let schemeName = "sourcekit-bsp-\(xcodeTarget.name)"
         let xcscheme = XCScheme(name: schemeName, lastUpgradeVersion: nil, version: "1.7")
 
         // Create BuildAction with the target
         let buildableReference = XCScheme.BuildableReference(
             referencedContainer: "container:\(xcodeTarget.projectURL.lastPathComponent)",
-            blueprintIdentifier: xcodeTarget.targetIdentifier.rawValue,
+            blueprintIdentifier: nativeTarget.uuid,
             buildableName: xcodeTarget.productNameWithExtension ?? xcodeTarget.name,
             blueprintName: xcodeTarget.name
         )
@@ -150,7 +152,7 @@ extension XcodeProjectManager {
         )
 
         // Write scheme to file
-        let schemeURL = writeSchemeToFile(xcscheme: xcscheme, for: xcodeTarget)
+        let schemeURL = try writeSchemeToFile(xcscheme: xcscheme, for: xcodeTarget)
 
         // Create XcodeScheme wrapper
         return XcodeScheme(
@@ -162,25 +164,17 @@ extension XcodeProjectManager {
         )
     }
 
-    private func writeSchemeToFile(xcscheme: XCScheme, for xcodeTarget: XcodeTarget) -> URL {
+    private func writeSchemeToFile(xcscheme: XCScheme, for xcodeTarget: XcodeTarget) throws -> URL {
         let projectURL = xcodeTarget.projectURL
         let schemesDir = projectURL.appendingPathComponent("xcshareddata/xcschemes")
 
         // Create schemes directory if it doesn't exist
-        do {
-            try FileManager.default.createDirectory(at: schemesDir, withIntermediateDirectories: true)
-        } catch {
-            logger.error("Failed to create schemes directory: \(error)")
-        }
+        try FileManager.default.createDirectory(at: schemesDir, withIntermediateDirectories: true)
 
         let schemeURL = schemesDir.appendingPathComponent("\(xcscheme.name).xcscheme")
 
-        do {
-            try xcscheme.write(path: .init(schemeURL.path), override: true)
-            logger.info("Created scheme file at: \(schemeURL.path)")
-        } catch {
-            logger.error("Failed to write scheme file: \(error)")
-        }
+        try xcscheme.write(path: .init(schemeURL.path), override: true)
+        logger.info("Created scheme file at: \(schemeURL.path)")
 
         return schemeURL
     }

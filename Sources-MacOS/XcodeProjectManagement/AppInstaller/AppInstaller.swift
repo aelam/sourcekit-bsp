@@ -37,11 +37,25 @@ struct SimulatorInstaller: AppInstaller {
             arguments: ["simctl", "boot", deviceID],
             timeout: 90
         )
-        return try await executor.execute(
+        let bootStatus = try await executor.execute(
+            executable: "/usr/bin/xcrun",
+            arguments: ["simctl", "bootstatus", deviceID, "-b"],
+            timeout: 90
+        )
+        guard bootStatus.isSuccess else {
+            throw XcodeRunError.failedToLaunchApp(bootStatus.error ?? bootStatus.output)
+        }
+        let result = try await executor.execute(
             executable: "/usr/bin/xcrun",
             arguments: ["simctl", "install", deviceID, appPath],
             timeout: 120
         )
+        guard result.isSuccess else {
+            throw XcodeRunError.failedToLaunchApp(
+                "simctl install failed (exit \(result.exitCode)): \(result.error ?? result.output)"
+            )
+        }
+        return result
     }
 }
 
@@ -81,10 +95,7 @@ public struct SimulatorDebugLauncher: WaitForDebuggerLaunching {
             arguments: ["simctl", "boot", deviceID]
         )
 
-        // Read stdout synchronously to EOF so we reliably capture the
-        // "<bundleId>: <pid>" line. (ProcessExecutor.execute accumulates output
-        // via detached tasks and may return before they run, which would make
-        // PID parsing intermittently fail.)
+        // Read stdout to EOF before parsing the launched process ID.
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
         process.arguments = ["simctl", "launch", "--wait-for-debugger", deviceID, appIdentifier]

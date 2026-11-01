@@ -23,6 +23,8 @@ public enum DebugSessionError: Error, LocalizedError {
     case missingSimulatorUDID
     case unresolvedPlatform
     case unsupportedPlatform(Platform)
+    case unsupportedProduct(String)
+    case productNotFound(String)
 
     public var errorDescription: String? {
         switch self {
@@ -31,6 +33,8 @@ public enum DebugSessionError: Error, LocalizedError {
         case .missingSimulatorUDID: "No simulator destination selected"
         case .unresolvedPlatform: "Could not resolve the target's platform (PLATFORM_NAME)"
         case let .unsupportedPlatform(p): "Debugging is not supported for platform \(p.rawValue)"
+        case let .unsupportedProduct(name): "Debugging requires an application target: \(name)"
+        case let .productNotFound(path): "Build product not found: \(path)"
         }
     }
 }
@@ -62,11 +66,20 @@ public actor DebugSessionManager {
 
     /// Product → connection. Assumes the build already succeeded.
     func makeConnection(for product: DebugProduct) async throws -> DebugSessionConnection {
+        try product.validate()
         let endpoint = try await adapter.start()
-        liveEndpoints.append(endpoint)
+        var succeeded = false
+        defer {
+            if succeeded {
+                liveEndpoints.append(endpoint)
+            } else {
+                endpoint.terminate()
+            }
+        }
 
         switch product.platform {
         case .macOS:
+            succeeded = true
             return DebugSessionConnection(
                 uri: endpoint.uri, request: .launch,
                 program: product.binaryPath, pid: nil, bundleId: product.bundleId
@@ -77,6 +90,7 @@ public actor DebugSessionManager {
             let pid = try await simulatorLauncher.launchWaitingForDebugger(
                 deviceID: udid, appIdentifier: bundleId
             )
+            succeeded = true
             return DebugSessionConnection(
                 uri: endpoint.uri, request: .attach,
                 program: nil, pid: pid, bundleId: bundleId
@@ -92,5 +106,21 @@ public actor DebugSessionManager {
             endpoint.terminate()
         }
         liveEndpoints.removeAll()
+    }
+}
+
+extension DebugProduct {
+    func validate() throws {
+        switch platform {
+        case .macOS:
+            break
+        case .iOSSimulator, .watchSimulator, .tvSimulator, .visionSimulator:
+            guard let simulatorUDID, !simulatorUDID.isEmpty else {
+                throw DebugSessionError.missingSimulatorUDID
+            }
+            guard let bundleId, !bundleId.isEmpty else { throw DebugSessionError.missingBundleId }
+        default:
+            throw DebugSessionError.unsupportedPlatform(platform)
+        }
     }
 }

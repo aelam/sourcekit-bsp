@@ -36,13 +36,24 @@ public struct BuildTargetOutputPathsRequest: ContextualRequestType, Sendable {
         contextualHandler: Handler,
         id: RequestID
     ) async -> ResponseType? where Handler.Context == BSPServerService {
-        await contextualHandler.withContext { _ in
+        await contextualHandler.withContext { context in
             logger.debug("get outputs of targets: \(params.targets)")
-            return BuildTargetOutputPathsResponse(
-                jsonrpc: jsonrpc,
-                id: id,
-                result: BuildTargetOutputPathsResult(items: [])
-            )
+            do {
+                let items = try await context.outputPaths(for: params.targets)
+                return BuildTargetOutputPathsResponse(
+                    jsonrpc: jsonrpc,
+                    id: id,
+                    result: BuildTargetOutputPathsResult(items: items)
+                )
+            } catch {
+                return JSONRPCErrorResponse(
+                    id: id,
+                    error: JSONRPCError(
+                        code: -32603,
+                        message: "failed to get output paths: \(error)"
+                    )
+                )
+            }
         }
     }
 }
@@ -75,9 +86,19 @@ public struct BuildTargetOutputPathsResult: Codable, Hashable, Sendable {
         public struct OutputPathItem: Codable, Hashable, Sendable {
             public let uri: URI
             public let kind: OutputPathItemKind
+
+            public init(uri: URI, kind: OutputPathItemKind) {
+                self.uri = uri
+                self.kind = kind
+            }
         }
 
         public let target: BSPBuildTargetIdentifier
         public let outputPaths: [OutputPathItem]
+
+        public init(target: BSPBuildTargetIdentifier, outputPaths: [OutputPathItem]) {
+            self.target = target
+            self.outputPaths = outputPaths
+        }
     }
 }

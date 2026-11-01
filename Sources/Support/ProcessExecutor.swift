@@ -24,7 +24,7 @@ public struct ProcessExecutionResult: Sendable {
 }
 
 /// Progress callback for real-time process output
-typealias ProcessProgress = @Sendable (ProcessProgressEvent) -> Void
+typealias ProcessProgress = @Sendable (ProcessProgressEvent) async -> Void
 
 /// Events that can be reported during process execution
 enum ProcessProgressEvent {
@@ -119,9 +119,7 @@ public actor ProcessExecutor {
             environment: environment,
             timeout: timeout
         ) { event in
-            Task {
-                await result.append(event: event)
-            }
+            await result.append(event: event)
         }
 
         return await result.getResult(exitCode: exitCode)
@@ -238,7 +236,7 @@ public actor ProcessExecutor {
 
         await StreamingFileHandleReader.streamPipe(fileHandle) { line in
             let event: ProcessProgressEvent = isError ? .errorLine(line + "\n") : .outputLine(line + "\n")
-            progress?(event)
+            await progress?(event)
             logger.debug("Finished reading from \(isError ? "error" : "output") pipe")
         }
     }

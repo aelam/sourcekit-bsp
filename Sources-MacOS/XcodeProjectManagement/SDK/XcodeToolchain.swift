@@ -250,7 +250,7 @@ public actor XcodeToolchain {
         }
 
         // 3. Prefer the active Xcode installation
-        if let activeInstallation = availableInstallations.first {
+        if let activeInstallation = availableInstallations.first(where: { $0.isXcodeSelectedVersion }) {
             selectedInstallation = activeInstallation
             return
         }
@@ -306,7 +306,8 @@ public actor XcodeToolchain {
                 .contains { $0.path.path == xcodeURL.path }
             if !alreadyFound, let installation = try? await createInstallation(
                 from: xcodeURL,
-                isDeveloperDirVersion: false
+                isDeveloperDirVersion: false,
+                isXcodeSelectedVersion: true
             ) {
                 installations.append(installation)
             }
@@ -367,7 +368,12 @@ public actor XcodeToolchain {
                 }
             }.values
 
-        return Array(uniqueInstallations)
+        return uniqueInstallations.sorted {
+            let comparison = $0.version.compare($1.version, options: .numeric)
+            return comparison == .orderedSame
+                ? $0.path.path < $1.path.path
+                : comparison == .orderedDescending
+        }
     }
 }
 
@@ -419,9 +425,8 @@ private enum XcodePathResolver {
         let components = output.split(separator: "/")
         if let appIndex = components
             .firstIndex(where: { $0.hasSuffix(".app") }) {
-            let appPath = "/" + components[1 ... appIndex]
+            return "/" + components[1 ... appIndex]
                 .joined(separator: "/")
-            return appPath
         }
 
         return nil

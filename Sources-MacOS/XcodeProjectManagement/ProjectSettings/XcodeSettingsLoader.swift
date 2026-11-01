@@ -26,7 +26,9 @@ public actor XcodeSettingsLoader {
             workingDirectory: workingDirectory
         )
 
-        // 返回空字符串时返回nil
+        guard result.exitCode == 0 else {
+            throw XcodeProjectError.invalidConfig(result.error ?? result.output)
+        }
         return result.output.isEmpty ? nil : result.output
     }
 }

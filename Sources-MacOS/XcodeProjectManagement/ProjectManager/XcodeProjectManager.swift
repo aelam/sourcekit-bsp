@@ -58,6 +58,7 @@ public actor XcodeProjectManager {
     let settingsLoader: XcodeSettingsLoader
     let schemeLoader: XCSchemeLoader
     let destinationLoader = XcodeDestinationLoader()
+    var debugSessionManager: DebugSessionManager?
 
     private let xcodeProjectReference: XcodeProjectReference?
     public private(set) var xcodeProjectBaseInfo: XcodeProjectBaseInfo?

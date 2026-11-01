@@ -18,6 +18,8 @@ public protocol ProjectManager: AnyObject, Sendable {
 
     func initialize() async throws
 
+    func shutdown() async
+
     /// workspace/buildTargets
     func getTargetList(
         resolveSourceFiles: Bool,
@@ -61,6 +63,10 @@ public protocol ProjectManager: AnyObject, Sendable {
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?
     ) async throws -> DebugSessionConnection
+}
+
+public extension ProjectManager {
+    func shutdown() async {}
 }
 
 public struct ProjectInfo: Sendable {

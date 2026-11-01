@@ -33,4 +33,67 @@ extension BSPServerService {
 
         await projectManager.buildIndex(for: targets)
     }
+
+    func outputPaths(
+        for targets: [BSPBuildTargetIdentifier]
+    ) async throws -> [BuildTargetOutputPathsResult.OutputPathsItem] {
+        guard let projectManager else {
+            throw BuildServerError.invalidConfiguration("Project not initialized")
+        }
+        guard let projectInfo = await projectManager.projectInfo else {
+            throw BuildServerError.invalidConfiguration("Project info not initialized")
+        }
+
+        let productsDirectory = projectInfo.derivedDataPath.appendingPathComponent(
+            "Build/Products",
+            isDirectory: true
+        )
+        let outputPath = BuildTargetOutputPathsResult.OutputPathsItem.OutputPathItem(
+            uri: URI(productsDirectory),
+            kind: .directory
+        )
+
+        return targets.map { target in
+            BuildTargetOutputPathsResult.OutputPathsItem(
+                target: target,
+                outputPaths: [outputPath]
+            )
+        }
+    }
+
+    func cleanBuildTargetCaches(
+        targets _: [BSPBuildTargetIdentifier]
+    ) async throws -> BuildTargetCleanCacheResult {
+        guard let projectManager else {
+            throw BuildServerError.invalidConfiguration("Project not initialized")
+        }
+        guard let projectInfo = await projectManager.projectInfo else {
+            throw BuildServerError.invalidConfiguration("Project info not initialized")
+        }
+
+        let paths = [
+            projectInfo.indexStoreURL,
+            projectInfo.indexDatabaseURL,
+            projectInfo.derivedDataPath.appendingPathComponent(
+                "Build/Intermediates.noindex",
+                isDirectory: true
+            ),
+            projectInfo.derivedDataPath.deletingLastPathComponent().appendingPathComponent(
+                "ModuleCache.noindex",
+                isDirectory: true
+            ),
+        ]
+
+        let fileManager = FileManager.default
+        var removedCount = 0
+        for path in paths where fileManager.fileExists(atPath: path.path) {
+            try fileManager.removeItem(at: path)
+            removedCount += 1
+        }
+
+        return BuildTargetCleanCacheResult(
+            message: "Removed \(removedCount) cache path(s)",
+            cleaned: true
+        )
+    }
 }

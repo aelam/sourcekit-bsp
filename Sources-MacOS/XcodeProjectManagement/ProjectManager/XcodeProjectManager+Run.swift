@@ -4,17 +4,28 @@ import PathKit
 import Support
 import XcodeProj
 
-enum XcodeRunError: Error {
+enum XcodeRunError: Error, LocalizedError {
     case projectNotLoaded
     case appNotFound(String)
     case simulatorNotFound(String)
     case deviceNotFound(String)
     case failedToLaunchApp(String)
     case cancelled
+
+    var errorDescription: String? {
+        switch self {
+        case .projectNotLoaded: "Project not loaded"
+        case let .appNotFound(path): "App not found: \(path)"
+        case let .simulatorNotFound(id): "Simulator not found: \(id)"
+        case let .deviceNotFound(id): "Device not found: \(id)"
+        case let .failedToLaunchApp(message): message
+        case .cancelled: "Launch cancelled"
+        }
+    }
 }
 
-public struct XcodeRunResult {
-    public enum StatusCode: Int {
+public struct XcodeRunResult: Sendable {
+    public enum StatusCode: Int, Sendable {
         case success = 0
         case error = 1
     }
@@ -34,22 +45,17 @@ extension XcodeProjectManager {
         guard
             let xcodeProjectBaseInfo,
             let target = xcodeProjectBaseInfo.xcodeTargets
-            .first(where: { $0.targetIdentifier == xcodeTargetIdentifier }),
-            let xcodeProj = loadXcodeProjCache(projectURL: URL(fileURLWithPath: xcodeTargetIdentifier.projectFilePath))
+            .first(where: { $0.targetIdentifier == xcodeTargetIdentifier })
         else {
             return XcodeRunResult(statusCode: .error, message: "Project not loaded")
         }
-        let configuration = getConfiguration(from: arguments)
+        guard target.xcodeProductType.isApplication else {
+            return XcodeRunResult(statusCode: .error, message: "Running requires an application target: \(target.name)")
+        }
 
         let buildSettings: [String: String]
         do {
-            buildSettings = try BuildSettingResolver(
-                xcodeInstallation: xcodeProjectBaseInfo.xcodeInstallation,
-                xcodeGlobalSettings: xcodeProjectBaseInfo.xcodeGlobalSettings,
-                xcodeProj: xcodeProj,
-                target: xcodeTargetIdentifier.targetName,
-                configuration: configuration
-            ).resolvedBuildSettings
+            buildSettings = try await resolvedBuildSettings(for: target, arguments: arguments)
         } catch {
             return XcodeRunResult(
                 statusCode: .error,
@@ -68,7 +74,6 @@ extension XcodeProjectManager {
             return XcodeRunResult(statusCode: .error, message: "Bundle identifier not found in build settings")
         }
 
-        logger.info("Build settings loaded., \(buildSettings)")
         guard let binaryPath = getOutputPath(
             buildSettings: buildSettings,
             productType: target.xcodeProductType,
@@ -80,6 +85,12 @@ extension XcodeProjectManager {
             )
         }
         logger.info("Binary path: \(binaryPath)")
+        guard FileManager.default.fileExists(atPath: binaryPath) else {
+            return XcodeRunResult(
+                statusCode: .error,
+                message: "Build product not found: \(binaryPath). Compile this target with the same configuration and destination first."
+            )
+        }
         if sdk == .macOS {
             logger.info("Running on macOS")
             do {
@@ -96,7 +107,7 @@ extension XcodeProjectManager {
             }
         }
 
-        guard let destinationID = getDestination(from: arguments) else {
+        guard let destinationID = getDestination(from: arguments, buildSettings: buildSettings) else {
             return XcodeRunResult(
                 statusCode: .error,
                 message: "Destination ID not found. Please specify -destination id=XXXX in arguments"
@@ -146,6 +157,11 @@ extension XcodeProjectManager {
         productType: XcodeProductType,
         isMacApp: Bool = true
     ) -> String? {
+        if let buildDir = buildSettings["TARGET_BUILD_DIR"],
+           let productPath = buildSettings[isMacApp ? "EXECUTABLE_PATH" : "FULL_PRODUCT_NAME"],
+           !productPath.isEmpty {
+            return URL(fileURLWithPath: buildDir).appendingPathComponent(productPath).path
+        }
         guard
             let buildDir = buildSettings["CONFIGURATION_BUILD_DIR"],
             let productName = buildSettings["PRODUCT_NAME"]
@@ -177,29 +193,20 @@ extension XcodeProjectManager {
         return components.joined(separator: "/")
     }
 
-    private func getConfiguration(from arguments: [String]?) -> String {
-        if let arguments,
-           let index = arguments.firstIndex(of: "-configuration"),
-           index < arguments.count - 1 {
-            arguments[index + 1]
-        } else if let configuration = xcodeProjectBaseInfo?.configuration {
-            configuration
-        } else {
-            "Debug"
-        }
-    }
-
-    private func getDestination(from arguments: [String]?) -> String? {
+    func getDestination(from arguments: [String]?, buildSettings: [String: String]) -> String? {
+        var destinationID = buildSettings["TARGET_DEVICE_IDENTIFIER"]
         if let arguments,
            let index = arguments.firstIndex(of: "-destination"),
            index < arguments.count - 1 {
-            let destination = arguments[index + 1]
-            if destination.starts(with: "id=") {
-                return String(destination.dropFirst(3))
+            for component in arguments[index + 1].split(separator: ",") {
+                let pair = component.split(separator: "=", maxSplits: 1).map {
+                    $0.trimmingCharacters(in: .whitespaces)
+                }
+                if pair.count == 2, pair[0] == "id" { destinationID = pair[1] }
             }
-            return nil
         }
-        return nil
+        guard let destinationID, !destinationID.isEmpty, !destinationID.contains("placeholder") else { return nil }
+        return destinationID
     }
 
     // MARK: - Run on Mac
