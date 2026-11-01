@@ -24,10 +24,10 @@ public struct ProcessExecutionResult: Sendable {
 }
 
 /// Progress callback for real-time process output
-typealias ProcessProgress = @Sendable (ProcessProgressEvent) -> Void
+typealias ProcessProgress = @Sendable (ProcessProgressEvent) async -> Void
 
 /// Events that can be reported during process execution
-enum ProcessProgressEvent: Sendable {
+enum ProcessProgressEvent {
     case outputLine(String)
     case errorLine(String)
 }
@@ -119,9 +119,7 @@ public actor ProcessExecutor {
             environment: environment,
             timeout: timeout
         ) { event in
-            Task {
-                await result.append(event: event)
-            }
+            await result.append(event: event)
         }
 
         return await result.getResult(exitCode: exitCode)
@@ -145,6 +143,13 @@ public actor ProcessExecutor {
             environment: environment
         )
 
+        let termination = AsyncStream<Int32> { continuation in
+            process.terminationHandler = { process in
+                continuation.yield(process.terminationStatus)
+                continuation.finish()
+            }
+        }
+        try Task.checkCancellation()
         // Start process
         do {
             try process.run()
@@ -152,23 +157,33 @@ public actor ProcessExecutor {
         } catch {
             throw ProcessExecutorError.processStartFailed(error.localizedDescription)
         }
+        // This task must wait for termination even when the caller cancels.
+        let exitTask = Task {
+            for await status in termination {
+                return status
+            }
+            return Int32(1)
+        }
 
         let startTime = Date()
 
         // Handle timeout if specified
         let exitCode: Int32 = if let timeout {
             try await withTimeout(timeout) {
-                try await self.streamProcessOutput(
+                await self.streamProcessOutput(
                     process: process,
+                    exitTask: exitTask,
                     progress: progress
                 )
             }
         } else {
-            try await streamProcessOutput(
+            await streamProcessOutput(
                 process: process,
+                exitTask: exitTask,
                 progress: progress
             )
         }
+        try Task.checkCancellation()
 
         logger.debug(
             "Command completed - exit code: \(exitCode), duration: \(Date().timeIntervalSince(startTime))"
@@ -183,8 +198,9 @@ public actor ProcessExecutor {
 
     private func streamProcessOutput(
         process: Process,
+        exitTask: Task<Int32, Never>,
         progress: ProcessProgress?
-    ) async throws -> Int32 {
+    ) async -> Int32 {
         guard
             let outputPipe = process.standardOutput as? Pipe,
             let errorPipe = process.standardError as? Pipe
@@ -192,31 +208,30 @@ public actor ProcessExecutor {
             return 1
         }
 
-        await withTaskGroup(of: Void.self) { group in
-            // 启动 stdout 读取任务
-            group.addTask {
-                await self.streamPipeAsync(
-                    outputPipe.fileHandleForReading,
-                    isError: false,
-                    progress: progress
-                )
-            }
+        return await withTaskCancellationHandler {
+            await withTaskGroup(of: Void.self) { group in
+                // 启动 stdout 读取任务
+                group.addTask {
+                    await self.streamPipeAsync(
+                        outputPipe.fileHandleForReading,
+                        isError: false,
+                        progress: progress
+                    )
+                }
 
-            // 启动 stderr 读取任务
-            group.addTask {
-                await self.streamPipeAsync(
-                    errorPipe.fileHandleForReading,
-                    isError: true,
-                    progress: progress
-                )
+                // 启动 stderr 读取任务
+                group.addTask {
+                    await self.streamPipeAsync(
+                        errorPipe.fileHandleForReading,
+                        isError: true,
+                        progress: progress
+                    )
+                }
             }
+            return await exitTask.value
+        } onCancel: {
+            if process.isRunning { process.terminate() }
         }
-
-        await Task {
-            process.waitUntilExit()
-        }.value
-
-        return process.terminationStatus
     }
 
     private func streamPipeAsync(
@@ -228,7 +243,7 @@ public actor ProcessExecutor {
 
         await StreamingFileHandleReader.streamPipe(fileHandle) { line in
             let event: ProcessProgressEvent = isError ? .errorLine(line + "\n") : .outputLine(line + "\n")
-            progress?(event)
+            await progress?(event)
             logger.debug("Finished reading from \(isError ? "error" : "output") pipe")
         }
     }
@@ -238,6 +253,7 @@ public actor ProcessExecutor {
         operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
+            defer { group.cancelAll() }
             group.addTask {
                 try await operation()
             }
@@ -247,9 +263,7 @@ public actor ProcessExecutor {
                 throw ProcessExecutorError.timeout(timeout)
             }
 
-            let result = try await group.next()!
-            group.cancelAll()
-            return result
+            return try await group.next()!
         }
     }
 }

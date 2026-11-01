@@ -1,7 +1,7 @@
 import Foundation
 import Logger
 
-public enum XcodeProjectError: Error, CustomStringConvertible, Equatable {
+public enum XcodeProjectError: Error, LocalizedError, CustomStringConvertible, Equatable {
     case projectNotFound
     case multipleWorkspaces([URL])
     case multipleProjectsWithoutWorkspace([URL])
@@ -13,6 +13,10 @@ public enum XcodeProjectError: Error, CustomStringConvertible, Equatable {
     case indexPathsError(String)
     case dataParsingError(String)
     case noSchemesFound(String)
+
+    public var errorDescription: String? {
+        description
+    }
 
     public var description: String {
         switch self {
@@ -104,7 +108,7 @@ public enum XcodeProjectLocation: Equatable, Sendable, Codable {
 public final class XcodeProjectLocator {
     public init() {}
 
-    // Resolve project with explicit reference
+    /// Resolve project with explicit reference
     public func resolveProjectType(
         rootURL: URL,
         xcodeProjectReference: XcodeProjectReference? = nil
@@ -150,7 +154,7 @@ public final class XcodeProjectLocator {
         return try resolveProjectTypeByAutoDiscovery(rootURL: rootURL)
     }
 
-    // Auto-discovery when no explicit configuration is provided
+    /// Auto-discovery when no explicit configuration is provided
     private func resolveProjectTypeByAutoDiscovery(rootURL: URL) throws -> XcodeProjectLocation {
         logger.debug("Auto-discovering Xcode project type at \(rootURL.path)")
         let workspaces = findAll(rootURL: rootURL, withExtension: "xcworkspace").filter { !$0.path.contains("/Pods/") }

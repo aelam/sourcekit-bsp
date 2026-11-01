@@ -1,25 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "1640"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
-      buildImplicitDependencies = "YES"
-      buildArchitectures = "Automatic">
+      buildImplicitDependencies = "YES">
+      <BuildActionEntries>
+      </BuildActionEntries>
    </BuildAction>
    <TestAction
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
-      shouldUseLaunchSchemeArgsEnv = "YES"
-      shouldAutocreateTestPlan = "YES">
+      shouldUseLaunchSchemeArgsEnv = "YES">
       <Testables>
          <TestableReference
             skipped = "NO"
-            parallelizable = "YES">
+            parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "ABFC67782E3F79F6009124B4"
+               BlueprintIdentifier = "xcode:///Users/wang.lun/Work/sourcekit-bsp/Tests-MacOS/XcodeProjectManagementTests/Resources/DemoProjects/HelloProject/Hello.xcodeproj/HelloTests"
                BuildableName = "HelloTests.xctest"
                BlueprintName = "HelloTests"
                ReferencedContainer = "container:Hello.xcodeproj">
@@ -37,6 +36,15 @@
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES">
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "xcode:///Users/wang.lun/Work/sourcekit-bsp/Tests-MacOS/XcodeProjectManagementTests/Resources/DemoProjects/HelloProject/Hello.xcodeproj/HelloTests"
+            BuildableName = "HelloTests.xctest"
+            BlueprintName = "HelloTests"
+            ReferencedContainer = "container:Hello.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -44,6 +52,15 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "xcode:///Users/wang.lun/Work/sourcekit-bsp/Tests-MacOS/XcodeProjectManagementTests/Resources/DemoProjects/HelloProject/Hello.xcodeproj/HelloTests"
+            BuildableName = "HelloTests.xctest"
+            BlueprintName = "HelloTests"
+            ReferencedContainer = "container:Hello.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
    </ProfileAction>
    <AnalyzeAction
       buildConfiguration = "Debug">

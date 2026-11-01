@@ -10,18 +10,20 @@ import JSONRPCConnection
 public final class BuildShutdownRequest: ContextualRequestType, Sendable {
     public typealias RequiredContext = BSPServerService
 
-    public static func method() -> String { "build/shutdown" }
+    public static func method() -> String {
+        "build/shutdown"
+    }
 
     public func handle<Handler: ContextualMessageHandler>(
         contextualHandler: Handler,
         id: RequestID
     ) async -> ResponseType? where Handler.Context == BSPServerService {
-        await contextualHandler.withContext { _ in
-            BuildShutdownResponse(
+        await contextualHandler.withContext { context in
+            await context.shutdownProject()
+            return BuildShutdownResponse(
                 jsonrpc: "2.0",
                 id: id,
-                message: "",
-                level: ""
+                result: .null
             )
         }
     }
@@ -31,9 +33,5 @@ struct BuildShutdownResponse: ResponseType {
     let jsonrpc: String
     let id: JSONRPCID?
 
-    /// The log message.
-    let message: String
-
-    /// The log level.
-    let level: String
+    let result: JSONValue
 }

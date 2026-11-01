@@ -25,7 +25,7 @@ extension XcodeProjectBaseInfo {
 extension XcodeTarget {
     func asProjectTarget() -> ProjectTarget {
         ProjectTarget(
-            targetIndentifier: targetIdentifier,
+            targetIndentifier: targetIdentifier.rawValue,
             name: name,
             isSourcesResolved: false,
             isDependenciesResolved: false,
@@ -33,9 +33,5 @@ extension XcodeTarget {
             dependencies: [],
             productType: xcodeProductType.asProductType
         )
-    }
-
-    var targetIdentifier: String {
-        "xcode://\(projectURL.path)/\(name)"
     }
 }

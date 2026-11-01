@@ -11,8 +11,8 @@ public extension XcodeProjectManager {
         arguments: [String]?, // e.g. ["-configuration", "Debug"]
         environmentVariables: [String: String]?,
         workingDirectory: URI?
-    ) async -> StatusCode {
-        let xcodeTargetIdentifier = XcodeTargetIdentifier(rawValue: targetIdentifier.uri.stringValue)
+    ) async throws -> StatusCode {
+        let xcodeTargetIdentifier = XcodeTargetIdentifier(targetIdentifier)
 
         let result = await run(
             xcodeTargetIdentifier: xcodeTargetIdentifier,
@@ -21,13 +21,11 @@ public extension XcodeProjectManager {
             workingDirectory: workingDirectory?.fileURL
         )
 
-        let statuCode: StatusCode = switch result.statusCode {
+        switch result.statusCode {
         case .success:
-            .ok
+            return .ok
         case .error:
-            .error
+            throw XcodeProjectError.invalidConfig(result.message ?? "Failed to run target")
         }
-
-        return statuCode
     }
 }

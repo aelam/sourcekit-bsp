@@ -51,26 +51,6 @@ public struct XcodeGlobalSettings: Sendable, Codable, Hashable {
     }
 }
 
-public struct XcodeTargetInfo: Sendable {
-    public let targetIdentifier: String
-    public let name: String
-    public let xcodeProductType: XcodeProductType
-    public let buildSettings: [String: String]
-
-    public init(
-        targetIdentifier: String,
-        name: String,
-        xcodeProductType:
-        XcodeProductType,
-        buildSettings: [String: String]
-    ) {
-        self.targetIdentifier = targetIdentifier
-        self.name = name
-        self.xcodeProductType = xcodeProductType
-        self.buildSettings = buildSettings
-    }
-}
-
 public actor XcodeProjectManager {
     public let rootURL: URL
     let projectLocator: XcodeProjectLocator
@@ -78,6 +58,7 @@ public actor XcodeProjectManager {
     let settingsLoader: XcodeSettingsLoader
     let schemeLoader: XCSchemeLoader
     let destinationLoader = XcodeDestinationLoader()
+    var debugSessionManager: DebugSessionManager?
 
     private let xcodeProjectReference: XcodeProjectReference?
     public private(set) var xcodeProjectBaseInfo: XcodeProjectBaseInfo?

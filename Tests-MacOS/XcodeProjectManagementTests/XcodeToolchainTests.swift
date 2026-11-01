@@ -5,11 +5,34 @@
 //
 
 import Foundation
+import Support
 import Testing
 @testable import XcodeProjectManagement
 
 @Suite("XcodeToolchain Tests")
 struct XcodeToolchainTests {
+    @Test
+    func prefersSelectedXcode() async throws {
+        let toolchain = XcodeToolchain()
+        try await toolchain.initialize()
+        let selected = try #require(await toolchain.getSelectedInstallation())
+        let expected: String
+        if let developerDir = ProcessInfo.processInfo.environment["DEVELOPER_DIR"] {
+            expected = developerDir
+        } else {
+            let result = try await ProcessExecutor().execute(
+                executable: "/usr/bin/xcode-select", arguments: ["--print-path"]
+            )
+            #expect(result.exitCode == 0)
+            expected = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            #expect(selected.isXcodeSelectedVersion)
+        }
+        #expect(selected.developerDir.resolvingSymlinksInPath() == URL(fileURLWithPath: expected)
+            .resolvingSymlinksInPath())
+        let adapter = try LLDBDAPServer.locateLLDBDAP(developerDirectory: selected.developerDir)
+        #expect(adapter.hasPrefix(selected.developerDir.path + "/"))
+    }
+
     @Test("Toolchain can be initialized")
     func toolchainInitialization() async throws {
         let toolchain = XcodeToolchain()

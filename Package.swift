@@ -152,7 +152,9 @@ let macOnlyTargets: [Target] = [
         path: "Tests-MacOS/XcodeProjectManagementTests",
         resources: [
             .copy("README.md"),
-            .copy("Resources")
+            .copy("Resources/DemoProjects"),
+            .copy("Resources/buildSettingsForIndexForTarget.json"),
+            .copy("Resources/TestScheme.xcscheme")
         ]
     ),
     .testTarget(

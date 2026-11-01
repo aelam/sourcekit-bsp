@@ -18,8 +18,12 @@ public struct WorkspaceReloadNotification: ContextualNotificationType, Sendable 
     public func handle<Handler: ContextualMessageHandler>(
         contextualHandler: Handler
     ) async where Handler.Context == BSPServerService {
-        await contextualHandler.withContext { _ in
-            // reload
+        await contextualHandler.withContext { context in
+            do {
+                try await context.reloadProject()
+            } catch {
+                logger.error("Failed to reload project: \(error)")
+            }
         }
     }
 }
