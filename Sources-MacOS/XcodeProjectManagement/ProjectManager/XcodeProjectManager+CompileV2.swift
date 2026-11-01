@@ -26,28 +26,43 @@ public extension XcodeProjectManager {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
+        let exits = AsyncStream<Int32> { continuation in
+            process.terminationHandler = { process in
+                continuation.yield(process.terminationStatus)
+                continuation.finish()
+            }
+        }
+        try Task.checkCancellation()
         try process.run()
+        // Cancellation must still wait for termination before reading the exit status.
+        let exitTask = Task {
+            for await _ in exits {}
+        }
 
         let effectiveHandler = outputHandler ?? DefaultOutputHandler()
 
-        await withTaskGroup(of: Void.self) { group in
-            // 启动管道读取任务
-            group.addTask {
-                await effectiveHandler.handleProcess(
-                    output: outputPipe.fileHandleForReading,
-                    error: errorPipe.fileHandleForReading
-                )
-            }
+        await withTaskCancellationHandler {
+            if Task.isCancelled, process.isRunning { process.terminate() }
+            await withTaskGroup(of: Void.self) { group in
+                // 启动管道读取任务
+                group.addTask {
+                    await effectiveHandler.handleProcess(
+                        output: outputPipe.fileHandleForReading,
+                        error: errorPipe.fileHandleForReading
+                    )
+                }
 
-            // 启动进程等待任务
-            group.addTask {
-                await Task {
-                    process.waitUntilExit()
-                }.value
+                // Wait without blocking a Swift concurrency worker.
+                group.addTask {
+                    await exitTask.value
+                }
             }
+        } onCancel: {
+            if process.isRunning { process.terminate() }
         }
 
         await effectiveHandler.handleCompletion(process.terminationStatus)
+        try Task.checkCancellation()
 
         return process.terminationStatus
     }

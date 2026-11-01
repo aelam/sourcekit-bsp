@@ -1,6 +1,6 @@
 import Foundation
 
-struct SwiftFilesProvider: CompileArgProvider, Sendable {
+struct SwiftFilesProvider: CompileArgProvider {
     func arguments(for context: ArgContext) -> [String] {
         guard context.compiler == .swift else { return [] }
         let primaryFileURL = context.fileURL
@@ -35,7 +35,7 @@ struct SwiftFilesProvider: CompileArgProvider, Sendable {
         if let primaryFileURL {
             var fileSet = Set(fileList)
             fileSet.remove(primaryFileURL.path)
-            fileList = Array(fileSet)
+            fileList = fileSet.sorted()
             fileList.insert(primaryFileURL.path, at: 0)
         }
 

@@ -17,6 +17,10 @@ python3 Scripts/bsp_client.py --project /path/to/project
 python3 Scripts/bsp_client.py --project /path/to/project \
   --method buildTarget/compile --target Hello
 
+# Prepare dependencies and index data without launching the application.
+python3 Scripts/bsp_client.py --project /path/to/project \
+  --method buildTarget/prepare --target Hello
+
 # Inspect source files or output paths.
 python3 Scripts/bsp_client.py --project /path/to/project \
   --method buildTarget/sources --target Hello
@@ -56,3 +60,47 @@ This client sends requests. It does not implement an interactive editor or
 continuous workspace notifications. A successful response only verifies the
 returned result; a method that is still a stub can return success without doing
 the requested work. Debug validation also checks the breakpoint, threads, and stack.
+
+`buildTarget/prepare` waits for an incremental Xcode build with indexing enabled
+and code signing disabled. It uses the server's configured build configuration,
+the target's simulator platform (or macOS), and the same DerivedData directory as
+`textDocument/sourceKitOptions`. It does not take the run command's selected device.
+SourceKit-LSP builds its symbol index after preparation. Concurrent preparation
+requests are serialized; later requests still run Xcode's incremental check so
+source edits and deleted products are detected. Build failures return a JSON-RPC
+error with the last build output. This implementation uses a regular build;
+dependency-only compilation is a future optimization.
+
+For a full indexing pass, run `sourcekit-lsp debug index --project /path/to/project`
+with the same Xcode toolchain as the BSP server. The project must have a BSP
+connection file that selects the intended executable. For automatic background
+indexing, enable it in your editor or in `.sourcekit-lsp/config.json`:
+
+```json
+{
+  "backgroundIndexing": true,
+  "backgroundPreparationMode": "enabled"
+}
+```
+
+The BSP executable and the project's build products have separate paths:
+
+| Purpose | Default location |
+| --- | --- |
+| BSP executable from `swift build` | `<repository>/.build/debug/sourcekit-bsp` |
+| BSP executable from Xcode | `<BSP DerivedData>/Build/Products/Debug/sourcekit-bsp` |
+| Application build products | `<project DerivedData>/Build/Products` |
+| Compiler index data | `<project DerivedData>/Index.noindex/DataStore` |
+| SourceKit-LSP index database | `<project DerivedData>/IndexDatabase.noIndex` |
+
+Use `--server /absolute/path/to/sourcekit-bsp` to test the executable configured
+in the project's BSP connection file. Rebuild that executable after server changes,
+then restart the editor's server connection. Building with `swift build` does not
+update an executable in Xcode's DerivedData.
+
+Preparation, compiler arguments, and the initialization response use the same
+project DerivedData and index-store paths. BSP passes `-derivedDataPath` explicitly
+to Xcode. A manual `xcodebuild` command must use that same path to share its products;
+Xcode preferences or another `-derivedDataPath` can otherwise select a different
+directory. Per-request `--derived-data` overrides for compile/run/debug do not move
+the language server's indexing directory.

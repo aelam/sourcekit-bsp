@@ -14,7 +14,7 @@ public struct XcodeGlobalSettings: Sendable, Codable, Hashable {
     public let derivedDataPath: URL // @see PathHash.derivedDataFullPath
 
     public var indexStoreURL: URL {
-        derivedDataPath.appendingPathComponent("Index.noIndex/DataStore")
+        derivedDataPath.appendingPathComponent("Index.noindex/DataStore")
     }
 
     public var indexDatabaseURL: URL {
@@ -59,6 +59,8 @@ public actor XcodeProjectManager {
     let schemeLoader: XCSchemeLoader
     let destinationLoader = XcodeDestinationLoader()
     var debugSessionManager: DebugSessionManager?
+    var indexPreparationTail: Task<[XcodeTargetIdentifier], Error>?
+    var indexPreparationTasks: [UUID: Task<[XcodeTargetIdentifier], Error>] = [:]
 
     private let xcodeProjectReference: XcodeProjectReference?
     public private(set) var xcodeProjectBaseInfo: XcodeProjectBaseInfo?

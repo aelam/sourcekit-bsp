@@ -37,7 +37,8 @@ public protocol ProjectManager: AnyObject, Sendable {
 
     func updateBuildGraph() async
 
-    func buildIndex(for targetIdentifiers: [BSPBuildTargetIdentifier]) async
+    /// Prepare dependencies and return targets whose compiler options changed.
+    func buildIndex(for targetIdentifiers: [BSPBuildTargetIdentifier]) async throws -> [BSPBuildTargetIdentifier]
 
     func startBuild(
         targetIdentifiers: [BSPBuildTargetIdentifier],

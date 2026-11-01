@@ -20,11 +20,13 @@ extension XcodeProjectManager: @preconcurrency ProjectManager {
     public func updateBuildGraph() async {}
 
     public func shutdown() async {
+        await stopIndexPreparation()
         await stopDebugSessions()
     }
 
-    public func buildIndex(for targets: [BSPBuildTargetIdentifier]) async {
-        // TODO: await startBuild(targetIdentifiers: targets)
+    public func buildIndex(for targets: [BSPBuildTargetIdentifier]) async throws -> [BSPBuildTargetIdentifier] {
+        try await prepareForIndexing(targetIdentifiers: targets.map { XcodeTargetIdentifier($0) })
+            .map(\.bspIdentifier)
     }
 
     public var projectInfo: ProjectInfo? {
