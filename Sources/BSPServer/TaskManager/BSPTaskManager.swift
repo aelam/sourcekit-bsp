@@ -14,6 +14,7 @@ import Support
 public final class BSPTaskManager: @unchecked Sendable {
     private let taskState = CrossPlatformLock(initialState: TaskState())
     weak var notificationService: BSPNotificationService?
+    let diagnostics = BuildDiagnosticsStore()
 
     private struct TaskState {
         var activeTasks: [String: BSPTask] = [:]
@@ -58,11 +59,16 @@ public final class BSPTaskManager: @unchecked Sendable {
     /// Update task progress
     func updateTaskProgress(
         taskId: String,
-        progress: Double,
+        progress: Double?,
+        total: Double? = nil,
+        unit: String? = nil,
         message: String? = nil
     ) async throws {
         let task = taskState.withLock { state in
-            state.activeTasks[taskId]
+            guard var task = state.activeTasks[taskId] else { return nil as BSPTask? }
+            task.updateProgress(progress: progress, total: total, unit: unit, message: message)
+            state.activeTasks[taskId] = task
+            return task
         }
 
         guard let task else {
@@ -70,13 +76,8 @@ public final class BSPTaskManager: @unchecked Sendable {
             return
         }
 
-        // Update task internal state
-        task.updateProgress(progress: progress, message: message)
-
         // Send taskProgress notification
         try await sendTaskProgressNotification(task: task)
-
-        logger.debug("Updated task progress: \(taskId) - \(progress * 100)%")
     }
 
     /// Finish a task
@@ -86,7 +87,8 @@ public final class BSPTaskManager: @unchecked Sendable {
         message: String? = nil
     ) async throws {
         let task = taskState.withLock { state in
-            let task = state.activeTasks[taskId]
+            var task = state.activeTasks[taskId]
+            task?.finish(status: status, message: message)
             if task != nil {
                 state.activeTasks.removeValue(forKey: taskId)
             }
@@ -97,9 +99,6 @@ public final class BSPTaskManager: @unchecked Sendable {
             logger.warning("Attempted to finish unknown task: \(taskId)")
             return
         }
-
-        // Update task internal state
-        task.finish(status: status, message: message)
 
         // Send taskFinish notification
         try await sendTaskFinishNotification(task: task)
@@ -142,7 +141,7 @@ public final class BSPTaskManager: @unchecked Sendable {
         try await sendTaskStartNotification(
             taskId: task.taskId,
             originId: task.originId,
-            eventTime: task.startTime.timeIntervalSince1970,
+            eventTime: Int64(task.startTime.timeIntervalSince1970 * 1000),
             message: task.currentMessage ?? ""
         )
     }
@@ -151,8 +150,10 @@ public final class BSPTaskManager: @unchecked Sendable {
         try await sendTaskProgressNotification(
             taskId: task.taskId,
             originId: task.originId,
-            eventTime: Date().timeIntervalSince1970,
+            eventTime: Int64(Date().timeIntervalSince1970 * 1000),
             progress: task.progress,
+            total: task.total,
+            unit: task.unit,
             message: task.currentMessage
         )
     }
@@ -161,7 +162,7 @@ public final class BSPTaskManager: @unchecked Sendable {
         try await sendTaskFinishNotification(
             taskId: task.taskId,
             originId: task.originId,
-            eventTime: task.finishTime?.timeIntervalSince1970 ?? Date().timeIntervalSince1970,
+            eventTime: Int64((task.finishTime ?? Date()).timeIntervalSince1970 * 1000),
             status: task.status ?? .error,
             message: task.currentMessage
         )
@@ -172,13 +173,13 @@ public final class BSPTaskManager: @unchecked Sendable {
     func sendTaskStartNotification(
         taskId: String,
         originId: String?,
-        eventTime: TimeInterval? = nil,
+        eventTime: Int64? = nil,
         message: String
     ) async throws {
         let params = TaskStartParams(
             taskId: taskId,
             originId: originId,
-            eventTime: eventTime ?? Date().timeIntervalSince1970,
+            eventTime: eventTime ?? Int64(Date().timeIntervalSince1970 * 1000),
             message: message
         )
 
@@ -193,17 +194,20 @@ public final class BSPTaskManager: @unchecked Sendable {
     func sendTaskProgressNotification(
         taskId: String,
         originId: String? = nil,
-        eventTime: TimeInterval? = nil,
-        progress: Double,
+        eventTime: Int64? = nil,
+        progress: Double?,
+        total: Double? = nil,
+        unit: String? = nil,
         message: String?
     ) async throws {
         let params = TaskProgressParams(
             taskId: taskId,
             originId: originId,
-            eventTime: eventTime ?? Date().timeIntervalSince1970,
+            eventTime: eventTime ?? Int64(Date().timeIntervalSince1970 * 1000),
             message: message,
             progress: progress,
-            unit: nil,
+            total: total,
+            unit: unit,
             dataKind: nil,
             data: nil
         )
@@ -219,14 +223,14 @@ public final class BSPTaskManager: @unchecked Sendable {
     func sendTaskFinishNotification(
         taskId: String,
         originId: String? = nil,
-        eventTime: TimeInterval? = nil,
+        eventTime: Int64? = nil,
         status: StatusCode,
         message: String?
     ) async throws {
         let params = TaskFinishParams(
             taskId: taskId,
             originId: originId,
-            eventTime: eventTime ?? Date().timeIntervalSince1970,
+            eventTime: eventTime ?? Int64(Date().timeIntervalSince1970 * 1000),
             message: message,
             status: status
         )

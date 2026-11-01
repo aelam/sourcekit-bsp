@@ -21,7 +21,10 @@ public enum IndexPreparationError: Error, LocalizedError {
 
 public extension XcodeProjectManager {
     /// Build the inputs SourceKit-LSP needs before it indexes a target.
-    func prepareForIndexing(targetIdentifiers: [XcodeTargetIdentifier]) async throws -> [XcodeTargetIdentifier] {
+    func prepareForIndexing(
+        targetIdentifiers: [XcodeTargetIdentifier],
+        logHandler: (@Sendable (String) -> Void)? = nil
+    ) async throws -> [XcodeTargetIdentifier] {
         guard let base = xcodeProjectBaseInfo else {
             throw IndexPreparationError.projectNotInitialized
         }
@@ -42,7 +45,7 @@ public extension XcodeProjectManager {
         let preparation = Task {
             if let previous { _ = try? await previous.value }
             try Task.checkCancellation()
-            return try await self.prepareIndexTargets(targets)
+            return try await self.prepareIndexTargets(targets, logHandler: logHandler)
         }
         indexPreparationTail = preparation
         indexPreparationTasks[id] = preparation
@@ -71,7 +74,6 @@ public extension XcodeProjectManager {
 extension XcodeProjectManager {
     func indexBuildArguments(for target: XcodeTarget) -> [String] {
         var arguments = [
-            "-quiet",
             "CODE_SIGNING_ALLOWED=NO",
             "COMPILER_INDEX_STORE_ENABLE=YES",
             "ONLY_ACTIVE_ARCH=YES"
@@ -82,13 +84,15 @@ extension XcodeProjectManager {
         return buildArguments(for: target, configuration: nil, arguments: arguments)
     }
 
-    private func prepareIndexTargets(_ targets: [XcodeTarget]) async throws -> [XcodeTargetIdentifier] {
+    private func prepareIndexTargets(
+        _ targets: [XcodeTarget], logHandler: (@Sendable (String) -> Void)?
+    ) async throws -> [XcodeTargetIdentifier] {
         var changedTargets: [XcodeTargetIdentifier] = []
         for target in targets {
             try Task.checkCancellation()
             let identifier = target.targetIdentifier
             let before = try await indexingOptions(for: identifier)
-            let output = IndexPreparationOutput()
+            let output = IndexPreparationOutput(logHandler: logHandler)
             logger.info("Preparing index inputs for \(target.name)")
             let status = try await compileTarget(
                 targetIdentifier: identifier,
@@ -125,6 +129,12 @@ extension XcodeProjectManager {
 
 private actor IndexPreparationOutput: ProcessOutputHandler {
     private var lines: [String] = []
+    private let logHandler: (@Sendable (String) -> Void)?
+
+    init(logHandler: (@Sendable (String) -> Void)?) {
+        self.logHandler = logHandler
+    }
+
     var summary: String {
         lines.joined(separator: "\n")
     }
@@ -142,7 +152,7 @@ private actor IndexPreparationOutput: ProcessOutputHandler {
     }
 
     private func append(_ line: String) {
-        logger.info(line)
+        if let logHandler { logHandler(line) } else { logger.info(line) }
         lines.append(line)
         if lines.count > 40 { lines.removeFirst() }
     }

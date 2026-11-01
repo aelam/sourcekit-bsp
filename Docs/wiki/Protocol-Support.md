@@ -25,7 +25,8 @@ The server implements a subset of BSP 2.2.0. Clients should check
 | `workspace/waitForBuildSystemUpdates` | SourceKit extension request | Wait for pending updates; report reload errors |
 | `buildTarget/didChange` | Server notification | Report target changes after refresh and option changes after preparation |
 | `$/cancelRequest` | Client notification | Cancel the matching request |
-| `build/logMessage`, `build/taskStart`, `build/taskFinish` | Server notifications | Stream compile/test output and task status |
+| `build/logMessage`, `build/taskStart`, `build/taskProgress`, `build/taskFinish` | Server notifications | Stream compile/test/index stages and readable output; retain raw logs in DerivedData |
+| `build/publishDiagnostics` | Server notification | Publish compiler diagnostics by file and target; clear stale diagnostics on the next build |
 
 ## Refresh and cancellation
 
@@ -34,7 +35,7 @@ The server reloads project/configuration changes and source creation/deletion;
 it preserves the previous state if parsing fails. `workspace/reload` requires an ID.
 
 Cancellation reaches compile, test, and index builds. It returns error `-32800`;
-compile/test tasks also finish with status `3`. Normal compile/test/run results
+compile/test/index tasks also finish with status `3`. Normal compile/test/run results
 use status `1` for success and `2` for failure. Test results preserve `originId`.
 See [BSP lifecycle](https://github.com/aelam/sourcekit-bsp/blob/main/Docs/BSP-Lifecycle.md)
 for payloads, ordering, and test execution details.
@@ -55,6 +56,7 @@ retain explicit declarations. Do not use `@unchecked Sendable` to hide an error.
 ## Limitations
 
 - No standalone SwiftPM project provider or physical-device debugging.
-- No structured BSP compiler diagnostics or individual test reports. SourceKit-LSP provides editor diagnostics independently.
+- Compiler diagnostics are parsed from text output. Diagnostics with ambiguous target ownership remain in the log.
+- No individual BSP test reports. SourceKit-LSP provides editor diagnostics independently.
 - `inverseSources`, `dependencySources`, and `resources` have no handlers and are not advertised.
 - Complex workspaces, packages, and test plans need broader compatibility testing.

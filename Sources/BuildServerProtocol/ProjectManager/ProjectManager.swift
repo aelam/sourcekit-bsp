@@ -40,6 +40,11 @@ public protocol ProjectManager: AnyObject, Sendable {
     /// Prepare dependencies and return targets whose compiler options changed.
     func buildIndex(for targetIdentifiers: [BSPBuildTargetIdentifier]) async throws -> [BSPBuildTargetIdentifier]
 
+    func buildIndex(
+        for targetIdentifiers: [BSPBuildTargetIdentifier],
+        logHandler: (@Sendable (String) -> Void)?
+    ) async throws -> [BSPBuildTargetIdentifier]
+
     func startBuild(
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?,
@@ -69,6 +74,13 @@ public protocol ProjectManager: AnyObject, Sendable {
 
 public extension ProjectManager {
     func shutdown() async {}
+
+    func buildIndex(
+        for targetIdentifiers: [BSPBuildTargetIdentifier],
+        logHandler: (@Sendable (String) -> Void)?
+    ) async throws -> [BSPBuildTargetIdentifier] {
+        try await buildIndex(for: targetIdentifiers)
+    }
 }
 
 public struct ProjectInfo: Sendable {

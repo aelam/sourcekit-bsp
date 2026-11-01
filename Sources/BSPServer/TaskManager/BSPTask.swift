@@ -8,13 +8,15 @@ import BuildServerProtocol
 import Foundation
 
 /// Represents a BSP task with lifecycle management
-public final class BSPTask: @unchecked Sendable {
+public struct BSPTask: Sendable {
     public let taskId: String
     public let originId: String?
     public let startTime: Date
 
     public private(set) var currentMessage: String?
-    public private(set) var progress: Double = 0.0
+    public private(set) var progress: Double?
+    public private(set) var total: Double?
+    public private(set) var unit: String?
     public private(set) var status: StatusCode?
     public private(set) var finishTime: Date?
 
@@ -30,15 +32,22 @@ public final class BSPTask: @unchecked Sendable {
     }
 
     /// Update task progress (internal state only)
-    public func updateProgress(progress: Double, message: String? = nil) {
-        self.progress = min(max(progress, 0.0), 1.0) // Clamp between 0.0 and 1.0
+    public mutating func updateProgress(
+        progress: Double?,
+        total: Double? = nil,
+        unit: String? = nil,
+        message: String? = nil
+    ) {
+        self.progress = progress
+        self.total = total
+        self.unit = unit
         if let message {
             self.currentMessage = message
         }
     }
 
     /// Finish the task (internal state only)
-    public func finish(status: StatusCode, message: String? = nil) {
+    public mutating func finish(status: StatusCode, message: String? = nil) {
         self.status = status
         self.finishTime = Date()
         if let message {
@@ -47,17 +56,17 @@ public final class BSPTask: @unchecked Sendable {
     }
 
     /// Mark task as successful (internal state only)
-    public func succeed(message: String? = nil) {
+    public mutating func succeed(message: String? = nil) {
         finish(status: .ok, message: message)
     }
 
     /// Mark task as failed (internal state only)
-    public func fail(message: String? = nil) {
+    public mutating func fail(message: String? = nil) {
         finish(status: .error, message: message)
     }
 
     /// Cancel the task (internal state only)
-    public func cancel(message: String? = nil) {
+    public mutating func cancel(message: String? = nil) {
         finish(status: .cancelled, message: message)
     }
 

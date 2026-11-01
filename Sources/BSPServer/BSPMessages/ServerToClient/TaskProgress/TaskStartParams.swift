@@ -4,9 +4,9 @@ public struct TaskStartParams: Codable, Sendable {
     public static let method = "build/taskStart"
 
     /** The task id. */
-    public let taskId: String
+    public let taskId: TaskIdentifier
     public let originId: String?
-    public let eventTime: TimeInterval?
+    public let eventTime: Int64?
     public let message: String?
     public let dataKind: TaskStartDataKind?
     public let data: Data?
@@ -14,12 +14,12 @@ public struct TaskStartParams: Codable, Sendable {
     public init(
         taskId: String,
         originId: String? = nil,
-        eventTime: TimeInterval? = nil,
+        eventTime: Int64? = nil,
         message: String? = nil,
         dataKind: TaskStartDataKind? = nil,
         data: Data? = nil
     ) {
-        self.taskId = taskId
+        self.taskId = TaskIdentifier(id: taskId)
         self.originId = originId
         self.eventTime = eventTime
         self.message = message

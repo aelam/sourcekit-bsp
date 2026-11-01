@@ -1,122 +1,40 @@
-# BSP Task Progress 使用示例
+# 构建进度与输出
 
-## 概述
+编译、测试和索引准备使用标准 BSP 通知。Xcode 专用解析留在服务端；客户端只展示协议消息。
 
-BSPTaskManager 现在支持完整的任务进度报告，包括 `taskStart`、`taskProgress` 和 `taskFinish` 通知。
+| 通知 | 内容 |
+| --- | --- |
+| `build/taskStart` | 开始任务 |
+| `build/taskProgress` | 当前阶段和已观察到的构建步骤数 |
+| `build/taskFinish` | 成功 `1`、失败 `2`、取消 `3` |
+| `build/logMessage` | 易读构建输出；错误、警告和普通输出分别标记级别 |
+| `build/publishDiagnostics` | 按文件和 target 发布诊断，位置使用从零开始的 UTF-16 坐标 |
 
-## 功能特性
+`taskId` 使用 `{ "id": "..." }`，`eventTime` 使用 Unix 毫秒时间戳。
+没有可靠总量时省略 `total`，客户端显示阶段，不计算百分比。
 
-### 1. 任务生命周期管理
-- **taskStart**: 任务开始时发送，包含任务ID、originId、消息和目标
-- **taskProgress**: 任务执行过程中发送，包含进度百分比和状态消息
-- **taskFinish**: 任务结束时发送，包含最终状态和消息
-
-### 2. 智能进度报告
-- 自动进度计算（0.0 - 1.0）
-- 多目标构建时分步骤报告进度
-- 详细的状态消息
-
-## 使用方法
-
-```swift
-// 在 BSPServerService 中使用
-let taskManager = BSPTaskManager(notificationSender: self)
-
-// 执行构建并自动报告进度
-let status = try await taskManager.executeBuild(
-    using: projectManager,
-    targets: targetIdentifiers,
-    originId: request.id
-)
-```
-
-## 进度报告阶段
-
-### 单目标构建
-1. **10%** - "Starting build..."
-2. **20%** - "Preparing build..."
-3. **50%** - "Compiling..."
-4. **100%** - "Build completed successfully" / "Build completed with errors"
-
-### 多目标构建
-1. **10%** - "Starting build..."
-2. **20%** - "Preparing build..."
-3. **30-80%** - "Building target: [TargetName]" (每个目标分配进度)
-4. **100%** - "Build completed successfully" / "Build completed with errors"
-
-## BSP 通知示例
-
-### taskStart 通知
 ```json
 {
-    "jsonrpc": "2.0",
-    "method": "build/taskStart",
-    "params": {
-        "taskId": "task-1-1725897600.123",
-        "originId": "build-request-1",
-        "message": "Building targets: MyApp",
-        "targets": [
-            {
-                "uri": "MyApp"
-            }
-        ]
-    }
+  "jsonrpc": "2.0",
+  "method": "build/taskProgress",
+  "params": {
+    "taskId": { "id": "sourcekit-bsp-task" },
+    "originId": "compile-request",
+    "eventTime": 1793538000000,
+    "message": "Compile Swift — Hello",
+    "progress": 4,
+    "unit": "build steps"
+  }
 }
 ```
 
-### taskProgress 通知
-```json
-{
-    "jsonrpc": "2.0",
-    "method": "build/taskProgress",
-    "params": {
-        "taskId": "task-1-1725897600.123",
-        "progress": 0.5,
-        "message": "Compiling..."
-    }
-}
-```
+输出按约 100 毫秒批量发送，剩余日志和诊断在 `taskFinish` 前刷新。
+原始日志保存在项目 DerivedData 的 `Logs/sourcekit-bsp/*.log`，输出中会给出路径。
+日志保存在 server 所在机器上；远程客户端需要通过该机器访问。
+若文件写入失败，则通过 `build/logMessage` 发送未简化的输出。
 
-### taskFinish 通知
-```json
-{
-    "jsonrpc": "2.0",
-    "method": "build/taskFinish",
-    "params": {
-        "taskId": "task-1-1725897600.123",
-        "status": 1,
-        "message": "Build completed successfully"
-    }
-}
-```
+编译诊断由文本输出解析。无法确定所属 target 的诊断仍保留在输出中，避免误归属。
+重新构建会清理相关 target 的旧诊断；客户端必须按文件和 target 处理 `reset`。
 
-## 调用链
-
-```
-BSPServerService.buildTarget()
-    ↓
-TaskManager.executeBuild()
-    ↓ (发送 taskStart)
-ProjectManagerProvider.getProjectManager()
-    ↓
-ProjectManager.startBuild()
-    ↓ (发送多个 taskProgress)
-XcodeBuildExecutor.executeXcodeBuild() / SwiftBuildExecutor.executeSwiftBuild()
-    ↓ (发送 taskFinish)
-返回 StatusCode
-```
-
-## 错误处理
-
-如果构建失败，TaskManager 会：
-1. 调用 `task.fail(message: "Build failed: [error]")`
-2. 发送 taskFinish 通知，status = .error
-3. 抛出原始错误供上层处理
-
-## 扩展计划
-
-未来可以考虑：
-1. 解析 xcodebuild 输出，提供更精确的进度
-2. 支持取消构建操作
-3. 添加构建时间估算
-4. 更详细的编译文件进度报告
+在 vscode-bsp 中，进度在右下角通知，诊断在 Problems，日志在输出面板的 `vscode-bsp-log`。
+使用 `Scripts/bsp_client.py --verbose` 可查看原始通知 JSON。

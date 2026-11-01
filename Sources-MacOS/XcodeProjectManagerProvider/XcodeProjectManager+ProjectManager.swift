@@ -27,8 +27,16 @@ extension XcodeProjectManager: @preconcurrency ProjectManager {
     }
 
     public func buildIndex(for targets: [BSPBuildTargetIdentifier]) async throws -> [BSPBuildTargetIdentifier] {
-        try await prepareForIndexing(targetIdentifiers: targets.map { XcodeTargetIdentifier($0) })
-            .map(\.bspIdentifier)
+        try await buildIndex(for: targets, logHandler: nil)
+    }
+
+    public func buildIndex(
+        for targets: [BSPBuildTargetIdentifier],
+        logHandler: (@Sendable (String) -> Void)?
+    ) async throws -> [BSPBuildTargetIdentifier] {
+        try await prepareForIndexing(
+            targetIdentifiers: targets.map { XcodeTargetIdentifier($0) }, logHandler: logHandler
+        ).map(\.bspIdentifier)
     }
 
     public var projectInfo: ProjectInfo? {

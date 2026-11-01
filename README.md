@@ -13,6 +13,7 @@ operations for BSP clients.
 - Prepare compiler inputs and index data for SourceKit-LSP.
 - Build and test targets; launch applications and debug on macOS or a simulator.
 - Refresh project state after client file notifications and cancel active builds.
+- Report build/test/index stages, compiler diagnostics, and readable output through standard BSP notifications.
 
 The server implements a subset of BSP 2.2.0. See [protocol support](Docs/wiki/Protocol-Support.md)
 for capabilities and limitations. These docs describe the current source tree;
