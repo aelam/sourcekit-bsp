@@ -4,15 +4,15 @@
 //  Copyright © 2024 Wang Lun.
 //
 
-///
-///
-///   {
-///     "method":"workspace/buildTargets",
-///     "id":2,
-///     "jsonrpc":"2.0",
-///     "params":{}
-///   }
-///
+//
+//
+//   {
+//     "method":"workspace/buildTargets",
+//     "id":2,
+//     "jsonrpc":"2.0",
+//     "params":{}
+//   }
+//
 
 import BuildServerProtocol
 import JSONRPCConnection

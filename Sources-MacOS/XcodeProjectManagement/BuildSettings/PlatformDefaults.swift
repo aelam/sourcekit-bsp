@@ -25,7 +25,7 @@ enum PlatformDefaults {
         policy == .universal ? "arm64 x86_64" : hostArch()
     }
 
-    // === 规格表（消除分支重复） ===
+    /// === 规格表（消除分支重复） ===
     struct Spec {
         let family: String // "ios" / "macos" / "watchos" / "tvos"
         let deviceSDK: String // "iphoneos" / "macosx" / ...
@@ -102,7 +102,7 @@ enum PlatformDefaults {
         )
     ]
 
-    // 映射 EFFECTIVE_PLATFORM_NAME
+    /// 映射 EFFECTIVE_PLATFORM_NAME
     private static func effectiveSuffix(for sdkName: String) -> String {
         switch sdkName {
         case "iphonesimulator": "-iphonesimulator"

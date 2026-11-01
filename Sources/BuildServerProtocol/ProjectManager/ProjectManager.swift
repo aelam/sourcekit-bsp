@@ -35,7 +35,7 @@ public protocol ProjectManager: AnyObject, Sendable {
         sourceFileURL: URL
     ) async throws -> [String]
 
-    func updateBuildGraph() async
+    func updateBuildGraph() async throws
 
     /// Prepare dependencies and return targets whose compiler options changed.
     func buildIndex(for targetIdentifiers: [BSPBuildTargetIdentifier]) async throws -> [BSPBuildTargetIdentifier]
@@ -57,7 +57,8 @@ public protocol ProjectManager: AnyObject, Sendable {
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?,
         environmentVariables: [String: String]?,
-        workingDirectory: URI?
+        workingDirectory: URI?,
+        logHandler: (@Sendable (String) -> Void)?
     ) async throws -> StatusCode
 
     func startDebugSession(

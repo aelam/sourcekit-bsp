@@ -282,7 +282,7 @@ let toolchainURI = URI(string: "file://\(toolchainPath)")
 
 ## 构建服务器发现
 
-创建`buildServer.json`文件在项目根目录：
+在应用项目根目录创建 `.bsp/sourcekit-bsp.json`。BSP 客户端通过 `.bsp/*.json` 发现服务器，并使用 `argv` 启动进程：
 
 ```json
 {
@@ -290,10 +290,11 @@ let toolchainURI = URI(string: "file://\(toolchainPath)")
   "version": "1.0.0",
   "bspVersion": "2.2.0",
   "languages": ["swift", "objective-c", "objective-cpp", "c", "cpp"],
-  "argv": ["/path/to/sourcekit-bsp"],
-  "rootUri": "file:///path/to/project"
+  "argv": ["/absolute/path/to/sourcekit-bsp"]
 }
 ```
+
+客户端通过 `build/initialize` 的 `rootUri` 传入项目根目录。如需指定 Xcode 工程或 workspace，使用 `.sourcekit-bsp/project.json`。
 
 ## 实现状态检查清单
 

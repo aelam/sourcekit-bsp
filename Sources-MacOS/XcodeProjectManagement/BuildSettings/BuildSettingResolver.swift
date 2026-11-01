@@ -1,19 +1,19 @@
-/// PBXProject (工程)
-/// │
-/// ├─ XCConfigurationList (配置列表)
-/// │   ├─ XCBuildConfiguration "Debug"
-/// │   │    └─ buildSettings { ... }   ← 工程 Debug 配置
-/// │   └─ XCBuildConfiguration "Release"
-/// │        └─ buildSettings { ... }   ← 工程 Release 配置
-/// │
-/// └─ PBXNativeTarget "AppTarget"
-///     │
-///     └─ XCConfigurationList (配置列表)
-///         ├─ XCBuildConfiguration "Debug"
-///         │    └─ buildSettings { ... }  ← Target Debug 配置（覆盖 Project Debug）
-///         └─ XCBuildConfiguration "Release"
-///              └─ buildSettings { ... }  ← Target Release 配置（覆盖 Project
-/// Release）
+// PBXProject (工程)
+// │
+// ├─ XCConfigurationList (配置列表)
+// │   ├─ XCBuildConfiguration "Debug"
+// │   │    └─ buildSettings { ... }   ← 工程 Debug 配置
+// │   └─ XCBuildConfiguration "Release"
+// │        └─ buildSettings { ... }   ← 工程 Release 配置
+// │
+// └─ PBXNativeTarget "AppTarget"
+//     │
+//     └─ XCConfigurationList (配置列表)
+//         ├─ XCBuildConfiguration "Debug"
+//         │    └─ buildSettings { ... }  ← Target Debug 配置（覆盖 Project Debug）
+//         └─ XCBuildConfiguration "Release"
+//              └─ buildSettings { ... }  ← Target Release 配置（覆盖 Project
+// Release）
 
 import Foundation
 import PathKit

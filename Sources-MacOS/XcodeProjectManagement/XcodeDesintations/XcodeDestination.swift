@@ -57,7 +57,7 @@ public struct XcodeDestination: Sendable, Codable, Hashable {
     public let isRunnable: Bool
     public let pairedDevice: XcodePairedDevice?
 
-    // iPhone + Apple Watch
+    /// iPhone + Apple Watch
     var supportedPlatforms: [XcodeDestinationPlatform] {
         var platforms = [platform]
         if let paired = pairedDevice {

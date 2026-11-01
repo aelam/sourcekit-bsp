@@ -63,6 +63,7 @@ public actor XcodeProjectManager {
     var indexPreparationTasks: [UUID: Task<[XcodeTargetIdentifier], Error>] = [:]
 
     private let xcodeProjectReference: XcodeProjectReference?
+    private var currentProjectReference: XcodeProjectReference?
     public private(set) var xcodeProjectBaseInfo: XcodeProjectBaseInfo?
 
     private var xcodeProjCache: [URL: XcodeProj] = [:]
@@ -88,6 +89,7 @@ public actor XcodeProjectManager {
     ) {
         self.rootURL = rootURL
         self.xcodeProjectReference = xcodeProjectReference
+        self.currentProjectReference = xcodeProjectReference
         self.toolchain = toolchain
         self.projectLocator = projectLocator
         self.settingsLoader = settingsLoader
@@ -95,6 +97,12 @@ public actor XcodeProjectManager {
     }
 
     public func initialize() async throws {
+        let configURL = rootURL.appendingPathComponent(".sourcekit-bsp/project.json")
+        currentProjectReference = if FileManager.default.fileExists(atPath: configURL.path) {
+            try JSONDecoder().decode(XcodeProjectReference.self, from: Data(contentsOf: configURL))
+        } else {
+            xcodeProjectReference
+        }
         try await toolchain.initialize()
         guard let selectedXcodeInstallation = await toolchain.getSelectedInstallation() else {
             throw XcodeProjectError.toolchainError("No Xcode installation selected")
@@ -102,7 +110,7 @@ public actor XcodeProjectManager {
 
         let projectLocation = try projectLocator.resolveProjectType(
             rootURL: rootURL,
-            xcodeProjectReference: xcodeProjectReference
+            xcodeProjectReference: currentProjectReference
         )
 
         // Get project-level buildSettings without `xcodebuild`
@@ -127,10 +135,28 @@ public actor XcodeProjectManager {
             xcodeGlobalSettings: xcodeGlobalSettings,
             xcodeTargets: actualTargets,
             schemes: schemes,
-            configuration: xcodeProjectReference?.configuration ?? "Debug",
+            configuration: currentProjectReference?.configuration ?? "Debug",
             xcodeInstallation: selectedXcodeInstallation,
         )
         self.xcodeProjectBaseInfo = xcodeProjectBaseInfo
+    }
+
+    public func reloadProject() async throws {
+        let oldSources = sourceFileMapCache
+        let oldCache = xcodeProjCache
+        let oldReference = currentProjectReference
+        let oldInfo = xcodeProjectBaseInfo
+        do {
+            xcodeProjCache.removeAll()
+            sourceFileMapCache.removeAll()
+            try await initialize()
+        } catch {
+            sourceFileMapCache = oldSources
+            xcodeProjCache = oldCache
+            currentProjectReference = oldReference
+            xcodeProjectBaseInfo = oldInfo
+            throw error
+        }
     }
 }
 

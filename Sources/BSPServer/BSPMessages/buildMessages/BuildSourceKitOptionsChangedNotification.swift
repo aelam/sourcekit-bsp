@@ -4,16 +4,16 @@
 //  Copyright © 2024 Wang Lun.
 //
 
-/// The `TextDocumentSourceKitOptionsRequest` request is sent from the client to the server to query for the list of
-/// compiler options necessary to compile this file in the given target.
-///
-/// The build settings are considered up-to-date and can be cached by SourceKit-LSP until a
-/// `DidChangeBuildTargetNotification` is sent for the requested target.
-///
-/// The request may return `nil` if it doesn't have any build settings for this file in the given target.
-/// server --> client
-/// Deprecated
-///
+// The `TextDocumentSourceKitOptionsRequest` request is sent from the client to the server to query for the list of
+// compiler options necessary to compile this file in the given target.
+//
+// The build settings are considered up-to-date and can be cached by SourceKit-LSP until a
+// `DidChangeBuildTargetNotification` is sent for the requested target.
+//
+// The request may return `nil` if it doesn't have any build settings for this file in the given target.
+// server --> client
+// Deprecated
+//
 
 import BuildServerProtocol
 import JSONRPCConnection

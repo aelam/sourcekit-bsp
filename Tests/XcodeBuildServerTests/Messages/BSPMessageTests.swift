@@ -33,7 +33,7 @@ final class BSPMessageTests: XCTestCase {
         }
         """
 
-        let data = message.data(using: .utf8)!
+        let data = try XCTUnwrap(message.data(using: .utf8))
         let request = try JSONDecoder().decode(JSONRPCRequest.self, from: data)
         XCTAssertEqual(request.method, "build/initialize")
         XCTAssertEqual(request.jsonrpc, "2.0")

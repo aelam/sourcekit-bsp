@@ -11,7 +11,7 @@ public struct XcodeBuildSettings: Codable, Sendable {
         self.buildSettings = buildSettings
     }
 
-    // Custom Codable to handle mixed buildSettings types
+    /// Custom Codable to handle mixed buildSettings types
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.target = try container.decode(String.self, forKey: .target)

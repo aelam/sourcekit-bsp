@@ -5,15 +5,15 @@ import XcodeProj
 @testable import XcodeProjectManagement
 
 struct CompilerArgsGeneratorTests {
-    //
+    ///
     @Test
     func resolveProjectSwiftCompilerFlags() async throws {
         let targetName = "HelloUITests"
         let fileName = "HelloUITestsLaunchTests.swift"
 
-        let projectFolder = Bundle.module.resourceURL!
+        let projectFolder = try #require(Bundle.module.resourceURL?
             .appendingPathComponent("DemoProjects")
-            .appendingPathComponent("HelloWorkspace")
+            .appendingPathComponent("HelloWorkspace"))
         let projectFilePath = projectFolder
             .appendingPathComponent("Hello.xcodeproj").path
         let derivedDataPath = PathHash.derivedDataFullPath(for: projectFilePath)
@@ -61,9 +61,9 @@ struct CompilerArgsGeneratorTests {
 
     @Test
     func resolveProjectClangCompilerFlags() async throws {
-        let projectFolder = Bundle.module.resourceURL!
+        let projectFolder = try #require(Bundle.module.resourceURL?
             .appendingPathComponent("DemoProjects")
-            .appendingPathComponent("HelloWorkspace")
+            .appendingPathComponent("HelloWorkspace"))
         let projectFilePath = projectFolder
             .appendingPathComponent("Hello.xcodeproj").path
         let derivedDataPath = PathHash.derivedDataFullPath(for: projectFilePath)

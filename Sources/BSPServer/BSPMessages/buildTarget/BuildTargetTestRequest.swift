@@ -59,6 +59,7 @@ public struct BuildTargetTestRequest: ContextualRequestType, Sendable {
             do {
                 let statusCode = try await context.test(
                     targetIdentifiers: params.targets,
+                    originId: params.originId,
                     arguments: params.arguments,
                     environmentVariables: params.environmentVariables,
                     workingDirectory: params.workingDirectory
@@ -74,7 +75,9 @@ public struct BuildTargetTestRequest: ContextualRequestType, Sendable {
                 return BuildTargetTestResponse(
                     jsonrpc: jsonrpc,
                     id: id,
-                    result: BuildTargetTestResult(originId: params.originId, statusCode: .error)
+                    result: BuildTargetTestResult(
+                        originId: params.originId, statusCode: error is CancellationError ? .cancelled : .error
+                    )
                 )
             }
         }

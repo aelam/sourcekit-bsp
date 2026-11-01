@@ -108,7 +108,6 @@ public final class BSPServerConfigurationLoader: Sendable {
         }
 
         let data = try Data(contentsOf: configFileURL)
-        let configuration = try JSONDecoder().decode(XcodeBSPConfiguration.self, from: data)
-        return configuration
+        return try JSONDecoder().decode(XcodeBSPConfiguration.self, from: data)
     }
 }

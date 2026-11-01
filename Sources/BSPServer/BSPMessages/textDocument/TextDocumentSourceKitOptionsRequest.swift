@@ -8,58 +8,58 @@ import Foundation
 import JSONRPCConnection
 import Logger
 
-/// Request compiler options for a specific source file in a build target.
-///
-/// The `textDocument/sourceKitOptions` request is sent from the client to the server to query for the list of
-/// compiler options necessary to compile a specific file in the given target.
-///
-/// ## Overview
-///
-/// This request enables SourceKit-LSP to obtain the exact compiler arguments needed to analyze a source file
-/// within a specific build target context. The compiler arguments include module names, optimization levels,
-/// SDK paths, target architectures, and other compilation flags.
-///
-/// ## Caching Behavior
-///
-/// The build settings are considered up-to-date and can be cached by SourceKit-LSP until a
-/// `buildTarget/didChange` notification is sent for the requested target.
-///
-/// ## Error Handling
-///
-/// The request may return `nil` if no build settings are available for the file in the given target.
-///
-/// ## Example Request
-///
-/// ```json
-/// {
-///   "jsonrpc": "2.0",
-///   "method": "textDocument/sourceKitOptions",
-///   "params": {
-///     "textDocument": { "uri": "file:///path/to/source.swift" },
-///     "target": { "uri": "xcode:///ProjectPath/SchemeName/TargetName" },
-///     "language": "swift"
-///   }
-/// }
-/// ```
-///
-/// ## Example Response
-///
-/// ```json
-/// {
-///   "compilerArguments": [
-///     "-module-name", "Hello",
-///     "-Onone",
-///     "-enforce-exclusivity=checked",
-///     "/path/to/source.swift",
-///     "-DDEBUG",
-///     "-sdk", "/Applications/Xcode.app/.../iPhoneOS.sdk",
-///     "-target", "arm64-apple-ios18.0",
-///     "-index-store-path", "/path/to/IndexStore"
-///   ],
-///   "workingDirectory": "/path/to/project"
-/// }
-/// ```
-///
+// Request compiler options for a specific source file in a build target.
+//
+// The `textDocument/sourceKitOptions` request is sent from the client to the server to query for the list of
+// compiler options necessary to compile a specific file in the given target.
+//
+// ## Overview
+//
+// This request enables SourceKit-LSP to obtain the exact compiler arguments needed to analyze a source file
+// within a specific build target context. The compiler arguments include module names, optimization levels,
+// SDK paths, target architectures, and other compilation flags.
+//
+// ## Caching Behavior
+//
+// The build settings are considered up-to-date and can be cached by SourceKit-LSP until a
+// `buildTarget/didChange` notification is sent for the requested target.
+//
+// ## Error Handling
+//
+// The request may return `nil` if no build settings are available for the file in the given target.
+//
+// ## Example Request
+//
+// ```json
+// {
+//   "jsonrpc": "2.0",
+//   "method": "textDocument/sourceKitOptions",
+//   "params": {
+//     "textDocument": { "uri": "file:///path/to/source.swift" },
+//     "target": { "uri": "xcode:///ProjectPath/SchemeName/TargetName" },
+//     "language": "swift"
+//   }
+// }
+// ```
+//
+// ## Example Response
+//
+// ```json
+// {
+//   "compilerArguments": [
+//     "-module-name", "Hello",
+//     "-Onone",
+//     "-enforce-exclusivity=checked",
+//     "/path/to/source.swift",
+//     "-DDEBUG",
+//     "-sdk", "/Applications/Xcode.app/.../iPhoneOS.sdk",
+//     "-target", "arm64-apple-ios18.0",
+//     "-index-store-path", "/path/to/IndexStore"
+//   ],
+//   "workingDirectory": "/path/to/project"
+// }
+// ```
+//
 import BuildServerProtocol
 
 public struct TextDocumentSourceKitOptionsRequest: ContextualRequestType, Sendable {

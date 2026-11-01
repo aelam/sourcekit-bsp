@@ -4,7 +4,7 @@
 //  Copyright © 2024 Wang Lun.
 //
 
-/**
+/*
  {
  "params": {
  "uri" : "file:///Users/ST22956/work-vscode/Hello/Hello/World/World.swift",

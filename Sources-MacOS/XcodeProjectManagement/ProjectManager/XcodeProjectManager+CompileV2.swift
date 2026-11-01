@@ -9,14 +9,16 @@ public enum BuildError: Error, Sendable {
 public extension XcodeProjectManager {
     // MARK: - Generic Xcode Process Execution
 
-    private func executeXcodeProcess(
+    internal func executeXcodeProcess(
         command: [String],
+        environment: [String: String] = [:],
+        workingDirectory: URL? = nil,
         outputHandler: ProcessOutputHandler? = nil
     ) async throws -> XcodeBuildExitCode {
         let process = try await toolchain.createXcodeBuildProcess(
             arguments: command,
-            workingDirectory: rootURL,
-            xcodeBuildEnvironments: [:]
+            workingDirectory: workingDirectory ?? rootURL,
+            xcodeBuildEnvironments: environment
         )
 
         process.standardInput = FileHandle.nullDevice

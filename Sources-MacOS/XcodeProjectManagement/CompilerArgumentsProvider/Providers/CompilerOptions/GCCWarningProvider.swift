@@ -1,8 +1,8 @@
 import Foundation
 
 struct GCCWarningProvider: CompileArgProvider, Sendable {
-    // https://developer.apple.com/documentation/xcode/build-settings-reference
-    // https://developer.apple.com/library/archive/documentation/DeveloperTools/Reference/XcodeBuildSettingRef/1-Build_Setting_Reference/build_setting_ref.html
+    /// https://developer.apple.com/documentation/xcode/build-settings-reference
+    /// https://developer.apple.com/library/archive/documentation/DeveloperTools/Reference/XcodeBuildSettingRef/1-Build_Setting_Reference/build_setting_ref.html
     let warnFlagMap: [String: [String: [String]]] = [
         "GCC_WARN_64_TO_32_BIT_CONVERSION": [
             "YES": ["-Wconversion"],

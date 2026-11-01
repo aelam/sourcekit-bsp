@@ -7,9 +7,9 @@ import XcodeProj
 struct BuildSettingResolverTests {
     @Test
     func resolveForKey() async throws {
-        let projectFolder = Bundle.module.resourceURL!
+        let projectFolder = try #require(Bundle.module.resourceURL?
             .appendingPathComponent("DemoProjects")
-            .appendingPathComponent("HelloProject")
+            .appendingPathComponent("HelloProject"))
         let projectFilePath = projectFolder
             .appendingPathComponent("Hello.xcodeproj").path
         let derivedDataPath = PathHash.derivedDataFullPath(for: projectFilePath)

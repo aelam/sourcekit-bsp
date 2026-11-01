@@ -56,9 +56,7 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
 
             logger.debug("BuildInitializeRequest: initializing project...")
             do {
-                try await Task.detached {
-                    try await service.initializeProject(rootURL: rootURL)
-                }.value
+                try await service.initializeProject(rootURL: rootURL)
                 logger.debug("BuildInitializeRequest: project initialized successfully")
             } catch {
                 logger.error("Failed to initialize project: \(error)")
@@ -91,7 +89,6 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
 
             let response = createResponseForBuildInitializeRequest(
                 rootURL: rootURL,
-                derivedDataPath: projectInfo.derivedDataPath,
                 indexStoreURL: projectInfo.indexStoreURL,
                 indexDatabaseURL: projectInfo.indexDatabaseURL,
                 clientCapabilities: self.params.capabilities
@@ -104,7 +101,6 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
 
     private func createResponseForBuildInitializeRequest(
         rootURL: URL,
-        derivedDataPath: URL,
         indexStoreURL: URL,
         indexDatabaseURL: URL,
         clientCapabilities: Params.BuildClientCapabilities
@@ -114,11 +110,10 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
             clientCapabilities: clientCapabilities
         )
         let fileWatchers = createFileSystemWatchers(
-            rootURL: rootURL,
-            derivedDataPath: derivedDataPath
+            rootURL: rootURL
         )
         logger.debug("BuildInitializeRequest: creating response")
-        let response = BuildInitializeResponse(
+        return BuildInitializeResponse(
             jsonrpc: "2.0",
             id: id,
             result: .init(
@@ -137,43 +132,17 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
                 displayName: "sourcekit-bsp"
             )
         )
-        return response
     }
 
     private func createFileSystemWatchers(
-        rootURL: URL,
-        derivedDataPath: URL
+        rootURL: URL
     ) -> [FileSystemWatcher] {
-        // Create file watcher, excluding derivedDataPath if inside project
-        var fileWatchers: [FileSystemWatcher] = []
-
-        if derivedDataPath.path.hasPrefix(rootURL.path) {
-            // DerivedData is inside project, create exclusion pattern
-            let relativeDerivedDataPath = String(derivedDataPath.path.dropFirst(rootURL.path.count + 1))
-            logger.debug("derivedDataPath is inside project, excluding: \(relativeDerivedDataPath)")
-
-            // Create positive pattern for Swift files
-            let includePattern = rootURL.path + "/**/*.swift"
-            fileWatchers.append(FileSystemWatcher(globPattern: includePattern))
-
-            // Create negative pattern to exclude derivedDataPath
-            let excludePattern = "!" + derivedDataPath.path + "/**"
-            fileWatchers.append(
-                FileSystemWatcher(globPattern: excludePattern),
-            )
-
-            logger.debug("fileWatchers: include=\(includePattern), exclude=\(excludePattern)")
-        } else {
-            // DerivedData is outside project, use simple pattern
-            let globPatternForFileWatch = rootURL.path + "/**/*.swift"
-            fileWatchers.append(FileSystemWatcher(globPattern: globPatternForFileWatch))
-            logger.debug("globPatternForFileWatch: \(globPatternForFileWatch)")
-        }
-
-        /// exclude `.build`
-        let excludePattern = "!" + ".build/**"
-        fileWatchers.append(FileSystemWatcher(globPattern: excludePattern))
-        return fileWatchers
+        let patterns = [
+            "**/*.{swift,c,cc,cpp,cxx,m,mm,h,hpp,hxx}",
+            "**/*.{pbxproj,xcconfig,xcscheme,xcfilelist}",
+            "**/contents.xcworkspacedata", "**/Package.resolved", ".sourcekit-bsp/project.json"
+        ]
+        return patterns.map { FileSystemWatcher(globPattern: rootURL.path + "/" + $0) }
     }
 
     /// Create server capabilities based on client capabilities
@@ -194,9 +163,9 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
             testProvider: hasLanguages ? TestProvider(languageIds: supportedLanguages) : nil,
             runProvider: hasLanguages ? RunProvider(languageIds: supportedLanguages) : nil,
             debugProvider: hasLanguages ? DebugProvider(languageIds: supportedLanguages) : nil,
-            inverseSourcesProvider: true,
-            dependencySourcesProvider: true,
-            resourcesProvider: true,
+            inverseSourcesProvider: false,
+            dependencySourcesProvider: false,
+            resourcesProvider: false,
             outputPathsProvider: true,
             buildTargetChangedProvider: true,
             canReload: true

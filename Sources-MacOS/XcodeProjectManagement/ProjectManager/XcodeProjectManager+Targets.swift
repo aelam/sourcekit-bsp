@@ -28,49 +28,22 @@ extension XcodeProjectManager {
             return []
         }
 
-        do {
-            // Use XcodeProj to parse workspace
-            let workspace = try XCWorkspace(pathString: workspaceURL.path)
-            var allTargets: [XcodeTarget] = []
-
-            // Get all project references from workspace
-            for element in workspace.data.children {
-                if case let .file(fileRef) = element,
-                   fileRef.location.path.hasSuffix(".xcodeproj") {
-                    // Resolve project path relative to workspace
-                    let projectURL = resolveProjectPath(
-                        from: fileRef.location,
-                        workspaceURL: workspaceURL
-                    )
-
-                    if let projectURL {
-                        do {
-                            let projectTargets = try loadTargetsFromXcodeProj(
-                                projectURL: projectURL,
-                                isFromWorkspace: true
-                            )
-                            allTargets.append(contentsOf: projectTargets)
-                        } catch {
-                            logger.error("Failed to load targets from project \(projectURL): \(error)")
-                            // Continue with other projects
-                        }
-                    }
-                }
+        let workspace = try XCWorkspace(pathString: workspaceURL.path)
+        var allTargets: [XcodeTarget] = []
+        for element in workspace.data.children {
+            if case let .file(fileRef) = element,
+               fileRef.location.path.hasSuffix(".xcodeproj"),
+               let projectURL = resolveProjectPath(from: fileRef.location, workspaceURL: workspaceURL) {
+                allTargets += try loadTargetsFromXcodeProj(projectURL: projectURL, isFromWorkspace: true)
             }
-
-            logger.debug("Loaded \(allTargets.count) targets from workspace \(workspaceURL.path)")
-
-            return allTargets
-        } catch {
-            logger.error("Failed to parse workspace \(workspaceURL.path): \(error)")
-            return []
         }
+        return allTargets
     }
 
     /// Load targets from XcodeProj directly
     func loadTargetsFromXcodeProj(projectURL: URL, isFromWorkspace: Bool = false) throws -> [XcodeTarget] {
         guard let project = loadXcodeProjCache(projectURL: projectURL) else {
-            return []
+            throw XcodeProjectError.invalidConfig("Cannot load project: \(projectURL.path)")
         }
         var targets = [XcodeTarget]()
         for target in project.pbxproj.nativeTargets {

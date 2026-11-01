@@ -19,7 +19,7 @@ struct FrameworkSearchPathProvider: CompileArgProvider, Sendable {
             .flatMap { buildFlags(for: $0, compiler: compiler) }
     }
 
-    // XcodeProject with SwiftPM frameworks
+    /// XcodeProject with SwiftPM frameworks
     private func buildFlagsForSwiftPM(settings: [String: String], compiler: CompilerType) -> [String] {
         guard let configurationBuildDir = settings["CONFIGURATION_BUILD_DIR"] else {
             return []

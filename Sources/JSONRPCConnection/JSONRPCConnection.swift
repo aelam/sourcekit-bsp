@@ -18,6 +18,9 @@ public final actor JSONRPCConnection {
     // Task handles for stream processing
     private var messageProcessingTask: Task<Void, Never>?
     private var errorProcessingTask: Task<Void, Never>?
+    private var requests: [RequestID: Task<Void, Never>] = [:]
+    private var notificationTail: Task<Void, Never>?
+    private var notifications: [UUID: Task<Void, Never>] = [:]
 
     public init(
         transport: JSONRPCServerTransport,
@@ -41,10 +44,7 @@ public final actor JSONRPCConnection {
             guard let self else { return }
 
             for await message in transport.messageStream {
-                // Process each message concurrently to avoid blocking
-                Task { [weak self] in
-                    await self?.processMessage(message)
-                }
+                await self.enqueueMessage(message)
             }
         }
 
@@ -68,6 +68,12 @@ public final actor JSONRPCConnection {
         // Cancel processing tasks
         messageProcessingTask?.cancel()
         errorProcessingTask?.cancel()
+        for task in requests.values {
+            task.cancel()
+        }
+        for task in notifications.values {
+            task.cancel()
+        }
 
         // Close transport
         await transport.close()
@@ -78,6 +84,50 @@ public final actor JSONRPCConnection {
 
         messageProcessingTask = nil
         errorProcessingTask = nil
+    }
+
+    private struct Cancellation: Decodable {
+        struct Params: Decodable { let id: RequestID }
+        let params: Params
+    }
+
+    /// Preserve notification order without blocking cancellation behind a build.
+    private func enqueueMessage(_ message: JSONRPCMessage) {
+        if message.request.method == "$/cancelRequest", message.request.id == nil {
+            if let cancellation = try? jsonDecoder.decode(Cancellation.self, from: message.rawData) {
+                requests[cancellation.params.id]?.cancel()
+            }
+            return
+        }
+        let precedingNotifications = notificationTail
+        if let id = message.request.id {
+            guard requests[id] == nil else {
+                logger.warning("Ignoring duplicate active request ID: \(id)")
+                return
+            }
+            requests[id] = Task {
+                defer { requests[id] = nil }
+                await precedingNotifications?.value
+                if Task.isCancelled {
+                    await sendErrorResponse(id: id, error: JSONRPCError(code: -32800, message: "Request cancelled"))
+                    return
+                }
+                await processMessage(message)
+            }
+        } else {
+            let token = UUID()
+            let task = Task {
+                defer {
+                    notifications[token] = nil
+                    if notifications.isEmpty { notificationTail = nil }
+                }
+                await precedingNotifications?.value
+                guard !Task.isCancelled else { return }
+                await processMessage(message)
+            }
+            notifications[token] = task
+            notificationTail = task
+        }
     }
 
     /// Process a single message from the message stream
@@ -134,6 +184,12 @@ public final actor JSONRPCConnection {
             logger.debug("requestBody: \n\(prettyJSON)")
 
             if let response = await typedRequest.handle(handler: messageHandler, id: requestID) {
+                if Task.isCancelled {
+                    await sendErrorResponse(
+                        id: requestID, error: JSONRPCError(code: -32800, message: "Request cancelled")
+                    )
+                    return
+                }
                 do {
                     logger.debug(
                         "Request handler returned response for method: \(message.request.method), " +

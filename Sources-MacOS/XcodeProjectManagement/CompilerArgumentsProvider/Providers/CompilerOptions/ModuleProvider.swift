@@ -1,7 +1,7 @@
 import Foundation
 
 struct ModuleProvider: CompileArgProvider, Sendable {
-    // `-fmodules`,   `-fmodule-name  Foo`
+    /// `-fmodules`,   `-fmodule-name  Foo`
     func arguments(for context: ArgContext) -> [String] {
         let moduleCachePath = context.derivedDataPath
             .deletingLastPathComponent()

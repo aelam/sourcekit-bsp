@@ -14,8 +14,8 @@ public enum Platform: String, Sendable, Codable, Hashable {
 public typealias XcodeSDK = Platform
 
 extension Platform {
-    // "AVAILABLE_PLATFORMS" : "android appletvos appletvsimulator driverkit iphoneos iphonesimulator macosx qnx
-    // watchos watchsimulator xros xrsimulator",
+    /// "AVAILABLE_PLATFORMS" : "android appletvos appletvsimulator driverkit iphoneos iphonesimulator macosx qnx
+    /// watchos watchsimulator xros xrsimulator",
     var isSimulator: Bool {
         switch self {
         case .iOSSimulator, .watchSimulator, .tvSimulator, .visionSimulator:
@@ -63,7 +63,7 @@ extension Platform {
         }
     }
 
-    // EFFECTIVE_PLATFORM_NAME
+    /// EFFECTIVE_PLATFORM_NAME
     var effectiveSuffix: String {
         switch self {
         case .iOS: "-iphoneos"

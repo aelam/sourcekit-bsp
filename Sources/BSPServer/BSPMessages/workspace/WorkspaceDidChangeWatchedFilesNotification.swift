@@ -5,6 +5,7 @@
 //  Copyright © 2024 Wang Lun.
 //
 
+import BuildServerProtocol
 import JSONRPCConnection
 import Logger
 
@@ -16,18 +17,27 @@ public struct WorkspaceDidChangeWatchedFilesNotification: ContextualNotification
     }
 
     public struct Params: Codable, Sendable {
-        public let targets: [String]
+        public let changes: [FileEvent]
     }
 
-    public func handle(
-        contextualHandler: some ContextualMessageHandler
-    ) async throws {
-        logger.debug("WorkspaceDidChangeWatchedFilesNotification received")
-        // if xcodeproj file version is < 13.0 skip
-        // Handle the notification, e.g., update the workspace state or notify clients
-        // if context.xcodeprojFileVersion < "13.0" {
-        //     logger.info("Skipping WorkspaceDidChangeWatchedFilesNotification handling for Xcode < 13.0")
-        //     return
-        // }
+    public struct FileEvent: Codable, Sendable {
+        public enum Kind: Int, Codable, Sendable {
+            case created = 1
+            case changed = 2
+            case deleted = 3
+        }
+
+        public let uri: URI
+        public let type: Kind
+    }
+
+    public let params: Params
+
+    public func handle<Handler: ContextualMessageHandler>(
+        contextualHandler: Handler
+    ) async throws where Handler.Context == BSPServerService {
+        try await contextualHandler.withContext { service in
+            try await service.filesDidChange(params.changes)
+        }
     }
 }
