@@ -2,9 +2,8 @@
 
 ## Project changes
 
-The initialization response advertises file watchers. The client must watch those
-paths and send `workspace/didChangeWatchedFiles` notifications. SourceKit-LSP can
-use these watchers; a standalone BSP client must implement this step.
+Clients must register the watchers from initialization and send
+`workspace/didChangeWatchedFiles`:
 
 ```json
 {
@@ -48,8 +47,7 @@ Send the ID of the request to cancel:
 }
 ```
 
-The connection cancels the matching task. Compile and test requests propagate
-cancellation to `xcodebuild`; index preparation also propagates cancellation.
+The connection cancels the matching task, including active compile/test/index builds.
 Cancellation bypasses the file notification queue. The cancelled request returns
 JSON-RPC error `-32800`. Compile and test tasks also send `build/taskFinish` with
 status `3` (cancelled). An unknown or completed request ID has no effect.
@@ -61,19 +59,8 @@ Use targets whose `canTest` capability is `true`, such as `HelloTests` or
 It runs `xcodebuild test` for each selected target, with a valid test scheme and
 a target filter. A separate compile request is not required.
 
-```shell
-python3 Scripts/bsp_client.py \
-  --server /path/to/Xcode/Build/Products/Debug/sourcekit-bsp \
-  --project /path/to/HelloProject \
-  --method buildTarget/test \
-  --target HelloTests \
-  --destination 'id=SIMULATOR-UUID'
-```
-
-Use `xcrun simctl list devices available` to find a simulator ID. A generic
-simulator destination cannot execute tests. If no destination is supplied, the
-server selects an available simulator for the target, or the local Mac for a
-macOS target. Specify a destination to control the device and runtime version.
+Tests require a runnable destination. If none is supplied, the server selects an
+available simulator or the local Mac. See [test commands](wiki/Build-Run-Test-Debug.md#test).
 
 The request's `arguments` array accepts Xcode options such as `-configuration`,
 `-derivedDataPath`, `-only-testing:HelloTests/Suite/test`, and `-skip-testing:...`.

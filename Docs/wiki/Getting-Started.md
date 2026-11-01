@@ -2,13 +2,8 @@
 
 ## Requirements
 
-- macOS 13 or later for the Xcode backend.
-- A full Xcode installation with Swift 6.1 or later to build the server.
-- The project's SDK and a compatible simulator runtime for simulator execution.
-- Python 3 to use `Scripts/bsp_client.py`; no Python packages are required.
-
-The repository also tests portable modules on Linux. Its SwiftPM project provider
-is not implemented, so Linux builds do not provide an Xcode or SwiftPM backend.
+macOS 13+, Xcode with Swift 6.1+, and your project's SDKs and simulator runtimes.
+The command-line probe also requires Python 3.
 
 ## Choose the server executable
 
@@ -26,9 +21,9 @@ xcodebuild -scheme sourcekit-bsp -configuration Debug \
   -destination 'platform=macOS' -derivedDataPath /tmp/sourcekit-bsp-build build
 ```
 
-This produces `/tmp/sourcekit-bsp-build/Build/Products/Debug/sourcekit-bsp`.
-An Xcode GUI build can use another DerivedData directory. Select the actual
-executable in the connection file and in the Python client's `--server` option.
+The executable is `/tmp/sourcekit-bsp-build/Build/Products/Debug/sourcekit-bsp`.
+For GUI builds, use Xcode's configured DerivedData directory. Rebuild the copy
+selected by your client; `swift build` does not update Xcode's copy.
 
 ## Configure the application project
 
@@ -48,8 +43,7 @@ Create `.bsp/sourcekit-bsp.json` in the application project root:
 }
 ```
 
-BSP clients discover connection files in `.bsp/*.json` and start the executable
-from `argv`. Keep this path consistent with the server build you want to use.
+Clients discover `.bsp/*.json` and start the executable in `argv`.
 
 If automatic project discovery is ambiguous, create `.sourcekit-bsp/project.json`:
 
@@ -67,9 +61,7 @@ If automatic project discovery is ambiguous, create `.sourcekit-bsp/project.json
 | `configuration` | Default build configuration; defaults to `Debug` |
 | `scheme` | Parsed for compatibility; does not currently override target-based scheme selection |
 
-The file is optional for a single discoverable project. Schemes are resolved for
-the requested targets; the server can create `sourcekit-bsp-<Target>.xcscheme`
-files when it needs a scheme.
+The server creates `sourcekit-bsp-<Target>.xcscheme` files when a target needs a scheme.
 
 ## Verify the connection
 
@@ -80,13 +72,8 @@ python3 Scripts/bsp_client.py \
   --method workspace/buildTargets --verbose
 ```
 
-The script starts the server, initializes it, sends a request, and shuts it down.
-Use the returned target identifiers in protocol requests. Do not construct them
-from filesystem paths: paths can have aliases, spaces, or normalized forms.
+Use the returned target IDs in protocol requests.
 
-In VS Code, the Swift extension starts SourceKit-LSP. A BSP client such as
-vscode-bsp adds build/run/test/debug controls. Select the same Xcode toolchain
-for both clients and restart their server connections after a configuration change.
-
-Running `sourcekit-bsp` directly waits for framed JSON-RPC messages on stdin.
-Project loading starts when the client sends `build/initialize` with `rootUri`.
+In VS Code, use the Swift extension for SourceKit-LSP and
+[vscode-bsp](https://github.com/aelam/vscode-bsp) for build/debug controls.
+Select the same Xcode toolchain for both and restart connections after changing configuration.

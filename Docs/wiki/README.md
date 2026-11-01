@@ -1,8 +1,6 @@
 # Wiki source pages
 
-These pages document the current source tree. Older releases may have different
-capabilities. The historical implementation plans elsewhere in `Docs` are not a
-current feature checklist.
+These pages document the current implementation. Older plans in `Docs` may be outdated.
 
 | Page | Contents |
 | --- | --- |
@@ -13,19 +11,13 @@ current feature checklist.
 | [Protocol support](Protocol-Support.md) | Implemented methods, extensions, limitations, and concurrency |
 | [Troubleshooting](Troubleshooting.md) | Navigation, connection, destination, and test failures |
 
-`Home.md` and `_Sidebar.md` use GitHub Wiki links. This index uses repository file
-links so the pages can also be read before the Wiki is published.
+This index links to local files; `Home.md` and `_Sidebar.md` use GitHub Wiki links.
 
 ## Publication
 
-As checked on 2026-11-01, the repository has Wiki enabled but no initialized Wiki
-Git repository. The Wiki URL redirects to the repository, and the authenticated
-Wiki Git endpoint returns `Repository not found`. These files are prepared source
-pages; they have not been published to the Wiki.
-
-To initialize it, an owner must create and save the first `Home` page at
-[the GitHub Wiki](https://github.com/aelam/sourcekit-bsp/wiki). GitHub exposes the
-Wiki Git repository after that step. Then review and publish these pages:
+The Wiki is not initialized; these pages are not published. An owner must first
+save a `Home` page in [GitHub Wiki](https://github.com/aelam/sourcekit-bsp/wiki).
+Then copy the sources into a fresh Wiki checkout:
 
 ```sh
 # Run from the sourcekit-bsp repository root.
@@ -40,6 +32,5 @@ cp "$bsp_wiki_sources/Home.md" "$bsp_wiki_sources/_Sidebar.md" \
 git -C /tmp/sourcekit-bsp-wiki diff
 ```
 
-Use a fresh checkout path if `/tmp/sourcekit-bsp-wiki` already exists. Review any
-existing Wiki content before replacing it. Commit and push the reviewed pages
-from that Wiki checkout. Do not publish this `README.md` as a Wiki page.
+Use another path if the checkout already exists. Review, commit, and push from
+that checkout. Exclude this `README.md` from publication.

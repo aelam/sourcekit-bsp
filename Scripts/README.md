@@ -1,131 +1,61 @@
-# BSP Client
+# BSP client
 
-`bsp_client.py` uses the Python 3 standard library. It starts the server, sends
-the initialization messages, calls one BSP method, and shuts the server down.
-Results go to stdout. Progress, errors, and optional protocol traces go to stderr.
-The process exits with a nonzero status when the request or validation fails.
+`bsp_client.py` requires Python 3 with no extra packages. Each invocation starts
+the server, initializes it, sends one request, and shuts it down. Results go to
+stdout; progress, errors, and protocol traces go to stderr. Request failures and
+non-success `statusCode` values produce a nonzero exit status.
 
-Build the server with `swift build`. Run these commands from the repository root.
-Use a disposable copy of a project: compilation can create schemes and build
-products, and debug validation installs and launches the selected application.
+Build with `swift build`, then run from the repository root:
 
 ```sh
-# List targets.
-python3 Scripts/bsp_client.py --project /path/to/project
+bsp_project=/absolute/path/to/HelloProject
 
-# Compile an application or test target.
-python3 Scripts/bsp_client.py --project /path/to/project \
+# List targets.
+python3 Scripts/bsp_client.py --project "$bsp_project"
+
+# Compile a target.
+python3 Scripts/bsp_client.py --project "$bsp_project" \
   --method buildTarget/compile --target Hello
 
-# Prepare dependencies and index data without launching the application.
-python3 Scripts/bsp_client.py --project /path/to/project \
-  --method buildTarget/prepare --target Hello
-
-# Inspect source files or output paths.
-python3 Scripts/bsp_client.py --project /path/to/project \
+# Inspect sources.
+python3 Scripts/bsp_client.py --project "$bsp_project" \
   --method buildTarget/sources --target Hello
 
-# Send a request with explicit parameters and inspect all protocol messages.
-python3 Scripts/bsp_client.py --project /path/to/project \
+# Send explicit parameters and show protocol messages. Use a returned target ID.
+python3 Scripts/bsp_client.py --project "$bsp_project" \
   --method buildTarget/outputPaths \
-  --params '{"targets":[{"uri":"xcode:///path/to/Hello.xcodeproj/Hello"}]}' \
-  --verbose
+  --params '{"targets":[{"uri":"xcode:///path/to/Hello.xcodeproj/Hello"}]}' --verbose
 
-# List available simulator identifiers.
-xcrun simctl list devices available
-
-# Run an existing application build with the same destination as compilation.
-python3 Scripts/bsp_client.py --project /path/to/project \
-  --method buildTarget/run --target Hello --destination id=SIMULATOR-UDID
-
-# Build and execute a test bundle.
-python3 Scripts/bsp_client.py --project /path/to/project \
-  --method buildTarget/test --target HelloTests --destination id=SIMULATOR-UDID
-
-# Restrict execution to a suite within that test bundle.
-python3 Scripts/bsp_client.py --project /path/to/project \
-  --method buildTarget/test --target HelloTests --destination id=SIMULATOR-UDID \
-  --build-setting=-only-testing:HelloTests/HelloTests
-
-# Reload project metadata in this connection.
-python3 Scripts/bsp_client.py --project /path/to/project --method workspace/reload
-
-# Verify simulator debugging, including a breakpoint and stack trace.
-python3 Scripts/bsp_client.py --project /path/to/project \
-  --method debugSession/start --target Hello --destination id=SIMULATOR-UDID \
-  --breakpoint /path/to/project/Hello/HelloApp.swift:14
-
-# Verify macOS debugging. Omit --breakpoint to use the main function.
-python3 Scripts/bsp_client.py --project /path/to/mac-project \
-  --method debugSession/start --target App --destination platform=macOS
+# Reload metadata in this connection.
+python3 Scripts/bsp_client.py --project "$bsp_project" --method workspace/reload
 ```
 
-`debugSession/start` also connects to the returned DAP endpoint. The client
-initializes LLDB, launches or attaches to the application, verifies a breakpoint,
-reads threads and stack frames, and disconnects with `terminateDebuggee: true`.
-It reports an adapter crash or timeout as a failure.
+For simulator commands and test filters, see [Build, run, test, and debug](../Docs/wiki/Build-Run-Test-Debug.md).
+For preparation commands and DerivedData paths, see [Indexing and paths](../Docs/wiki/Indexing-and-Paths.md).
 
-Use `--server` to select a different BSP executable, `--developer-dir` to select
-an Xcode installation, and `--timeout` to allow more than 300 seconds per BSP
-request. `--configuration`, `--derived-data`, and repeated `--build-setting`
-options control build arguments. An `arguments` array in `--params` takes
-precedence over those options. Requests that need file URIs or other fields can
-receive them through `--params`.
+## Options
 
-This client sends one request per connection. It does not implement an interactive
-editor, continuous workspace notifications, or interactive cancellation. Reloading
-through this script does not reload another editor's server connection. The script
-checks JSON-RPC errors and non-success `statusCode` results. Debug validation also
-checks the breakpoint, threads, and stack.
-
-`buildTarget/test` invokes `xcodebuild test` for all selected test targets. It
-validates the full target list, applies `-only-testing`/`-skip-testing` filters,
-streams Xcode logs, and reports failures. No separate compile request is required.
-Use a concrete simulator or device destination; a generic destination cannot run
-tests. Individual test events and structured test-count reports are not yet
-implemented. See [BSP lifecycle](../Docs/BSP-Lifecycle.md) for cancellation and
-refresh payloads.
-
-`buildTarget/prepare` waits for an incremental Xcode build with indexing enabled
-and code signing disabled. It uses the server's configured build configuration,
-the target's simulator platform (or macOS), and the same DerivedData directory as
-`textDocument/sourceKitOptions`. It does not take the run command's selected device.
-SourceKit-LSP builds its symbol index after preparation. Concurrent preparation
-requests are serialized; later requests still run Xcode's incremental check so
-source edits and deleted products are detected. Build failures return a JSON-RPC
-error with the last build output. This implementation uses a regular build;
-dependency-only compilation is a future optimization.
-
-For a full indexing pass, run `sourcekit-lsp debug index --project /path/to/project`
-with the same Xcode toolchain as the BSP server. The project must have a BSP
-connection file that selects the intended executable. For automatic background
-indexing, enable it in your editor or in `.sourcekit-lsp/config.json`:
-
-```json
-{
-  "backgroundIndexing": true,
-  "backgroundPreparationMode": "enabled"
-}
-```
-
-The BSP executable and the project's build products have separate paths:
-
-| Purpose | Default location |
+| Option | Purpose |
 | --- | --- |
-| BSP executable from `swift build` | `<repository>/.build/debug/sourcekit-bsp` |
-| BSP executable from Xcode | `<BSP DerivedData>/Build/Products/Debug/sourcekit-bsp` |
-| Application build products | `<project DerivedData>/Build/Products` |
-| Compiler index data | `<project DerivedData>/Index.noindex/DataStore` |
-| SourceKit-LSP index database | `<project DerivedData>/IndexDatabase.noIndex` |
+| `--server` | BSP executable; defaults to `.build/debug/sourcekit-bsp` in this repository |
+| `--developer-dir` | Xcode `Contents/Developer` directory |
+| `--timeout` | Per-request timeout in seconds; defaults to 300 |
+| `--configuration` | Xcode build configuration |
+| `--destination` | Xcode destination, such as `id=SIMULATOR-UUID` or `platform=macOS` |
+| `--derived-data` | Product path for compile/run/test/debug; does not move the language server's index |
+| `--build-setting` | Additional Xcode argument; repeat as needed |
+| `--params` | Explicit request parameters; its `arguments` array overrides build options |
+| `--verbose` | Show protocol messages |
 
-Use `--server /absolute/path/to/sourcekit-bsp` to test the executable configured
-in the project's BSP connection file. Rebuild that executable after server changes,
-then restart the editor's server connection. Building with `swift build` does not
-update an executable in Xcode's DerivedData.
+## Debug validation
 
-Preparation, compiler arguments, and the initialization response use the same
-project DerivedData and index-store paths. BSP passes `-derivedDataPath` explicitly
-to Xcode. A manual `xcodebuild` command must use that same path to share its products;
-Xcode preferences or another `-derivedDataPath` can otherwise select a different
-directory. Per-request `--derived-data` overrides for compile/run/test/debug do not move
-the language server's indexing directory.
+For `debugSession/start`, the probe connects to LLDB DAP, launches or attaches,
+checks a breakpoint, reads threads and stack frames, then terminates the debuggee.
+Use `--breakpoint /path/to/File.swift:14`; the default breakpoint is `main`.
+An adapter crash or timeout fails validation.
+
+## Limits
+
+The probe has no continuous file notifications or interactive cancellation.
+`workspace/reload` affects only its own connection, not an editor's server.
+For protocol payloads, see [BSP lifecycle](../Docs/BSP-Lifecycle.md).

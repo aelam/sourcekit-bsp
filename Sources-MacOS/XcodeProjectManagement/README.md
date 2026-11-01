@@ -1,15 +1,7 @@
 # XcodeProjectManagement
 
-A Swift library for managing Xcode projects, parsing settings, and building xcodebuild command arguments for BSP (Build Server Protocol) integration.
-
-## Overview
-
-This module provides comprehensive support for:
-
-- **Project Discovery**: Automatically locate and resolve Xcode projects and workspaces
-- **Settings Management**: Parse and manage Xcode build settings and configurations  
-- **Command Building**: Generate properly formatted xcodebuild command arguments
-- **BSP Integration**: Specialized support for Build Server Protocol workflows
+A Swift library for discovering Xcode projects, parsing build settings, and
+generating `xcodebuild` arguments for BSP integration.
 
 ## Key Components
 
@@ -106,22 +98,9 @@ Supported xcodebuild actions:
 
 ## BSP Configuration
 
-BSP clients discover server connection files in `.bsp/*.json`. Create
-`.bsp/sourcekit-bsp.json` in the application project root:
-
-```json
-{
-  "name": "sourcekit-bsp",
-  "version": "1.0",
-  "bspVersion": "2.2.0",
-  "languages": ["swift", "c", "cpp", "objective-c", "objective-cpp"],
-  "argv": ["/absolute/path/to/sourcekit-bsp"]
-}
-```
-
-The client starts the executable from `argv` and sends the project root URI in
-`build/initialize`. To select an Xcode project or workspace when discovery is
-ambiguous, create `.sourcekit-bsp/project.json`:
+Clients discover and start the server through `.bsp/*.json`; see
+[connection setup](../../Docs/wiki/Getting-Started.md#configure-the-application-project).
+For ambiguous project discovery, create `.sourcekit-bsp/project.json`:
 
 ```json
 {
@@ -136,20 +115,13 @@ requested target; the optional `scheme` field does not override that selection.
 
 ## Thread Safety
 
-All public APIs are designed to be thread-safe:
-
-- `XcodeProjectManager` is an `actor` for safe concurrent access
-- `XcodeSettingsManager` is an `actor` for safe concurrent access  
-- All data structures conform to `Sendable` where applicable
+`XcodeProjectManager` and `XcodeSettingsManager` are actors. Data types use
+`Sendable` where applicable.
 
 ## Error Handling
 
-The module provides comprehensive error handling through `XcodeProjectError`:
+`XcodeProjectError` includes:
 
 - `.notFound` - No Xcode project found
 - `.multipleWorkspaces([URL])` - Multiple workspaces found, specify one in config
 - `.invalidConfig(String)` - Invalid or malformed configuration
-
-## Integration
-
-This module integrates seamlessly with the main sourcekit-bsp for BSP support, but can also be used independently for general Xcode project management tasks.
