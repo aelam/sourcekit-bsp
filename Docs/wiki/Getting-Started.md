@@ -32,7 +32,7 @@ executable in the connection file and in the Python client's `--server` option.
 
 ## Configure the application project
 
-Create `buildServer.json` in the project root for SourceKit-LSP compatibility:
+Create `.bsp/sourcekit-bsp.json` in the application project root:
 
 ```json
 {
@@ -48,9 +48,8 @@ Create `buildServer.json` in the project root for SourceKit-LSP compatibility:
 }
 ```
 
-For a client that discovers `.bsp/*.json`, use `.bsp/sourcekit-bsp.json` with the
-same contents. Check the discovery behavior of the client version you use.
-Avoid leaving connection files that select different server builds.
+BSP clients discover connection files in `.bsp/*.json` and start the executable
+from `argv`. Keep this path consistent with the server build you want to use.
 
 If automatic project discovery is ambiguous, create `.sourcekit-bsp/project.json`:
 

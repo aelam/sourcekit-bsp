@@ -71,7 +71,7 @@ is not available yet.
 
 ## Connect an editor
 
-Create `buildServer.json` in the root of the application project you want to edit:
+Create `.bsp/sourcekit-bsp.json` in the root of the application project you want to edit:
 
 ```json
 {
@@ -83,9 +83,8 @@ Create `buildServer.json` in the root of the application project you want to edi
 }
 ```
 
-Clients that discover standard BSP connection files can use
-`.bsp/sourcekit-bsp.json` with the same contents. Use the location supported by
-your client; `buildServer.json` is the compatibility setup for SourceKit-LSP.
+BSP clients discover server connection files in `.bsp/*.json`. The `argv` array
+selects the server executable that the client starts.
 Select the same Xcode toolchain for the editor and BSP process. If needed, the
 `argv` array can start with `/usr/bin/env` and a `DEVELOPER_DIR=...` assignment.
 

@@ -106,19 +106,33 @@ Supported xcodebuild actions:
 
 ## BSP Configuration
 
-The module supports BSP (Build Server Protocol) configuration files:
+BSP clients discover server connection files in `.bsp/*.json`. Create
+`.bsp/sourcekit-bsp.json` in the application project root:
 
-- `.bsp/xcode.json` - Standard BSP configuration
-- `buildServer.json` - Legacy configuration support 
+```json
+{
+  "name": "sourcekit-bsp",
+  "version": "1.0",
+  "bspVersion": "2.2.0",
+  "languages": ["swift", "c", "cpp", "objective-c", "objective-cpp"],
+  "argv": ["/absolute/path/to/sourcekit-bsp"]
+}
+```
 
-Example configuration:
+The client starts the executable from `argv` and sends the project root URI in
+`build/initialize`. To select an Xcode project or workspace when discovery is
+ambiguous, create `.sourcekit-bsp/project.json`:
+
 ```json
 {
   "workspace": "MyProject.xcworkspace",
-  "scheme": "MyScheme",
   "configuration": "Debug"
 }
 ```
+
+Use `project` instead of `workspace` to select an `.xcodeproj`. Paths can be
+absolute or relative to the project root. The server resolves schemes for each
+requested target; the optional `scheme` field does not override that selection.
 
 ## Thread Safety
 

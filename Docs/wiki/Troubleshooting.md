@@ -9,7 +9,7 @@ Raw JSON piped to stdin is insufficient: messages need JSON-RPC framing.
 
 ## A source change has no effect on the running server
 
-Check the executable selected in `buildServer.json` or `.bsp/*.json`. A server
+Check the executable selected in `.bsp/sourcekit-bsp.json`. A server
 built with `swift build` is under `.build`; an Xcode build is under DerivedData.
 Rebuild the selected copy and restart the client connection. Use the same path
 in the Python client's `--server` option.
