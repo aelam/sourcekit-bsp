@@ -5,6 +5,13 @@ import XcodeProjectManagement
 
 struct ProcessExecutorTests {
     @Test
+    func describesTimeoutsAndStartFailures() {
+        #expect(ProcessExecutorError.timeout(120).localizedDescription.contains("120"))
+        #expect(ProcessExecutorError.timeout(120).localizedDescription.contains("timed out"))
+        #expect(ProcessExecutorError.processStartFailed("missing tool").localizedDescription.contains("missing tool"))
+    }
+
+    @Test
     func capturesAllOutputBeforeReturning() async throws {
         let executor = ProcessExecutor()
         for _ in 0 ..< 10 {

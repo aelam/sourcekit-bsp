@@ -9,6 +9,7 @@ extension BSPServerService {
         environmentVariables: [String: String]?,
         workingDirectory: URI?,
     ) async throws -> StatusCode {
+        try Task.checkCancellation()
         guard let projectManager else {
             throw BuildServerError.invalidConfiguration("Project not initialized")
         }

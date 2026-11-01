@@ -237,8 +237,10 @@ public final actor JSONRPCConnection {
             error: error
         )
 
+        // A cancelled request must still deliver its final error response.
+        let sending = Task { try await send(response: errorResponse) }
         do {
-            try await send(response: errorResponse)
+            try await sending.value
         } catch {
             // Failed to send error response
             logger.error("Failed to send error response: \(error)")

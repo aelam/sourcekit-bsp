@@ -32,7 +32,7 @@ struct SimulatorInstaller: AppInstaller {
         // BSP request forever (it would block the client's debugSession/start
         // with no error). A healthy boot/install is seconds; these are generous
         // ceilings after which we surface a timeout instead of hanging.
-        _ = try? await executor.execute(
+        _ = try await executor.execute(
             executable: "/usr/bin/xcrun",
             arguments: ["simctl", "boot", deviceID],
             timeout: 90

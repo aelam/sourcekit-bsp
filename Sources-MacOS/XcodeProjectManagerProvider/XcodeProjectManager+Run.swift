@@ -12,6 +12,7 @@ public extension XcodeProjectManager {
         environmentVariables: [String: String]?,
         workingDirectory: URI?
     ) async throws -> StatusCode {
+        try Task.checkCancellation()
         let xcodeTargetIdentifier = XcodeTargetIdentifier(targetIdentifier)
 
         let result = await run(
@@ -21,6 +22,7 @@ public extension XcodeProjectManager {
             workingDirectory: workingDirectory?.fileURL
         )
 
+        try Task.checkCancellation()
         switch result.statusCode {
         case .success:
             return .ok

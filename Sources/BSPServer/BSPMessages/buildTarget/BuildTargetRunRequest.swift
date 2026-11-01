@@ -57,6 +57,11 @@ public struct BuildTargetRunRequest: ContextualRequestType, Sendable {
                     id: id,
                     result: .init(originId: nil, statusCode: statusCode)
                 )
+            } catch is CancellationError {
+                return BuildTargetRunResponse(
+                    id: id,
+                    result: .init(originId: nil, statusCode: .cancelled)
+                )
             } catch {
                 logger.error("Failed to run target: \(params.target), error: \(error)")
                 try? await context.sendNotification(ServerJSONRPCNotification(
