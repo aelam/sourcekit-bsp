@@ -1,4 +1,4 @@
-enum TestStatus: Int, Codable, Sendable {
+public enum TestStatus: Int, Codable, Sendable {
     /** The test passed successfully. */
     case passed = 1
 

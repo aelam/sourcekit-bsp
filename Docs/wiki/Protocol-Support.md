@@ -16,7 +16,7 @@ The server implements a subset of BSP 2.2.0. Clients should check
 | `buildTarget/prepare` | SourceKit extension request | Prepare build inputs and index data |
 | `buildTarget/compile` | Client request | Compile targets and stream logs |
 | `buildTarget/run` | Client request | Install/launch an existing product |
-| `buildTarget/test` | Client request | Build and run test bundles; return aggregate status |
+| `buildTarget/test` | Client request | Build and run test bundles; publish case results and target reports |
 | `debugSession/start` | Client request | Build and return an LLDB DAP connection for macOS/simulators |
 | `buildTarget/outputPaths` | Client request | Return each target's default project product directory |
 | `buildTarget/cleanCache` | Client request | Clear shared project products and indexes, not isolated target caches |
@@ -25,6 +25,7 @@ The server implements a subset of BSP 2.2.0. Clients should check
 | `workspace/waitForBuildSystemUpdates` | SourceKit extension request | Wait for pending updates; report reload errors |
 | `buildTarget/didChange` | Server notification | Report target changes after refresh and option changes after preparation |
 | `$/cancelRequest` | Client notification | Cancel the matching request |
+| `build/showMessage` | Server notification | Show project and build status messages |
 | `build/logMessage`, `build/taskStart`, `build/taskProgress`, `build/taskFinish` | Server notifications | Stream compile/test/index stages and readable output; retain raw logs in DerivedData |
 | `build/publishDiagnostics` | Server notification | Publish compiler diagnostics by file and target; clear stale diagnostics on the next build |
 
@@ -57,6 +58,7 @@ retain explicit declarations. Do not use `@unchecked Sendable` to hide an error.
 
 - No standalone SwiftPM project provider or physical-device debugging.
 - Compiler diagnostics are parsed from text output. Diagnostics with ambiguous target ownership remain in the log.
-- No individual BSP test reports. SourceKit-LSP provides editor diagnostics independently.
+- Test case results are read from `.xcresult` after each target completes. Stage logs stream during execution. If the result bundle cannot be read, the server sends a warning and does not invent test counts.
+- SourceKit-LSP provides editor diagnostics independently.
 - `inverseSources`, `dependencySources`, and `resources` have no handlers and are not advertised.
 - Complex workspaces, packages, and test plans need broader compatibility testing.

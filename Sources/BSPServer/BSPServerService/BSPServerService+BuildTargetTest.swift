@@ -15,15 +15,16 @@ extension BSPServerService {
         }
 
         let context = await BuildOutputContext.load(using: projectManager, targets: targetIdentifiers)
-        return try await getTaskManager().executeWithProgress(
-            originId: originId, message: "Run tests", context: context
-        ) { log in
+        return try await getTaskManager().executeTestsWithProgress(
+            originId: originId, context: context
+        ) { log, events in
             try await projectManager.test(
                 targetIdentifiers: targetIdentifiers,
                 arguments: arguments,
                 environmentVariables: environmentVariables,
                 workingDirectory: workingDirectory,
-                logHandler: log
+                logHandler: log,
+                testEventHandler: events
             )
         }
     }

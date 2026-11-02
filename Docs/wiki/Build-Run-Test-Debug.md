@@ -88,3 +88,20 @@ full protocol trace, or `--timeout 600` for a longer request timeout.
 Persistent clients can cancel requests with `$/cancelRequest`; cancellation
 returns error `-32800` and compile/test/run task status `3`. The probe has no
 interactive cancellation control.
+
+### Test reports
+
+Test requests send standard BSP task notifications. Each target starts a child
+`test-task`. After Xcode finishes, the server reads its `.xcresult` and sends a
+`test-start`/`test-finish` pair for each test, then a target `test-report` with
+outcome counts and execution time in milliseconds when available. These case
+notifications replay recorded results; they do not mark live test start times.
+
+Reports support XCTest and Swift Testing. Each case uses the final result across
+repetitions and devices. Expected failures count as passed, with an explanatory
+message. Parent task IDs and `originId` link reports to the test request.
+Clients can display these JSON payloads without parsing Xcode output.
+
+Result bundles are saved under the effective DerivedData directory in `Logs/Test`,
+unless the request supplies `-resultBundlePath`. A missing or unreadable report
+produces a warning; build failures and cancellation still finish active tasks.

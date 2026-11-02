@@ -211,8 +211,8 @@ public extension BSPServerService {
         type: LogMessageType
     ) async throws {
         try await sendNotification(ServerJSONRPCNotification(
-            method: WindowShowMessageParams.method,
-            params: WindowShowMessageParams(
+            method: BuildShowMessageParams.method,
+            params: BuildShowMessageParams(
                 type: type,
                 message: message
             )
