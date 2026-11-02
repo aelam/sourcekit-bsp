@@ -27,6 +27,16 @@ python3 Scripts/bsp_client.py --server "$bsp_server" --project "$bsp_project" \
 `run` launches an existing product; use the same configuration, destination, and
 DerivedData as the compile request.
 
+Run reports configuration lookup, simulator readiness, installation, and launch
+through `build/taskStart`, `build/taskProgress`, and `build/taskFinish`. Each
+stage also appears in `build/logMessage`. Notifications and the result preserve
+the request's `originId`.
+
+In vscode-bsp, the Run notification shows the current stage. The
+`vscode-bsp-log` output channel keeps the stage history and final status.
+Simulator success means that the app launched; the server does not monitor
+its lifetime or stream app logs. A macOS Run completes when the app exits.
+
 ## Test
 
 ```sh
@@ -76,5 +86,5 @@ The Python client exits with a nonzero status on failure. Add `--verbose` for th
 full protocol trace, or `--timeout 600` for a longer request timeout.
 
 Persistent clients can cancel requests with `$/cancelRequest`; cancellation
-returns error `-32800` and compile/test task status `3`. The probe has no
+returns error `-32800` and compile/test/run task status `3`. The probe has no
 interactive cancellation control.

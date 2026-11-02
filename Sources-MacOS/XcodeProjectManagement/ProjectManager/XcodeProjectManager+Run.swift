@@ -40,7 +40,8 @@ extension XcodeProjectManager {
         xcodeTargetIdentifier: XcodeTargetIdentifier,
         arguments: [String]?, // e.g. ["-configuration", "Debug"]
         environmentVariables: [String: String]?,
-        workingDirectory: URL?
+        workingDirectory: URL?,
+        progressHandler: (@Sendable (String) async -> Void)? = nil
     ) async -> XcodeRunResult {
         guard
             let xcodeProjectBaseInfo,
@@ -53,6 +54,7 @@ extension XcodeProjectManager {
             return XcodeRunResult(statusCode: .error, message: "Running requires an application target: \(target.name)")
         }
 
+        await progressHandler?("Resolving build settings for \(target.name)")
         let buildSettings: [String: String]
         do {
             buildSettings = try await resolvedBuildSettings(for: target, arguments: arguments)
@@ -84,6 +86,7 @@ extension XcodeProjectManager {
                 message: "App binary not found for target \(xcodeTargetIdentifier.rawValue)"
             )
         }
+        await progressHandler?("Checking build product: \(binaryPath)")
         logger.info("Binary path: \(binaryPath)")
         guard FileManager.default.fileExists(atPath: binaryPath) else {
             return XcodeRunResult(
@@ -94,7 +97,9 @@ extension XcodeProjectManager {
         if sdk == .macOS {
             logger.info("Running on macOS")
             do {
+                await progressHandler?("Running \(target.name) on macOS; waiting for the app to exit")
                 let result = try await runOnMac(binaryPath: binaryPath)
+                await progressHandler?("App exited with code \(result.exitCode)")
                 return XcodeRunResult(
                     statusCode: .init(rawValue: Int(result.exitCode)) ?? .error,
                     message: result.output
@@ -117,8 +122,13 @@ extension XcodeProjectManager {
         if sdk == .iOS || sdk == .tvOS || sdk == .watchOS {
             // real device
             do {
-                try await installOnNonMac(isSimulator: false, outputPath: binaryPath, deviceID: destinationID)
+                try await installOnNonMac(
+                    isSimulator: false, outputPath: binaryPath, deviceID: destinationID,
+                    progressHandler: progressHandler
+                )
+                await progressHandler?("Launching \(target.name) on device \(destinationID)")
                 try await launchAppOnNonMac(isSimulator: false, deviceID: destinationID, appIdentifier: appIdentifier)
+                await progressHandler?("App launched on device \(destinationID)")
                 return XcodeRunResult(
                     statusCode: .success,
                     message: "App launched on device \(destinationID)"
@@ -132,8 +142,13 @@ extension XcodeProjectManager {
         } else if sdk == .iOSSimulator || sdk == .tvSimulator || sdk == .watchSimulator {
             // simulator
             do {
-                try await installOnNonMac(isSimulator: true, outputPath: binaryPath, deviceID: destinationID)
+                try await installOnNonMac(
+                    isSimulator: true, outputPath: binaryPath, deviceID: destinationID,
+                    progressHandler: progressHandler
+                )
+                await progressHandler?("Launching \(target.name) on simulator \(destinationID)")
                 try await launchAppOnNonMac(isSimulator: true, deviceID: destinationID, appIdentifier: appIdentifier)
+                await progressHandler?("App launched on simulator \(destinationID)")
                 return XcodeRunResult(
                     statusCode: .success,
                     message: "App launched on simulator \(destinationID)"
@@ -223,11 +238,17 @@ extension XcodeProjectManager {
 
     // MARK: simulators / real device
 
-    func installOnNonMac(isSimulator: Bool, outputPath: String, deviceID: String) async throws {
+    func installOnNonMac(
+        isSimulator: Bool,
+        outputPath: String,
+        deviceID: String,
+        progressHandler: (@Sendable (String) async -> Void)? = nil
+    ) async throws {
         let installer: AppInstaller = isSimulator ? SimulatorInstaller() : DeviceInstaller()
         _ = try await installer.installApp(
             appPath: outputPath,
-            deviceID: deviceID
+            deviceID: deviceID,
+            progressHandler: progressHandler
         )
     }
 

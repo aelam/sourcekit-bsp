@@ -4,27 +4,35 @@ import Support
 protocol AppInstaller {
     func installApp(
         appPath: String,
-        deviceID: String
+        deviceID: String,
+        progressHandler: (@Sendable (String) async -> Void)?
     ) async throws -> ProcessExecutionResult
 }
 
 struct DeviceInstaller: AppInstaller {
     func installApp(
         appPath: String,
-        deviceID: String
+        deviceID: String,
+        progressHandler: (@Sendable (String) async -> Void)?
     ) async throws -> ProcessExecutionResult {
         let executor = ProcessExecutor()
-        return try await executor.execute(
+        await progressHandler?("Installing app on device \(deviceID)")
+        let result = try await executor.execute(
             executable: "/usr/bin/xcrun",
             arguments: ["devicectl", "install", "--device", deviceID, "--path", appPath]
         )
+        guard result.isSuccess else {
+            throw XcodeRunError.failedToLaunchApp(result.error ?? result.output)
+        }
+        return result
     }
 }
 
 struct SimulatorInstaller: AppInstaller {
     func installApp(
         appPath: String,
-        deviceID: String
+        deviceID: String,
+        progressHandler: (@Sendable (String) async -> Void)?
     ) async throws -> ProcessExecutionResult {
         let executor = ProcessExecutor()
 
@@ -32,11 +40,13 @@ struct SimulatorInstaller: AppInstaller {
         // BSP request forever (it would block the client's debugSession/start
         // with no error). A healthy boot/install is seconds; these are generous
         // ceilings after which we surface a timeout instead of hanging.
+        await progressHandler?("Booting simulator \(deviceID)")
         _ = try await executor.execute(
             executable: "/usr/bin/xcrun",
             arguments: ["simctl", "boot", deviceID],
             timeout: 90
         )
+        await progressHandler?("Waiting for simulator \(deviceID) to be ready (timeout: 90s)")
         let bootStatus = try await executor.execute(
             executable: "/usr/bin/xcrun",
             arguments: ["simctl", "bootstatus", deviceID, "-b"],
@@ -45,6 +55,7 @@ struct SimulatorInstaller: AppInstaller {
         guard bootStatus.isSuccess else {
             throw XcodeRunError.failedToLaunchApp(bootStatus.error ?? bootStatus.output)
         }
+        await progressHandler?("Installing app on simulator \(deviceID) (timeout: 120s)")
         let result = try await executor.execute(
             executable: "/usr/bin/xcrun",
             arguments: ["simctl", "install", deviceID, appPath],
@@ -72,10 +83,14 @@ struct DeviceLauncher: AppLauncher {
         appIdentifier: String
     ) async throws -> ProcessExecutionResult {
         let executor = ProcessExecutor()
-        return try await executor.execute(
+        let result = try await executor.execute(
             executable: "/usr/bin/xcrun",
             arguments: ["devicectl", "launch", "--device", deviceID, "--bundle-id", appIdentifier]
         )
+        guard result.isSuccess else {
+            throw XcodeRunError.failedToLaunchApp(result.error ?? result.output)
+        }
+        return result
     }
 }
 

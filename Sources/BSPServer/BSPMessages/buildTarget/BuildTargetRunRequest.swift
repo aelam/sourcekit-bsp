@@ -15,19 +15,22 @@ public struct BuildTargetRunRequest: ContextualRequestType, Sendable {
     }
 
     public struct RunParams: Codable, Sendable {
-        /// The build targets to prepare for background indexing
+        /// The application target to run.
         public let target: BSPBuildTargetIdentifier
+        public let originId: String?
         public let arguments: [String]?
         public let environmentVariables: [String: String]?
         public let workingDirectory: URI?
 
         public init(
             target: BSPBuildTargetIdentifier,
+            originId: String? = nil,
             arguments: [String]? = nil,
             environmentVariables: [String: String]? = nil,
             workingDirectory: URI? = nil
         ) {
             self.target = target
+            self.originId = originId
             self.arguments = arguments
             self.environmentVariables = environmentVariables
             self.workingDirectory = workingDirectory
@@ -48,6 +51,7 @@ public struct BuildTargetRunRequest: ContextualRequestType, Sendable {
             do {
                 let statusCode = try await context.run(
                     targetIdentifier: params.target,
+                    originId: params.originId,
                     arguments: params.arguments,
                     environmentVariables: params.environmentVariables,
                     workingDirectory: params.workingDirectory
@@ -55,22 +59,26 @@ public struct BuildTargetRunRequest: ContextualRequestType, Sendable {
 
                 return BuildTargetRunResponse(
                     id: id,
-                    result: .init(originId: nil, statusCode: statusCode)
+                    result: .init(originId: params.originId, statusCode: statusCode)
                 )
             } catch is CancellationError {
                 return BuildTargetRunResponse(
                     id: id,
-                    result: .init(originId: nil, statusCode: .cancelled)
+                    result: .init(originId: params.originId, statusCode: .cancelled)
                 )
             } catch {
                 logger.error("Failed to run target: \(params.target), error: \(error)")
                 try? await context.sendNotification(ServerJSONRPCNotification(
                     method: "build/logMessage",
-                    params: BuildLogMessageParams(type: 1, message: "Run failed: \(error.localizedDescription)")
+                    params: BuildLogMessageParams(
+                        type: 1,
+                        originId: params.originId,
+                        message: "Run failed: \(error.localizedDescription)"
+                    )
                 ))
                 return BuildTargetRunResponse(
                     id: id,
-                    result: .init(originId: nil, statusCode: .error)
+                    result: .init(originId: params.originId, statusCode: .error)
                 )
             }
         }
