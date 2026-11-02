@@ -9,12 +9,21 @@ public extension XcodeProjectManager {
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?
     ) async throws -> DebugSessionConnection {
+        try await startDebugSession(targetIdentifiers: targetIdentifiers, arguments: arguments, progressHandler: nil)
+    }
+
+    func startDebugSession(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        progressHandler: (@Sendable (String) async -> Void)?
+    ) async throws -> DebugSessionConnection {
         guard let bspIdentifier = targetIdentifiers.first else {
             throw DebugSessionError.buildFailed
         }
         return try await startDebugSession(
             xcodeTargetIdentifier: XcodeTargetIdentifier(bspIdentifier),
-            arguments: arguments
+            arguments: arguments,
+            progressHandler: progressHandler
         )
     }
 }

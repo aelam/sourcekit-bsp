@@ -244,7 +244,8 @@ extension XcodeProjectManager {
         deviceID: String,
         progressHandler: (@Sendable (String) async -> Void)? = nil
     ) async throws {
-        let installer: AppInstaller = isSimulator ? SimulatorInstaller() : DeviceInstaller()
+        let commands = DeviceCommandRunner(developerDirectory: xcodeProjectBaseInfo?.xcodeInstallation.developerDir)
+        let installer: AppInstaller = isSimulator ? SimulatorInstaller() : DeviceInstaller(commands: commands)
         _ = try await installer.installApp(
             appPath: outputPath,
             deviceID: deviceID,
@@ -253,7 +254,8 @@ extension XcodeProjectManager {
     }
 
     private func launchAppOnNonMac(isSimulator: Bool, deviceID: String, appIdentifier: String) async throws {
-        let launcher: AppLauncher = isSimulator ? SimulatorLauncher() : DeviceLauncher()
+        let commands = DeviceCommandRunner(developerDirectory: xcodeProjectBaseInfo?.xcodeInstallation.developerDir)
+        let launcher: AppLauncher = isSimulator ? SimulatorLauncher() : DeviceLauncher(commands: commands)
         _ = try await launcher.launchApp(
             deviceID: deviceID,
             appIdentifier: appIdentifier

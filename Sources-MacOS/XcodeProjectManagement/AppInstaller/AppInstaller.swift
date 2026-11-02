@@ -10,21 +10,18 @@ protocol AppInstaller {
 }
 
 struct DeviceInstaller: AppInstaller {
+    var commands = DeviceCommandRunner()
     func installApp(
         appPath: String,
         deviceID: String,
         progressHandler: (@Sendable (String) async -> Void)?
     ) async throws -> ProcessExecutionResult {
-        let executor = ProcessExecutor()
         await progressHandler?("Installing app on device \(deviceID)")
-        let result = try await executor.execute(
-            executable: "/usr/bin/xcrun",
-            arguments: ["devicectl", "install", "--device", deviceID, "--path", appPath]
+        return try await commands.run(
+            ["device", "install", "app", "--device", deviceID, appPath],
+            timeout: 120,
+            phase: "Installing app on device \(deviceID)"
         )
-        guard result.isSuccess else {
-            throw XcodeRunError.failedToLaunchApp(result.error ?? result.output)
-        }
-        return result
     }
 }
 
@@ -84,19 +81,14 @@ protocol AppLauncher {
 }
 
 struct DeviceLauncher: AppLauncher {
+    var commands = DeviceCommandRunner()
+
     func launchApp(
         deviceID: String,
         appIdentifier: String
     ) async throws -> ProcessExecutionResult {
-        let executor = ProcessExecutor()
-        let result = try await executor.execute(
-            executable: "/usr/bin/xcrun",
-            arguments: ["devicectl", "launch", "--device", deviceID, "--bundle-id", appIdentifier]
-        )
-        guard result.isSuccess else {
-            throw XcodeRunError.failedToLaunchApp(result.error ?? result.output)
-        }
-        return result
+        let pid = try await commands.launch(deviceID: deviceID, bundleID: appIdentifier, stopped: false)
+        return ProcessExecutionResult(output: "Launched \(appIdentifier) (pid \(pid))", error: nil, exitCode: 0)
     }
 }
 

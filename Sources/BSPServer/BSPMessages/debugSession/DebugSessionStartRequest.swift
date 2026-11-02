@@ -27,6 +27,7 @@ public struct DebugSessionStartRequest: ContextualRequestType, Sendable {
             do {
                 let connection = try await context.startDebugSession(
                     targets: params.targets,
+                    originId: params.originId,
                     arguments: params.arguments
                 )
                 return DebugSessionStartResponse(id: id, connection: connection)

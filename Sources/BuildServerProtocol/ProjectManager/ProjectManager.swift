@@ -95,9 +95,23 @@ public protocol ProjectManager: AnyObject, Sendable {
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?
     ) async throws -> DebugSessionConnection
+
+    func startDebugSession(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        progressHandler: (@Sendable (String) async -> Void)?
+    ) async throws -> DebugSessionConnection
 }
 
 public extension ProjectManager {
+    func startDebugSession(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        progressHandler: (@Sendable (String) async -> Void)?
+    ) async throws -> DebugSessionConnection {
+        try await startDebugSession(targetIdentifiers: targetIdentifiers, arguments: arguments)
+    }
+
     func testArguments(
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?,

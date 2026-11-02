@@ -5,12 +5,15 @@ import Logger
 public extension XcodeProjectManager {
     func startDebugSession(
         xcodeTargetIdentifier: XcodeTargetIdentifier,
-        arguments: [String]?
+        arguments: [String]?,
+        progressHandler: (@Sendable (String) async -> Void)? = nil
     ) async throws -> DebugSessionConnection {
+        await progressHandler?("Resolving debug build settings")
         let product = try await resolveDebugProduct(
             xcodeTargetIdentifier: xcodeTargetIdentifier, arguments: arguments
         )
         try product.validate()
+        await progressHandler?("Building app with the selected destination and signing settings")
         let exitCode = try await compileTarget(
             targetIdentifier: xcodeTargetIdentifier,
             configuration: nil,
@@ -22,9 +25,15 @@ public extension XcodeProjectManager {
             throw DebugSessionError.productNotFound(product.binaryPath)
         }
 
-        if product.platform.isSimulator {
-            guard let udid = product.simulatorUDID else { throw DebugSessionError.missingSimulatorUDID }
-            try await installOnNonMac(isSimulator: true, outputPath: product.binaryPath, deviceID: udid)
+        try Task.checkCancellation()
+        if product.platform.isSimulator || product.platform == .iOS {
+            guard let id = product.destinationID else { throw DebugSessionError.missingDeviceID }
+            try await installOnNonMac(
+                isSimulator: product.platform.isSimulator,
+                outputPath: product.binaryPath,
+                deviceID: id,
+                progressHandler: progressHandler
+            )
         }
 
         let manager: DebugSessionManager
@@ -32,13 +41,18 @@ public extension XcodeProjectManager {
             manager = existing
         } else {
             guard let base = xcodeProjectBaseInfo else { throw DebugSessionError.buildFailed }
+            let adapter = LLDBDAPServer(developerDirectory: base.xcodeInstallation.developerDir)
             manager = DebugSessionManager(
-                adapter: LLDBDAPServer(developerDirectory: base.xcodeInstallation.developerDir),
-                simulatorLauncher: SimulatorDebugLauncher()
+                adapter: adapter,
+                simulatorLauncher: SimulatorDebugLauncher(),
+                deviceSession: DeviceDebugSession(
+                    commands: DeviceCommandRunner(developerDirectory: base.xcodeInstallation.developerDir),
+                    adapter: adapter
+                )
             )
             debugSessionManager = manager
         }
-        return try await manager.makeConnection(for: product)
+        return try await manager.makeConnection(for: product, progressHandler: progressHandler)
     }
 
     func stopDebugSessions() async {
@@ -88,7 +102,10 @@ extension DebugProduct {
             platform: platform,
             binaryPath: URL(fileURLWithPath: buildDirectory).appendingPathComponent(relativePath).path,
             bundleId: buildSettings["PRODUCT_BUNDLE_IDENTIFIER"],
-            simulatorUDID: destinationID
+            destinationID: destinationID,
+            executablePath: buildSettings["EXECUTABLE_PATH"].flatMap {
+                $0.isEmpty ? nil : URL(fileURLWithPath: buildDirectory).appendingPathComponent($0).path
+            }
         )
     }
 }

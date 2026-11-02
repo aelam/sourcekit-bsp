@@ -5,6 +5,17 @@ import Logger
 public struct DebugAdapterEndpoint: Sendable {
     public let uri: String // "tcp://127.0.0.1:<port>"
     public let terminate: @Sendable () -> Void
+    var waitForTermination: (@Sendable () async -> Void)?
+
+    public init(uri: String, terminate: @escaping @Sendable () -> Void) {
+        self.uri = uri
+        self.terminate = terminate
+    }
+
+    func stop() async {
+        terminate()
+        await waitForTermination?()
+    }
 }
 
 /// Seam so `DebugSessionManager` can be unit-tested without spawning lldb-dap.
@@ -64,10 +75,9 @@ public struct LLDBDAPServer: DebugAdapterServing {
         }
         logger.info("lldb-dap listening on tcp://127.0.0.1:\(port) (pid \(process.processIdentifier))")
 
-        return DebugAdapterEndpoint(
-            uri: "tcp://127.0.0.1:\(port)",
-            terminate: { if process.isRunning { process.terminate() } }
-        )
+        return DebugAdapterEndpoint(uri: "tcp://127.0.0.1:\(port)") {
+            if process.isRunning { process.terminate() }
+        }
     }
 
     /// Check the bound port without consuming the adapter's only client connection.
