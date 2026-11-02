@@ -20,18 +20,11 @@ struct DeviceDAPRelayTests {
         ) {}
         let endpoint = try await relay.start()
         defer { endpoint.terminate() }
-        var client = try DAPTestSocket(uri: endpoint.uri)
-        defer { client.close() }
-        try client.send(#"""
-        {"seq":1,"type":"request","command":"initialize","arguments":{
-          "adapterID":"lldb","pathFormat":"path","linesStartAt1":true,"columnsStartAt1":true
-        }}
-        """#)
-        #expect(try client.response(sequence: 1)["success"] as? Bool == true)
-        try client.send(#"{"seq":2,"type":"request","command":"attach","arguments":{"pid":2147483647}}"#)
-        #expect(try client.response(sequence: 2)["success"] as? Bool == false)
-        #expect(client.output.contains("bsp_after_device_command") == started, "\(client.output)")
-        if !started { #expect(client.output.contains("error: Device is locked"), "\(client.output)") }
+        let exchange = try await DAPTestSocket.exchange(uri: endpoint.uri)
+        #expect(exchange.initialized)
+        #expect(!exchange.attached)
+        #expect(exchange.output.contains("bsp_after_device_command") == started, "\(exchange.output)")
+        if !started { #expect(exchange.output.contains("error: Device is locked"), "\(exchange.output)") }
         await relay.close(reason: nil)
     }
 
@@ -47,19 +40,10 @@ struct DeviceDAPRelayTests {
         ) { cleaned.withLock { $0 += 1 } }
         let endpoint = try await relay.start()
         defer { endpoint.terminate() }
-        var client = try DAPTestSocket(uri: endpoint.uri)
-        defer { client.close() }
-        try client.send(#"""
-        {"seq":1,"type":"request","command":"initialize","arguments":{
-          "adapterID":"lldb","pathFormat":"path","linesStartAt1":true,"columnsStartAt1":true
-        }}
-        """#)
-        let initialized = try client.response(sequence: 1)
-        #expect(initialized["success"] as? Bool == true, "\(initialized)")
-        try client.send(#"{"seq":2,"type":"request","command":"attach","arguments":{"pid":2147483647}}"#)
-        let attached = try client.response(sequence: 2)
-        #expect(attached["success"] as? Bool == false)
-        #expect(client.output.contains("bsp_test_missing_attach_command"))
+        let exchange = try await DAPTestSocket.exchange(uri: endpoint.uri)
+        #expect(exchange.initialized)
+        #expect(!exchange.attached)
+        #expect(exchange.output.contains("bsp_test_missing_attach_command"))
         await relay.close(reason: nil)
         #expect(cleaned.withLock { $0 } == 1)
     }
@@ -104,8 +88,43 @@ private struct DAPTestSocket {
     var pending: [Data] = []
     var output = ""
 
+    struct Exchange: Sendable {
+        let initialized: Bool
+        let attached: Bool
+        let output: String
+    }
+
+    /// Blocking socket calls must not occupy the relay's cooperative executor.
+    static func exchange(uri: String) async throws -> Exchange {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue(label: "sourcekit-bsp.test-dap-client").async {
+                do {
+                    var client = try DAPTestSocket(uri: uri)
+                    defer { client.close() }
+                    try client.send(#"""
+                    {"seq":1,"type":"request","command":"initialize","arguments":{
+                      "adapterID":"lldb","pathFormat":"path","linesStartAt1":true,"columnsStartAt1":true
+                    }}
+                    """#)
+                    let initialized = try client.response(sequence: 1)
+                    try client.send(#"""
+                    {"seq":2,"type":"request","command":"attach","arguments":{"pid":2147483647}}
+                    """#)
+                    let attached = try client.response(sequence: 2)
+                    guard let initialized = initialized["success"] as? Bool,
+                          let attached = attached["success"] as? Bool else { throw DAPRelayError.invalidFrame }
+                    continuation.resume(returning: Exchange(
+                        initialized: initialized, attached: attached, output: client.output
+                    ))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     init(uri: String) throws {
-        let port = try #require(URL(string: uri)?.port)
+        guard let port = URL(string: uri)?.port else { throw DAPRelayError.invalidFrame }
         fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { throw DAPRelayError.closed }
         var timeout = timeval(tv_sec: 10, tv_usec: 0)
@@ -150,7 +169,9 @@ private struct DAPTestSocket {
         while true {
             while !pending.isEmpty {
                 let body = pending.removeFirst()
-                let message = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+                guard let message = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+                    throw DAPRelayError.invalidFrame
+                }
                 if message["event"] as? String == "output", let event = message["body"] as? [String: Any] {
                     output += event["output"] as? String ?? ""
                 }
@@ -158,7 +179,11 @@ private struct DAPTestSocket {
             }
             var bytes = [UInt8](repeating: 0, count: 65536)
             let count = recv(fd, &bytes, bytes.count, 0)
-            guard count > 0 else { throw DAPRelayError.closed }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            guard count != 0 else { throw DAPRelayError.closed }
             pending += try parser.append(Data(bytes.prefix(count)))
         }
     }

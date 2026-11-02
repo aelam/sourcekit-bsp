@@ -64,6 +64,11 @@ jobs:
         CI: true
         MACOS_CI: true
 
+    - name: Test DAP relay with one cooperative thread
+      run: swift test --skip-build --filter DeviceDAPRelayTests
+      env:
+        LIBDISPATCH_COOPERATIVE_POOL_STRICT: "1"
+
     - name: Install LLVM
       run: brew install llvm
 
