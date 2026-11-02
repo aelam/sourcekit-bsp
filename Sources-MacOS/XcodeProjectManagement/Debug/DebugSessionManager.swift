@@ -98,7 +98,8 @@ public actor DebugSessionManager {
     /// Product → connection. Assumes the build already succeeded.
     func makeConnection(
         for product: DebugProduct,
-        progressHandler: (@Sendable (String) async -> Void)? = nil
+        progressHandler: (@Sendable (String) async -> Void)? = nil,
+        launcher: (any WaitForDebuggerLaunching)? = nil
     ) async throws -> DebugSessionConnection {
         try Task.checkCancellation()
         try product.validate()
@@ -134,7 +135,7 @@ public actor DebugSessionManager {
         case .iOSSimulator, .watchSimulator, .tvSimulator, .visionSimulator:
             guard let udid = product.simulatorUDID else { throw DebugSessionError.missingSimulatorUDID }
             guard let bundleId = product.bundleId else { throw DebugSessionError.missingBundleId }
-            let pid = try await simulatorLauncher.launchWaitingForDebugger(
+            let pid = try await (launcher ?? simulatorLauncher).launchWaitingForDebugger(
                 deviceID: udid, appIdentifier: bundleId
             )
             succeeded = true

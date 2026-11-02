@@ -57,12 +57,16 @@ public extension XcodeProjectManager {
         for target: XcodeTarget,
         arguments: [String]?
     ) async throws -> [String: String] {
+        var settingsArguments = buildArguments(for: target, configuration: nil, arguments: arguments)
+        if target.xcodeProductType.isTestBundle {
+            settingsArguments.append("build-for-testing")
+        }
         let settings = try await settingsLoader.loadBuildSettings(
             rootURL: rootURL,
             project: buildConfiguration(for: target),
             sdk: nil,
             configuration: nil,
-            customFlags: buildArguments(for: target, configuration: nil, arguments: arguments)
+            customFlags: settingsArguments
         )
         guard let buildSettings = settings.first(where: { $0.target == target.name })?.buildSettings else {
             throw XcodeProjectError.buildSettingsNotFound

@@ -8,6 +8,15 @@ public extension XcodeProjectManager {
         arguments: [String]?,
         progressHandler: (@Sendable (String) async -> Void)? = nil
     ) async throws -> DebugSessionConnection {
+        if let target = xcodeProjectBaseInfo?.xcodeTargets.first(where: {
+            $0.targetIdentifier == xcodeTargetIdentifier && $0.xcodeProductType.isTestBundle
+        }) {
+            return try await startTestDebugSession(
+                target: target,
+                arguments: arguments,
+                progressHandler: progressHandler
+            )
+        }
         await progressHandler?("Resolving debug build settings")
         let product = try await resolveDebugProduct(
             xcodeTargetIdentifier: xcodeTargetIdentifier, arguments: arguments
@@ -36,6 +45,10 @@ public extension XcodeProjectManager {
             )
         }
 
+        return try await getDebugSessionManager().makeConnection(for: product, progressHandler: progressHandler)
+    }
+
+    internal func getDebugSessionManager() throws -> DebugSessionManager {
         let manager: DebugSessionManager
         if let existing = debugSessionManager {
             manager = existing
@@ -52,7 +65,7 @@ public extension XcodeProjectManager {
             )
             debugSessionManager = manager
         }
-        return try await manager.makeConnection(for: product, progressHandler: progressHandler)
+        return manager
     }
 
     func stopDebugSessions() async {

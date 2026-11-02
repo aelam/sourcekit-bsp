@@ -21,7 +21,9 @@ struct XcodeProjectManagerProviderTests {
         let projectURL = URL(fileURLWithPath: "/tmp/Hello.xcodeproj")
         let target = XcodeTarget(
             targetIdentifier: XcodeTargetIdentifier(projectFilePath: projectURL.path, targetName: "Hello"),
-            name: "Hello", projectURL: projectURL, productName: "Hello",
+            name: "Hello",
+            projectURL: projectURL,
+            productName: "Hello",
             xcodeProductType: .application,
             destinations: [XcodeDestination(name: "Destination", id: destination, platform: .iOS, type: .simulator)]
         )
@@ -36,4 +38,17 @@ struct XcodeProjectManagerProviderTests {
 
     @Test
     func xcodeProjectManagerProvider() {}
+
+    @Test(arguments: [XcodeProductType.unitTestBundle, .uiTestBundle, .application])
+    func advertisesTestDebuggingForUnitTests(productType: XcodeProductType) throws {
+        let projectURL = URL(fileURLWithPath: "/tmp/Hello.xcodeproj")
+        let target = XcodeTarget(
+            targetIdentifier: XcodeTargetIdentifier(projectFilePath: projectURL.path, targetName: "Tests"),
+            name: "Tests",
+            projectURL: projectURL,
+            productName: "Tests",
+            xcodeProductType: productType
+        )
+        #expect(try #require(target.asBSPBuildTarget()).capabilities.canDebug == (productType != .uiTestBundle))
+    }
 }

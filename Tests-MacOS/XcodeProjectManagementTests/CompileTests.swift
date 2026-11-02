@@ -24,13 +24,15 @@ struct CompileTests {
         try FileManager.default.moveItem(at: original, to: renamed)
         let toolchain = XcodeToolchain(workingDirectory: root)
         let manager = XcodeProjectManager(
-            rootURL: root, toolchain: toolchain, projectLocator: XcodeProjectLocator(),
+            rootURL: root,
+            toolchain: toolchain,
+            projectLocator: XcodeProjectLocator(),
             settingsLoader: XcodeSettingsLoader(commandBuilder: XcodeBuildCommandBuilder(), toolchain: toolchain)
         )
         try await manager.initialize()
         let base = try #require(await manager.xcodeProjectBaseInfo)
-        let app = try #require(base.xcodeTargets.first(where: { $0.name == "Hello" }))
-        let renamedScheme = try #require(base.schemes.first(where: { $0.name == "CustomApp" }))
+        let app = try #require(base.xcodeTargets.first { $0.name == "Hello" })
+        let renamedScheme = try #require(base.schemes.first { $0.name == "CustomApp" })
         let selected = try await manager.findOrCreateScheme(
             for: app,
             in: [renamedScheme],
@@ -40,7 +42,7 @@ struct CompileTests {
         let project = try await manager.buildConfiguration(for: app)
         if case let .project(_, .scheme(name)) = project {
             #expect(name != "Hello")
-            #expect(base.schemes.contains(where: { $0.name == name }))
+            #expect(base.schemes.contains { $0.name == name })
         } else {
             Issue.record("Expected a project scheme")
         }
@@ -66,11 +68,22 @@ struct CompileTests {
         #expect(failedRun.statusCode == .error)
         #expect(failedRun.message?.contains("BSP-NOT-A-DEVICE") == true)
 
-        let testTarget = try #require(base.xcodeTargets.first(where: { $0.name == "HelloTests" }))
+        let testTarget = try #require(base.xcodeTargets.first { $0.name == "HelloTests" })
+        let testSettings = try await manager.resolvedBuildSettings(for: testTarget, arguments: defaults)
+        #expect(testSettings["FULL_PRODUCT_NAME"] == "HelloTests.xctest")
+        #expect(testSettings["TEST_HOST"]?.contains("Hello.app/") == true)
+        #expect(testSettings["PLATFORM_NAME"] == "iphonesimulator")
+        for arguments in [["-only-testing:HelloTests/example"], ["-testPlan", "Plan"]] {
+            await #expect(throws: XcodeProjectError.self) {
+                try await manager.startDebugSession(
+                    xcodeTargetIdentifier: testTarget.targetIdentifier, arguments: arguments
+                )
+            }
+        }
         let generated = try await manager.findOrCreateScheme(for: testTarget, in: [])
         let scheme = try XCScheme(pathString: generated.path.path)
         let projectFile = try XcodeProj(pathString: projectURL.path)
-        let nativeTarget = try #require(projectFile.pbxproj.nativeTargets.first(where: { $0.name == "HelloTests" }))
+        let nativeTarget = try #require(projectFile.pbxproj.nativeTargets.first { $0.name == "HelloTests" })
         #expect(scheme.testAction?.testables.first?.buildableReference.blueprintIdentifier == nativeTarget.uuid)
         #expect(generated.primaryTarget == "HelloTests")
     }

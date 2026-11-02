@@ -150,6 +150,21 @@ The iPhone path has automated command, protocol, and cleanup tests. Breakpoints,
 stepping, and variables still need validation on a physical device. Other physical
 Apple device platforms are not enabled for debugging.
 
+### Debug unit tests on an iOS simulator
+
+Request `debugSession/start` with an app-hosted unit test target such as
+`HelloTests` and a concrete iOS simulator destination. The server builds the test
+target and host app, installs the host, and launches it with XCTest's bundle
+injection environment. The process waits for the debugger before executing tests.
+Connect to the returned DAP endpoint and attach with `stopOnEntry: false`.
+Set breakpoints, then send `configurationDone` to start the tests.
+
+This runs the entire target, including XCTest and Swift Testing cases. UI tests,
+non-hosted test bundles, physical devices, and test filters are not supported by
+this debug path. It does not run the scheme's Test Plan or create an `.xcresult`
+report. Use `buildTarget/test` for normal test reports. The client does not need
+to know the test host, injection library, or simulator commands.
+
 ## Results and cancellation
 
 Compile/test/run results use BSP status `1` for success and `2` for failure.
