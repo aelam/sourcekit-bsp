@@ -34,9 +34,27 @@ struct XcodeTestResultReaderTests {
         #expect(report.tests.count == 4)
         #expect(report.tests.map(\.status) == [.passed, .failed, .skipped, .passed])
         #expect(report.tests[0].displayName == "Suite/example()")
+        #expect(report.tests[0].testId == "Suite/example()")
+        #expect(report.tests[1].testId == nil)
         #expect(report.tests[1].message == "Expected 1, got 2")
         #expect(report.tests[3].message == "Expected failure")
         #expect(report.time == 1250)
+    }
+
+    @Test
+    func missingSelectedResultsAreNotSuccessful() {
+        let report = TestExecutionReport(tests: [
+            TestCaseResult(displayName: "Example", status: .passed, testId: "Suite/example()")
+        ])
+        #expect(XcodeProjectManager.missingSelectedTests(
+            command: ["-only-testing:Tests/Suite/example", "-only-testing:Tests/Suite"], report: report
+        ).isEmpty)
+        #expect(XcodeProjectManager.missingSelectedTests(
+            command: ["-only-testing:Tests/Suite/missing()"], report: report
+        ) == ["Suite/missing()"])
+        #expect(XcodeProjectManager.missingSelectedTests(
+            command: ["-only-testing:Tests/Suite/example()"], report: nil
+        ) == ["Suite/example()"])
     }
 
     @Test

@@ -46,7 +46,9 @@ for payloads, ordering, and test execution details.
 Xcode configurations and destinations are target metadata that requires client UI
 support. BSP does not define an iOS device picker. Test/run environment and
 working-directory fields are server extensions. Debug clients must connect over
-DAP after obtaining the BSP endpoint.
+DAP after obtaining the BSP endpoint. Test targets advertise optional SourceKit-LSP
+discovery and `sourcekit-test-selection` data. See [test discovery and selection](Build-Run-Test-Debug.md#test-discovery-and-selection)
+for the contract; ordinary target runs do not require it.
 
 ## Concurrency contracts
 

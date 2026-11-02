@@ -188,6 +188,21 @@ struct WorkspaceLifecycleTests {
     }
 
     @Test
+    func unsupportedSelectionDoesNotRunTheWholeTarget() async throws {
+        let harness = await setup()
+        let request = BuildTargetTestRequest(
+            id: .int(9),
+            jsonrpc: "2.0",
+            params: .init(targets: [], dataKind: "unknown-selection", data: .dictionary([:]))
+        )
+        let response = try #require(await request.handle(
+            contextualHandler: harness.handler, id: .int(9)
+        ) as? BuildTargetTestResponse)
+        #expect(response.result.statusCode == .error)
+        #expect(await harness.transport.sent.isEmpty)
+    }
+
+    @Test
     func requestPublishesProviderReportsWithTheRequestOrigin() async throws {
         let harness = await setup()
         let target = try BSPBuildTargetIdentifier(uri: URI(string: "file:///tmp/BSPWorkspace/Keep"))

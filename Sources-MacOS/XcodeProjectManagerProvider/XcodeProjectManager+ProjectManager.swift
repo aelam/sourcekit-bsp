@@ -59,7 +59,9 @@ extension XcodeProjectManager: @preconcurrency ProjectManager {
 
         return xcodeProjectBaseInfo.xcodeTargets.compactMap { target in
             let dependencies = (dependenciesByTarget[target.targetIdentifier] ?? []).map(\.bspIdentifier)
-            return target.asBSPBuildTarget(dependencies: dependencies)
+            return target.asBSPBuildTarget(
+                dependencies: dependencies, toolchain: xcodeProjectBaseInfo.xcodeInstallation.toolchainDir
+            )
         }
     }
 
@@ -79,7 +81,9 @@ extension XcodeProjectManager: @preconcurrency ProjectManager {
 }
 
 extension XcodeTarget {
-    func asBSPBuildTarget(dependencies: [BSPBuildTargetIdentifier] = []) -> BSPBuildTarget? {
+    func asBSPBuildTarget(
+        dependencies: [BSPBuildTargetIdentifier] = [], toolchain: URL? = nil
+    ) -> BSPBuildTarget? {
         let capabilities = BuildTargetCapabilities(
             canCompile: true,
             canTest: self.xcodeProductType.isTestBundle,
@@ -91,19 +95,26 @@ extension XcodeTarget {
             id: self.targetIdentifier.bspIdentifier,
             displayName: self.targetName,
             baseDirectory: URI(self.projectURL.deletingLastPathComponent()),
-            tags: [],
+            tags: self.xcodeProductType.isTestBundle ? [.test] : [],
             languageIds: [.swift, .objective_c, .cpp, .c],
             dependencies: dependencies,
             capabilities: capabilities,
             dataKind: BuildTargetDataKind(rawValue: "sourceKit"),
-            data: createXcodeData()
+            data: createXcodeData(toolchain: toolchain)
         )
     }
 
-    private func createXcodeData() -> LSPAny {
-        LSPAny.dictionary([
-            "selectors": createSelectorsArray()
-        ])
+    private func createXcodeData(toolchain: URL?) -> LSPAny {
+        var data: [String: LSPAny] = ["selectors": createSelectorsArray()]
+        if let toolchain { data["toolchain"] = .string(toolchain.absoluteString) }
+        if xcodeProductType.isTestBundle {
+            data["testDiscovery"] = .dictionary([
+                "provider": .string("sourcekit-lsp"),
+                "version": .int(1),
+                "selectionDataKind": .string(XcodeTestSelection.dataKind)
+            ])
+        }
+        return .dictionary(data)
     }
 
     private func createSelectorsArray() -> LSPAny {

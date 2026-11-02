@@ -62,7 +62,61 @@ Xcode writes result bundles under the selected DerivedData directory.
 
 `environmentVariables` reaches Xcode and the test runner; `workingDirectory`
 applies to Xcode, not the simulator app. These fields are server extensions.
-Logs are streamed; structured per-test reports are not implemented.
+Logs stream during execution; structured test results arrive after each target completes.
+
+### Test discovery and selection
+
+Xcode test bundles have the standard `test` tag. SourceKit-LSP uses this tag to
+find XCTest and Swift Testing functions through `textDocument/tests` version 2.
+`buildTarget/sources` identifies which target owns each source file.
+
+Test targets advertise this optional extension in their `sourceKit` data:
+
+```json
+{
+  "toolchain": "file:///Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain",
+  "testDiscovery": {
+    "provider": "sourcekit-lsp",
+    "version": 1,
+    "selectionDataKind": "sourcekit-test-selection"
+  }
+}
+```
+
+A client that supports the extension can send this `buildTarget/test` payload.
+Use the target URI from `workspace/buildTargets`:
+
+```json
+{
+  "targets": [{"uri": "xcode:///project/Hello.xcodeproj/HelloTests"}],
+  "originId": "selected-test-1",
+  "arguments": ["-configuration", "Debug", "-destination", "id=SIMULATOR-UUID"],
+  "dataKind": "sourcekit-test-selection",
+  "data": {
+    "tests": [{
+      "target": {"uri": "xcode:///project/Hello.xcodeproj/HelloTests"},
+      "id": "HelloTests/example()",
+      "style": "swift-testing"
+    }]
+  }
+}
+```
+
+The identifier is the SourceKit-LSP test ID without its leading Swift module
+prefix. Keep function parentheses and argument labels. Supported styles are
+`XCTest` and `swift-testing`. Clients expand suites into their selected functions;
+parameterized functions run all their arguments. IDs are scoped to a target.
+
+The server converts selections into Xcode filters using the actual target name.
+Empty, malformed, unsupported, or conflicting selections fail. A selected
+function without a result also fails. Selection never falls back to a whole-target
+run. Do not combine this payload with `-only-testing`, `-skip-testing`, or a test
+plan. These metadata and selection fields are extensions, not standard BSP.
+
+Both `test-start` and `test-finish` include an optional `testId` extension field
+from the result bundle. It uses the same target-scoped identifier as discovery,
+so clients can update the original test node without comparing display names.
+Other clients can ignore the field and display standard reports.
 
 ## Debug
 

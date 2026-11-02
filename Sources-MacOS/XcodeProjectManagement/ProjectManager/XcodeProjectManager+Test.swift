@@ -28,7 +28,8 @@ extension XcodeProjectManager {
             let exitCode = try await buildExecutor.execute(
                 command: command,
                 environment: environment,
-                workingDirectory: directory, outputHandler: outputHandler
+                workingDirectory: directory,
+                outputHandler: outputHandler
             )
             var report: TestExecutionReport?
             do {
@@ -40,13 +41,34 @@ extension XcodeProjectManager {
                     .warning("Cannot read test report at \(bundle.path): \(error.localizedDescription)")
                 )
             }
-            await testEventHandler?(.finished(target, exitCode == 0 ? .ok : .error, report))
-            failed = failed || exitCode != 0
+            let missing = Self.missingSelectedTests(command: command, report: report)
+            if !missing.isEmpty {
+                await testEventHandler?(.warning("No result for selected tests: \(missing.joined(separator: ", "))"))
+            }
+            let succeeded = exitCode == 0 && missing.isEmpty
+            await testEventHandler?(.finished(target, succeeded ? .ok : .error, report))
+            failed = failed || !succeeded
         }
         return XcodeRunResult(
             statusCode: failed ? .error : .success,
             message: failed ? "Tests failed; see the Xcode output" : "Tests passed"
         )
+    }
+
+    nonisolated static func missingSelectedTests(command: [String], report: TestExecutionReport?) -> [String] {
+        let selected = command.filter { $0.hasPrefix("-only-testing:") }.compactMap { filter -> String? in
+            guard let slash = filter.firstIndex(of: "/") else { return nil }
+            return String(filter[filter.index(after: slash)...])
+        }
+        let reported = (report?.tests ?? []).compactMap(\.testId)
+        func normalized(_ id: String) -> String {
+            id.hasSuffix("()") ? String(id.dropLast(2)) : id
+        }
+        return selected.filter { selection in
+            !reported.contains { result in
+                normalized(result) == normalized(selection) || result.hasPrefix(selection + "/")
+            }
+        }
     }
 
     func testCommands(for identifiers: [XcodeTargetIdentifier], arguments: [String]?) throws -> [[String]] {

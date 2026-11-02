@@ -62,7 +62,9 @@ public struct BuildTargetTestRequest: ContextualRequestType, Sendable {
                     originId: params.originId,
                     arguments: params.arguments,
                     environmentVariables: params.environmentVariables,
-                    workingDirectory: params.workingDirectory
+                    workingDirectory: params.workingDirectory,
+                    dataKind: params.dataKind,
+                    data: params.data
                 )
                 return BuildTargetTestResponse(
                     jsonrpc: jsonrpc,
