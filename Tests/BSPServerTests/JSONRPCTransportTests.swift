@@ -80,10 +80,9 @@ struct StdioTransportTests {
         defer { transport.close() }
         let writing = Task.detached {
             for id in 0 ..< 2000 {
-                let body = Data(
-                    "{\"jsonrpc\":\"2.0\",\"id\":\(id),\"method\":\"buildTarget/compile\",\"params\":{\"text\":\"编译📦\"}}"
-                        .utf8
-                )
+                let json = "{\"jsonrpc\":\"2.0\",\"id\":\(id),\"method\":\"buildTarget/compile\"," +
+                    "\"params\":{\"text\":\"编译📦\"}}"
+                let body = Data(json.utf8)
                 try input.fileHandleForWriting.write(contentsOf: Data("Content-Length: \(body.count)\r\n\r\n".utf8))
                 await Task.yield()
                 try input.fileHandleForWriting.write(contentsOf: body.prefix(31))
@@ -127,25 +126,43 @@ struct StdioTransportTests {
 
     @Test(.timeLimit(.minutes(1)))
     func closesOnEOFAndReportsTruncatedFrames() async throws {
-        for data in [Data(), Data("Content-Length: 20\r\n\r\n{".utf8)] {
+        let complete = frame(id: 1)
+        let partial = Data("Content-Length: 20\r\n\r\n{".utf8)
+        for (data, expectedIDs, truncated) in [
+            (Data(), [JSONRPCID](), false),
+            (complete, [.int(1)], false),
+            (partial, [], true),
+            (complete + partial, [.int(1)], true)
+        ] {
             let input = Pipe()
             let output = Pipe()
             let transport = StdioJSONRPCConnectionTransport(
                 input: input.fileHandleForReading,
                 output: output.fileHandleForWriting
             )
-            let listening = Task { try await transport.listen() }
             defer { transport.close() }
+            // Close before listening so the first callback contains the final bytes.
             try input.fileHandleForWriting.write(contentsOf: data)
             try input.fileHandleForWriting.close()
-            try await listening.value
+            let listening = Task { try await transport.listen() }
+            try await withTaskCancellationHandler {
+                try await listening.value
+            } onCancel: {
+                transport.close()
+            }
+            var ids: [JSONRPCID?] = []
+            for await message in transport.messageStream {
+                ids.append(message.request.id)
+            }
+            #expect(ids == expectedIDs.map(Optional.some))
             var errors = transport.errorStream.makeAsyncIterator()
             let error = await errors.next()
-            if data.isEmpty {
+            if truncated {
+                if case .receiveFailed = error {} else { Issue.record("Expected a truncated frame error") }
+            } else {
                 #expect(error == nil)
-            } else if case .receiveFailed = error {} else {
-                Issue.record("Expected a truncated frame error")
             }
+            #expect(await errors.next() == nil)
         }
     }
 

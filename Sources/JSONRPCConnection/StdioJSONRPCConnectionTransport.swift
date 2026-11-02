@@ -6,6 +6,9 @@
 
 import Foundation
 import Logger
+#if os(Linux)
+import Glibc
+#endif
 
 /// Stream-based stdio transport for JSON-RPC communication
 public final class StdioJSONRPCConnectionTransport: JSONRPCServerTransport, @unchecked Sendable {
@@ -178,13 +181,26 @@ public final class StdioJSONRPCConnectionTransport: JSONRPCServerTransport, @unc
     }
 
     private func handleIncomingData(from fileHandle: FileHandle) {
-        let data = fileHandle.availableData
-        if data.isEmpty {
-            fileHandle.readabilityHandler = nil
-            inputContinuation.finish()
-        } else {
+        repeat {
+            let data = fileHandle.availableData
+            if data.isEmpty {
+                fileHandle.readabilityHandler = nil
+                inputContinuation.finish()
+                return
+            }
             // One consumer preserves byte order across separate header and body writes.
             inputContinuation.yield(data)
-        }
+        } while hasInputHangup(fileHandle)
+    }
+
+    private func hasInputHangup(_ fileHandle: FileHandle) -> Bool {
+        #if os(Linux)
+        // Linux may omit the EOF callback after delivering the last buffered bytes.
+        // POLLHUP means all writers closed, so draining the pipe cannot block.
+        var descriptor = pollfd(fd: fileHandle.fileDescriptor, events: Int16(POLLIN), revents: 0)
+        return poll(&descriptor, 1, 0) > 0 && descriptor.revents & Int16(POLLHUP) != 0
+        #else
+        return false
+        #endif
     }
 }
