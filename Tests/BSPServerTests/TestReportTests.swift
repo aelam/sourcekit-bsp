@@ -23,7 +23,7 @@ struct TestReportTests {
             for target in targets {
                 await events(.started(target))
                 let tests = [
-                    TestCaseResult(displayName: "sameName", status: .passed),
+                    TestCaseResult(displayName: "sameName", status: .passed, testId: "Suite/example()"),
                     TestCaseResult(displayName: "failure", status: .failed, message: "Expected true"),
                     TestCaseResult(displayName: "skipped", status: .skipped),
                     TestCaseResult(displayName: "ignored", status: .ignored),
@@ -62,6 +62,10 @@ struct TestReportTests {
                 try testStatuses.append(#require(data?["status"] as? Int))
             }
         }
+        let identified = messages.compactMap { ($0["params"] as? [String: Any])?["data"] as? [String: Any] }
+            .filter { $0["displayName"] as? String == "sameName" }
+        #expect(identified.count == 4)
+        #expect(identified.allSatisfy { $0["testId"] as? String == "Suite/example()" })
         #expect(active.isEmpty)
         #expect(summaries.count == 2)
         #expect(testStatuses == [1, 2, 5, 3, 4, 1, 2, 5, 3, 4])

@@ -84,6 +84,13 @@ public protocol ProjectManager: AnyObject, Sendable {
         testEventHandler: (@Sendable (TestExecutionEvent) async -> Void)?
     ) async throws -> StatusCode
 
+    func testArguments(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        dataKind: String?,
+        data: LSPAny?
+    ) async throws -> [String]?
+
     func startDebugSession(
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?
@@ -91,6 +98,18 @@ public protocol ProjectManager: AnyObject, Sendable {
 }
 
 public extension ProjectManager {
+    func testArguments(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        dataKind: String?,
+        data: LSPAny?
+    ) async throws -> [String]? {
+        guard dataKind == nil, data == nil else {
+            throw TestSelectionError.unsupported
+        }
+        return arguments
+    }
+
     // swiftlint:disable:next function_parameter_count
     func test(
         targetIdentifiers: [BSPBuildTargetIdentifier],

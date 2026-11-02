@@ -50,13 +50,15 @@ actor TestReportReporter {
         guard let id = targets.removeValue(forKey: target) else { return }
         for (index, test) in (report?.tests ?? []).enumerated() {
             let caseID = "\(id)-case-\(index)"
+            var startData: [String: LSPAny] = ["displayName": .string(test.displayName)]
+            if let testId = test.testId { startData["testId"] = .string(testId) }
             await sendStart(.init(
                 taskId: caseID,
                 parents: [id],
                 originId: task.originId,
                 message: test.displayName,
                 dataKind: .testStart,
-                data: ["displayName": .string(test.displayName)]
+                data: .dictionary(startData)
             ))
             await sendFinish(.init(
                 taskId: caseID,

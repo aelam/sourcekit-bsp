@@ -2,11 +2,13 @@ public struct TestCaseResult: Codable, Hashable, Sendable {
     public let displayName: String
     public let status: TestStatus
     public let message: String?
+    public let testId: String?
 
-    public init(displayName: String, status: TestStatus, message: String? = nil) {
+    public init(displayName: String, status: TestStatus, message: String? = nil, testId: String? = nil) {
         self.displayName = displayName
         self.status = status
         self.message = message
+        self.testId = testId
     }
 }
 

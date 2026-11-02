@@ -43,12 +43,14 @@ enum XcodeTestResultReader {
                     .invalidConfig("Unknown test result for \(node.name): \(node.result ?? "missing")")
             }
             let messages = failureMessages(in: node)
-            return [TestCaseResult(
+            let test = TestCaseResult(
                 displayName: node.nodeIdentifier ?? node.name,
                 status: status,
                 message: messages.isEmpty ? (node.result == "Expected Failure" ? "Expected failure" : nil)
-                    : messages.joined(separator: "\n")
-            )]
+                    : messages.joined(separator: "\n"),
+                testId: node.nodeIdentifier
+            )
+            return [test]
         }
         return try (node.children ?? []).flatMap { try cases(in: $0) }
     }
