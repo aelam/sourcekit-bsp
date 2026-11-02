@@ -4,7 +4,7 @@ import PathKit
 import Support
 import XcodeProj
 
-enum XcodeRunError: Error, LocalizedError {
+public enum XcodeRunError: Error, LocalizedError {
     case projectNotLoaded
     case appNotFound(String)
     case simulatorNotFound(String)
@@ -12,7 +12,7 @@ enum XcodeRunError: Error, LocalizedError {
     case failedToLaunchApp(String)
     case cancelled
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .projectNotLoaded: "Project not loaded"
         case let .appNotFound(path): "App not found: \(path)"
