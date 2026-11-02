@@ -33,6 +33,7 @@ actor MemoryTransport: JSONRPCServerTransport {
     }
 
     func send(response: ResponseType) async throws {
+        try Task.checkCancellation()
         let data = try JSONEncoder().encode(response)
         sent.append(data)
         outputContinuation.yield(data)

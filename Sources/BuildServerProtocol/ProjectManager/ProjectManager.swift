@@ -58,12 +58,30 @@ public protocol ProjectManager: AnyObject, Sendable {
         workingDirectory: URI?
     ) async throws -> StatusCode
 
+    func run(
+        targetIdentifier: BSPBuildTargetIdentifier,
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        progressHandler: (@Sendable (String) async -> Void)?
+    ) async throws -> StatusCode
+
     func test(
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?,
         environmentVariables: [String: String]?,
         workingDirectory: URI?,
         logHandler: (@Sendable (String) -> Void)?
+    ) async throws -> StatusCode
+
+    // swiftlint:disable:next function_parameter_count
+    func test(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        logHandler: (@Sendable (String) -> Void)?,
+        testEventHandler: (@Sendable (TestExecutionEvent) async -> Void)?
     ) async throws -> StatusCode
 
     func startDebugSession(
@@ -73,7 +91,40 @@ public protocol ProjectManager: AnyObject, Sendable {
 }
 
 public extension ProjectManager {
+    // swiftlint:disable:next function_parameter_count
+    func test(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        logHandler: (@Sendable (String) -> Void)?,
+        testEventHandler: (@Sendable (TestExecutionEvent) async -> Void)?
+    ) async throws -> StatusCode {
+        try await test(
+            targetIdentifiers: targetIdentifiers,
+            arguments: arguments,
+            environmentVariables: environmentVariables,
+            workingDirectory: workingDirectory,
+            logHandler: logHandler
+        )
+    }
+
     func shutdown() async {}
+
+    func run(
+        targetIdentifier: BSPBuildTargetIdentifier,
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        progressHandler: (@Sendable (String) async -> Void)?
+    ) async throws -> StatusCode {
+        try await run(
+            targetIdentifier: targetIdentifier,
+            arguments: arguments,
+            environmentVariables: environmentVariables,
+            workingDirectory: workingDirectory
+        )
+    }
 
     func buildIndex(
         for targetIdentifiers: [BSPBuildTargetIdentifier],

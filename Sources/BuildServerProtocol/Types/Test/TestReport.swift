@@ -1,12 +1,20 @@
-import Foundation
+public struct TestReport: Codable, Hashable, Sendable {
+    public let target: BSPBuildTargetIdentifier
+    public let passed: Int
+    public let failed: Int
+    public let ignored: Int
+    public let cancelled: Int
+    public let skipped: Int
+    /// Test execution time in milliseconds, excluding compilation.
+    public let time: Int64?
 
-struct TestReport: Codable, Hashable, Sendable {
-    let originId: String?
-    let target: BSPBuildTargetIdentifier
-    let passed: Int
-    let failed: Int
-    let ignored: Int
-    let cancelled: Int
-    let skipped: Int
-    let time: TimeInterval?
+    public init(target: BSPBuildTargetIdentifier, results: [TestCaseResult], time: Int64? = nil) {
+        self.target = target
+        self.passed = results.count { $0.status == .passed }
+        self.failed = results.count { $0.status == .failed }
+        self.ignored = results.count { $0.status == .ignored }
+        self.cancelled = results.count { $0.status == .cancelled }
+        self.skipped = results.count { $0.status == .skipped }
+        self.time = time
+    }
 }

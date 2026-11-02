@@ -86,6 +86,30 @@ private actor RefreshProjectManager: ProjectManager {
         return .error
     }
 
+    // swiftlint:disable:next function_parameter_count
+    func test(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        logHandler: (@Sendable (String) -> Void)?,
+        testEventHandler: (@Sendable (TestExecutionEvent) async -> Void)?
+    ) async throws -> StatusCode {
+        for target in targetIdentifiers {
+            await testEventHandler?(.started(target))
+            await testEventHandler?(.finished(target, .error, .init(tests: [
+                TestCaseResult(displayName: "example", status: .failed, message: "Expected true")
+            ])))
+        }
+        return try await test(
+            targetIdentifiers: targetIdentifiers,
+            arguments: arguments,
+            environmentVariables: environmentVariables,
+            workingDirectory: workingDirectory,
+            logHandler: logHandler
+        )
+    }
+
     func startDebugSession(
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?
@@ -161,6 +185,31 @@ struct WorkspaceLifecycleTests {
         #expect(await reload.handle(contextualHandler: handler, id: .int(1)) is VoidResponse)
         try await service.waitForBuildSystemUpdates()
         #expect(await manager.revision == 2)
+    }
+
+    @Test
+    func requestPublishesProviderReportsWithTheRequestOrigin() async throws {
+        let harness = await setup()
+        let target = try BSPBuildTargetIdentifier(uri: URI(string: "file:///tmp/BSPWorkspace/Keep"))
+        let request = BuildTargetTestRequest(
+            id: .int(8),
+            jsonrpc: "2.0",
+            params: .init(targets: [target], originId: "test-report-origin")
+        )
+        let response = try #require(await request.handle(
+            contextualHandler: harness.handler, id: .int(8)
+        ) as? BuildTargetTestResponse)
+        #expect(response.result.statusCode == .error)
+        let messages = try await harness.transport.sent.map {
+            try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any])
+        }
+        let report = try #require(messages.compactMap { $0["params"] as? [String: Any] }.first {
+            $0["dataKind"] as? String == "test-report"
+        })
+        #expect(report["originId"] as? String == "test-report-origin")
+        let data = try #require(report["data"] as? [String: Any])
+        #expect(data["failed"] as? Int == 1)
+        #expect((data["target"] as? [String: Any])?["uri"] as? String == target.uri.stringValue)
     }
 
     @Test

@@ -18,7 +18,7 @@ public enum JSONRPCTransportError: Error, Sendable {
     case timeout
     case writeFailed(String)
 
-    // invalidMessage
+    case invalidMessage
     case invalidHeader
     case missingContentLength
     case invalidContentLength

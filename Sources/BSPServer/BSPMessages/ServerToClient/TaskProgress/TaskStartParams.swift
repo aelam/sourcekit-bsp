@@ -1,3 +1,4 @@
+import BuildServerProtocol
 import Foundation
 
 public struct TaskStartParams: Codable, Sendable {
@@ -9,17 +10,18 @@ public struct TaskStartParams: Codable, Sendable {
     public let eventTime: Int64?
     public let message: String?
     public let dataKind: TaskStartDataKind?
-    public let data: Data?
+    public let data: LSPAny?
 
     public init(
         taskId: String,
+        parents: [String]? = nil,
         originId: String? = nil,
         eventTime: Int64? = nil,
         message: String? = nil,
         dataKind: TaskStartDataKind? = nil,
-        data: Data? = nil
+        data: LSPAny? = nil
     ) {
-        self.taskId = TaskIdentifier(id: taskId)
+        self.taskId = TaskIdentifier(id: taskId, parents: parents)
         self.originId = originId
         self.eventTime = eventTime
         self.message = message

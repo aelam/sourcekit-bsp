@@ -1,5 +1,5 @@
 //
-//  WindowShowMessageNotification.swift
+//  BuildShowMessageNotification.swift
 //
 //  Copyright © 2024 Wang Lun.
 //
@@ -7,9 +7,9 @@
 import JSONRPCConnection
 import Logger
 
-/// Parameters for window/showMessage notification
-public struct WindowShowMessageParams: Codable, Sendable {
-    public static let method = "window/showMessage"
+/// Parameters for build/showMessage notification
+public struct BuildShowMessageParams: Codable, Sendable {
+    public static let method = "build/showMessage"
     /// The message type. See MessageType.
     public let type: LogMessageType
 

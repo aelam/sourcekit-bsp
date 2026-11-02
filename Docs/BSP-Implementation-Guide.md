@@ -2,6 +2,8 @@
 
 基于 [SourceKit-LSP官方BSP服务器实现指南](https://github.com/swiftlang/sourcekit-lsp/blob/56a91e90212400f20bb9d3f2e563ea8cda7634f6/Contributor%20Documentation/Implementing%20a%20BSP%20server.md) 的完整实现文档。
 
+> 本文保留了早期设计示例和检查清单；当前支持范围见 [协议支持说明](wiki/Protocol-Support.md)。
+
 ## 概述
 
 SourceKit-LSP可以通过[Build Server Protocol (BSP)](https://build-server-protocol.github.io/)连接到任何构建系统以提供语义功能。本文档详细说明了为SourceKit-LSP实现BSP服务器所需要实现的请求和通知。
@@ -244,8 +246,8 @@ public struct Result: Codable, Hashable, Sendable {
 - **用途**：文件系统变化通知
 - **实现状态**：✅ 已实现
 
-### 4. `window/showMessage`
-- **用途**：处理SourceKit-LSP发送的用户消息
+### 4. `build/showMessage`
+- **用途**：服务端向 BSP 客户端发送用户提示消息
 - **实现状态**：✅ 已实现
 
 ## sourcekit-bsp特有实现
@@ -315,7 +317,7 @@ let toolchainURI = URI(string: "file://\(toolchainPath)")
 
 ### 可选方法
 - [x] `workspace/didChangeWatchedFiles`
-- [x] `window/showMessage`
+- [x] `build/showMessage`
 - [ ] `build/logMessage`
 - [ ] `build/taskStart/Progress/Finish`
 

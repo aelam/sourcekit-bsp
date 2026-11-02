@@ -12,20 +12,39 @@ public extension XcodeProjectManager {
         environmentVariables: [String: String]?,
         workingDirectory: URI?
     ) async throws -> StatusCode {
+        try await run(
+            targetIdentifier: targetIdentifier,
+            arguments: arguments,
+            environmentVariables: environmentVariables,
+            workingDirectory: workingDirectory,
+            progressHandler: nil
+        )
+    }
+
+    func run(
+        targetIdentifier: BSPBuildTargetIdentifier,
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        progressHandler: (@Sendable (String) async -> Void)?
+    ) async throws -> StatusCode {
+        try Task.checkCancellation()
         let xcodeTargetIdentifier = XcodeTargetIdentifier(targetIdentifier)
 
         let result = await run(
             xcodeTargetIdentifier: xcodeTargetIdentifier,
             arguments: arguments,
             environmentVariables: environmentVariables,
-            workingDirectory: workingDirectory?.fileURL
+            workingDirectory: workingDirectory?.fileURL,
+            progressHandler: progressHandler
         )
 
+        try Task.checkCancellation()
         switch result.statusCode {
         case .success:
             return .ok
         case .error:
-            throw XcodeProjectError.invalidConfig(result.message ?? "Failed to run target")
+            throw XcodeRunError.failedToLaunchApp(result.message ?? "Failed to run target")
         }
     }
 }

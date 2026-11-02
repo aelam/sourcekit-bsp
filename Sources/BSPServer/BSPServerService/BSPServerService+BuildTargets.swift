@@ -34,7 +34,7 @@ extension BSPServerService {
         let context = await BuildOutputContext.load(using: projectManager, targets: targets)
         let changedTargets = try await getTaskManager().executeTask(
             originId: nil, message: "Prepare indexing", context: context
-        ) { log in
+        ) { _, log in
             try await (projectManager.buildIndex(for: targets, logHandler: log), StatusCode.ok)
         }
         if !changedTargets.isEmpty {

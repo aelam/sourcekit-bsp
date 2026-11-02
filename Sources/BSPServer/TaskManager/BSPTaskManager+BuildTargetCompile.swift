@@ -20,7 +20,7 @@ public extension BSPTaskManager {
         context: BuildOutputContext = BuildOutputContext(),
         operation: @Sendable (@escaping @Sendable (String) -> Void) async throws -> StatusCode
     ) async throws -> StatusCode {
-        try await executeTask(originId: originId, message: message, context: context) { log in
+        try await executeTask(originId: originId, message: message, context: context) { _, log in
             let status = try await operation(log)
             return (status, status)
         }
@@ -30,7 +30,7 @@ public extension BSPTaskManager {
         originId: String?,
         message: String,
         context: BuildOutputContext,
-        operation: @Sendable (@escaping @Sendable (String) -> Void) async throws -> (Result, StatusCode)
+        operation: @Sendable (BSPTask, @escaping @Sendable (String) -> Void) async throws -> (Result, StatusCode)
     ) async throws -> Result {
         let task = try await startTask(originId: originId, message: message)
         let reporter = BuildOutputReporter(manager: self, task: task, context: context)
@@ -49,7 +49,7 @@ public extension BSPTaskManager {
             await reporter.finish()
         }
         do {
-            let (result, status) = try await operation { batcher.append($0) }
+            let (result, status) = try await operation(task) { batcher.append($0) }
             try Task.checkCancellation()
             await stopStreaming()
             try await finishTask(
@@ -59,12 +59,14 @@ public extension BSPTaskManager {
             )
             return result
         } catch {
-            await stopStreaming()
-            try await finishTask(
-                taskId: task.taskId,
-                status: error is CancellationError ? .cancelled : .error,
-                message: error is CancellationError ? "Task cancelled" : "Task failed: \(error.localizedDescription)"
-            )
+            await Task {
+                await stopStreaming()
+                try? await self.finishTask(
+                    taskId: task.taskId,
+                    status: error is CancellationError ? .cancelled : .error,
+                    message: error is CancellationError ? "Task cancelled" : "Task failed: \(error.localizedDescription)"
+                )
+            }.value
             throw error
         }
     }

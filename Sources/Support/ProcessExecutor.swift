@@ -36,6 +36,13 @@ public enum ProcessExecutorError: Error, LocalizedError, Equatable {
     case processStartFailed(String) // System error message
     case timeout(TimeInterval)
 
+    public var errorDescription: String? {
+        switch self {
+        case let .processStartFailed(message): "Process could not start: \(message)"
+        case let .timeout(seconds): "Process timed out after \(seconds) seconds"
+        }
+    }
+
     public var isTimeout: Bool {
         if case .timeout = self { return true }
         return false

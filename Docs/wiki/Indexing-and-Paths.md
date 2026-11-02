@@ -32,9 +32,15 @@ set your editor's SourceKit-LSP options or create `.sourcekit-lsp/config.json`:
 }
 ```
 
-Settings depend on the SourceKit-LSP version. Preparation requests run serially
-and check for changed sources or deleted products each time. Failures include
-build output; a failed or cancelled build can be retried.
+Settings depend on the SourceKit-LSP version. Each preparation checks for changed
+sources or deleted products. Failures include build output; a failed or cancelled
+build can be retried.
+
+Within one server process, compile, test, preparation, and builds before debug
+share a queue for each DerivedData directory, including explicit path overrides.
+Builds in different directories can run concurrently. Cancellation waits for the
+process to exit and its output to drain before the next build starts. Separate
+server processes and builds started directly in Xcode are outside this queue.
 
 ## Keep executable and project paths separate
 
