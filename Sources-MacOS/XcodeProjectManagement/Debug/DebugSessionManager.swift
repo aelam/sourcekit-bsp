@@ -7,13 +7,33 @@ public struct DebugProduct: Sendable {
     public let platform: Platform
     public let binaryPath: String // macOS: executable; simulator: .app path
     public let bundleId: String?
-    public let simulatorUDID: String?
+    public let destinationID: String?
+    public let executablePath: String?
+
+    public var simulatorUDID: String? {
+        destinationID
+    }
 
     public init(platform: Platform, binaryPath: String, bundleId: String?, simulatorUDID: String?) {
         self.platform = platform
         self.binaryPath = binaryPath
         self.bundleId = bundleId
-        self.simulatorUDID = simulatorUDID
+        self.destinationID = simulatorUDID
+        self.executablePath = nil
+    }
+
+    public init(
+        platform: Platform,
+        binaryPath: String,
+        bundleId: String?,
+        destinationID: String?,
+        executablePath: String?
+    ) {
+        self.platform = platform
+        self.binaryPath = binaryPath
+        self.bundleId = bundleId
+        self.destinationID = destinationID
+        self.executablePath = executablePath
     }
 }
 
@@ -21,6 +41,8 @@ public enum DebugSessionError: Error, LocalizedError {
     case buildFailed
     case missingBundleId
     case missingSimulatorUDID
+    case missingDeviceID
+    case missingExecutable
     case unresolvedPlatform
     case unsupportedPlatform(Platform)
     case unsupportedProduct(String)
@@ -31,6 +53,8 @@ public enum DebugSessionError: Error, LocalizedError {
         case .buildFailed: "Build failed before starting the debug session"
         case .missingBundleId: "Could not resolve the app's bundle identifier"
         case .missingSimulatorUDID: "No simulator destination selected"
+        case .missingDeviceID: "No physical device selected. Select an iPhone destination."
+        case .missingExecutable: "Could not resolve the executable path for device debugging"
         case .unresolvedPlatform: "Could not resolve the target's platform (PLATFORM_NAME)"
         case let .unsupportedPlatform(p): "Debugging is not supported for platform \(p.rawValue)"
         case let .unsupportedProduct(name): "Debugging requires an application target: \(name)"
@@ -48,11 +72,18 @@ public enum DebugSessionError: Error, LocalizedError {
 public actor DebugSessionManager {
     private let adapter: DebugAdapterServing
     private let simulatorLauncher: WaitForDebuggerLaunching
+    private var deviceSession: DeviceDebugSession?
     private var liveEndpoints: [DebugAdapterEndpoint] = []
 
     public init(adapter: DebugAdapterServing, simulatorLauncher: WaitForDebuggerLaunching) {
         self.adapter = adapter
         self.simulatorLauncher = simulatorLauncher
+    }
+
+    init(adapter: DebugAdapterServing, simulatorLauncher: WaitForDebuggerLaunching, deviceSession: DeviceDebugSession) {
+        self.adapter = adapter
+        self.simulatorLauncher = simulatorLauncher
+        self.deviceSession = deviceSession
     }
 
     /// Build (via the injected closure), then produce a connection for the product.
@@ -65,8 +96,21 @@ public actor DebugSessionManager {
     }
 
     /// Product → connection. Assumes the build already succeeded.
-    func makeConnection(for product: DebugProduct) async throws -> DebugSessionConnection {
+    func makeConnection(
+        for product: DebugProduct,
+        progressHandler: (@Sendable (String) async -> Void)? = nil
+    ) async throws -> DebugSessionConnection {
+        try Task.checkCancellation()
         try product.validate()
+        if product.platform == .iOS {
+            guard let deviceSession else { throw DebugSessionError.unsupportedPlatform(product.platform) }
+            let (connection, endpoint) = try await deviceSession.start(
+                product: product,
+                progressHandler: progressHandler
+            )
+            liveEndpoints.append(endpoint)
+            return connection
+        }
         let endpoint = try await adapter.start()
         var succeeded = false
         defer {
@@ -81,8 +125,11 @@ public actor DebugSessionManager {
         case .macOS:
             succeeded = true
             return DebugSessionConnection(
-                uri: endpoint.uri, request: .launch,
-                program: product.binaryPath, pid: nil, bundleId: product.bundleId
+                uri: endpoint.uri,
+                request: .launch,
+                program: product.binaryPath,
+                pid: nil,
+                bundleId: product.bundleId
             )
         case .iOSSimulator, .watchSimulator, .tvSimulator, .visionSimulator:
             guard let udid = product.simulatorUDID else { throw DebugSessionError.missingSimulatorUDID }
@@ -92,8 +139,11 @@ public actor DebugSessionManager {
             )
             succeeded = true
             return DebugSessionConnection(
-                uri: endpoint.uri, request: .attach,
-                program: nil, pid: pid, bundleId: bundleId
+                uri: endpoint.uri,
+                request: .attach,
+                program: nil,
+                pid: pid,
+                bundleId: bundleId
             )
         default:
             throw DebugSessionError.unsupportedPlatform(product.platform)
@@ -101,11 +151,12 @@ public actor DebugSessionManager {
     }
 
     /// Terminate every lldb-dap we started (call on shutdown).
-    public func terminateAll() {
-        for endpoint in liveEndpoints {
-            endpoint.terminate()
-        }
+    public func terminateAll() async {
+        let endpoints = liveEndpoints
         liveEndpoints.removeAll()
+        for endpoint in endpoints {
+            await endpoint.stop()
+        }
     }
 }
 
@@ -114,6 +165,10 @@ extension DebugProduct {
         switch platform {
         case .macOS:
             break
+        case .iOS:
+            guard let destinationID, !destinationID.isEmpty else { throw DebugSessionError.missingDeviceID }
+            guard let bundleId, !bundleId.isEmpty else { throw DebugSessionError.missingBundleId }
+            guard let executablePath, !executablePath.isEmpty else { throw DebugSessionError.missingExecutable }
         case .iOSSimulator, .watchSimulator, .tvSimulator, .visionSimulator:
             guard let simulatorUDID, !simulatorUDID.isEmpty else {
                 throw DebugSessionError.missingSimulatorUDID

@@ -130,8 +130,25 @@ The server builds the app and returns an LLDB DAP endpoint. The probe connects,
 checks the breakpoint and stack, then terminates the app. Use an executable line
 for `--breakpoint`, or omit it to break at `main`.
 
-Use `--destination platform=macOS` for a Mac app. Physical-device debugging is
-not implemented.
+Use `--destination platform=macOS` for a Mac app or `--destination id=DEVICE-UDID`
+for an iPhone. The server uses the project's signing settings through
+`xcodebuild`. The device must be paired, unlocked, and have Developer Mode enabled.
+
+For iOS devices, the server installs the app with `devicectl` and launches it
+with `--start-stopped`. A server-side DAP relay supplies LLDB's `device select`
+and `device process attach` commands and the local executable path. Clients keep
+using the existing DAP address and PID. This requires an Xcode LLDB with these
+device commands and `lldb-dap` support for `attachCommands`.
+
+Preparation emits BSP task and log notifications. Once the endpoint is ready,
+attach errors and debugger output arrive through DAP. An abandoned session has
+120 seconds to attach before the server stops its suspended app. Failed attach
+requests and disconnects before attachment also stop that app. After attachment,
+DAP disconnect options control whether the app continues running.
+
+The iPhone path has automated command, protocol, and cleanup tests. Breakpoints,
+stepping, and variables still need validation on a physical device. Other physical
+Apple device platforms are not enabled for debugging.
 
 ## Results and cancellation
 
