@@ -29,7 +29,7 @@ struct XcodeToolchainTests {
         }
         #expect(selected.developerDir.resolvingSymlinksInPath() == URL(fileURLWithPath: expected)
             .resolvingSymlinksInPath())
-        let adapter = try LLDBDAPServer.locateLLDBDAP(developerDirectory: selected.developerDir)
+        let adapter = try await LLDBDAPServer.locateLLDBDAP(developerDirectory: selected.developerDir)
         #expect(adapter.hasPrefix(selected.developerDir.path + "/"))
     }
 

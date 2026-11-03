@@ -1,5 +1,6 @@
 import Foundation
 import Logger
+import Support
 
 /// A running debug-adapter endpoint the client connects to over TCP.
 public struct DebugAdapterEndpoint: Sendable {
@@ -47,7 +48,7 @@ public struct LLDBDAPServer: DebugAdapterServing {
     }
 
     public func start() async throws -> DebugAdapterEndpoint {
-        let lldbDAPPath = try Self.locateLLDBDAP(developerDirectory: developerDirectory)
+        let lldbDAPPath = try await Self.locateLLDBDAP(developerDirectory: developerDirectory)
         let port = try Self.reserveFreePort()
 
         let process = Process()
@@ -82,13 +83,15 @@ public struct LLDBDAPServer: DebugAdapterServing {
 
     /// Check the bound port without consuming the adapter's only client connection.
     static func waitUntilListening(port: Int, process: Process, timeout: TimeInterval) async throws {
-        let deadline = Date(timeIntervalSinceNow: timeout)
-        while Date() < deadline {
+        let deadline = ContinuousClock.now + .seconds(timeout)
+        while true {
+            try Task.checkCancellation()
             guard process.isRunning else {
                 throw LLDBDAPError
                     .failedToStart("lldb-dap exited before listening (status \(process.terminationStatus))")
             }
             if isPortBound(port: port) { return }
+            guard ContinuousClock.now < deadline else { break }
             try await Task.sleep(for: .milliseconds(50))
         }
         throw LLDBDAPError.failedToStart("lldb-dap did not start listening on port \(port) within \(Int(timeout))s")
@@ -112,27 +115,20 @@ public struct LLDBDAPServer: DebugAdapterServing {
     }
 
     /// `xcrun --find lldb-dap`.
-    static func locateLLDBDAP(developerDirectory: URL? = nil) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        process.arguments = ["--find", "lldb-dap"]
-        if let developerDirectory {
-            var environment = ProcessInfo.processInfo.environment
-            environment["DEVELOPER_DIR"] = developerDirectory.path
-            process.environment = environment
-        }
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
+    static func locateLLDBDAP(developerDirectory: URL? = nil) async throws -> String {
+        let environment = developerDirectory.map { ["DEVELOPER_DIR": $0.path] } ?? [:]
+        let result: ProcessExecutionResult
         do {
-            try process.run()
+            result = try await ProcessExecutor().execute(
+                executable: "/usr/bin/xcrun", arguments: ["--find", "lldb-dap"], environment: environment
+            )
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw LLDBDAPError.notFound
         }
-        process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard process.terminationStatus == 0, !path.isEmpty,
+        let path = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard result.isSuccess, !path.isEmpty,
               FileManager.default.isExecutableFile(atPath: path) else {
             throw LLDBDAPError.notFound
         }
