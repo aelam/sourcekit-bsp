@@ -88,7 +88,10 @@ extension XcodeTarget {
             canCompile: true,
             canTest: self.xcodeProductType.isTestBundle,
             canRun: self.xcodeProductType.isApplication,
-            canDebug: self.xcodeProductType.isApplication
+            canDebug: self.xcodeProductType.isApplication || (
+                self.xcodeProductType == .unitTestBundle &&
+                    (self.xcodeTargetPlatform == .iOS || self.xcodeTargetPlatform == .iOSSimulator)
+            )
         )
 
         return try? BSPBuildTarget(

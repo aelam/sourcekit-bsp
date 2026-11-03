@@ -1,4 +1,5 @@
 import Foundation
+import Support
 
 final class XcodeDestinationLoader: @unchecked Sendable {
     private var destinations: [XcodeDestination] = []
@@ -27,7 +28,7 @@ final class XcodeDestinationLoader: @unchecked Sendable {
             return // Already loaded
         }
 
-        let destinations = try await (loadDestinationsFromXctrace())
+        let destinations = try await loadDestinationsFromXctrace()
         self.destinations = destinations + [
             .anyiOSDevice,
             .anyiOSSimulator,
@@ -48,17 +49,13 @@ final class XcodeDestinationLoader: @unchecked Sendable {
     }
 
     private func loadDestinationsFromXctrace() async throws -> [XcodeDestination] {
-        let process = Process()
-        process.launchPath = "/usr/bin/xcrun"
-        process.arguments = ["xctrace", "list", "devices"]
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.launch()
-        process.waitUntilExit()
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8) ?? ""
+        let result = try await ProcessExecutor().execute(
+            executable: "/usr/bin/xcrun", arguments: ["xctrace", "list", "devices"]
+        )
+        guard result.isSuccess else {
+            throw XcodeProjectError.invalidConfig("Failed to list Xcode destinations: \(result.error ?? result.output)")
+        }
+        let output = result.output
 
         var destinations: [XcodeDestination] = []
         let lines = output.components(separatedBy: .newlines)
