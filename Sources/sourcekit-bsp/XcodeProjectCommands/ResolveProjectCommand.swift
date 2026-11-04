@@ -11,12 +11,20 @@ import Foundation
 import XcodeProjectManagement
 
 struct ResolveProjectCommand: AsyncParsableCommand {
-    @Option(name: .shortAndLong, help: "Xcode project/workspace folder path")
+    @Option(
+        name: .shortAndLong,
+        help: "Folder that contains an .xcodeproj or .xcworkspace"
+    )
     var workspaceFolder: String
 
     static let configuration = CommandConfiguration(
-        commandName: "resolveProject",
-        abstract: "resolveProject: Resolve Xcode Project/Workspace"
+        commandName: "resolve-project",
+        abstract: "Resolve the Xcode project for a folder.",
+        discussion: """
+        Pass the project folder, not the .xcodeproj file. If the folder \
+        contains multiple projects or workspaces, configure \
+        .sourcekit-bsp/project.json first.
+        """
     )
 
     mutating func run() async throws {

@@ -57,7 +57,10 @@ Xcode project diagnostics are available as subcommands:
 
 ```sh
 sourcekit-bsp xcode-project --help
+sourcekit-bsp xcode-project resolve-project --workspace-folder /path/to/project-folder
 ```
+
+Use the folder that contains the `.xcodeproj` or `.xcworkspace`.
 
 ## Release
 
