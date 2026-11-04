@@ -39,9 +39,9 @@ jobs:
         fetch-depth: 0
         ref: main
 
-    - name: Create Release Pull Request
+    - name: Update Release Version
+      id: release-version
       env:
-        GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         REQUESTED_VERSION: ${{ inputs.version }}
       run: |
@@ -68,11 +68,6 @@ jobs:
           exit 1
         fi
 
-        if git ls-remote --exit-code --heads origin "${branch_name}" >/dev/null; then
-          echo "Release branch ${branch_name} already exists."
-          exit 1
-        fi
-
         current_version="$(
           sed -n 's/^[[:space:]]*static let current = "\(.*\)"[[:space:]]*$/\1/p' \
             Sources/sourcekit-bsp/SourceKitBSPVersion.swift
@@ -92,18 +87,24 @@ jobs:
           's/static let current = "[^"]+"/static let current = "$ENV{RELEASE_VERSION}"/' \
           Sources/sourcekit-bsp/SourceKitBSPVersion.swift
 
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git switch -c "${branch_name}"
-        git add Sources/sourcekit-bsp/SourceKitBSPVersion.swift
-        git commit -m "chore: release ${tag_name}"
-        git push "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${branch_name}"
+        echo "version=${version}" >> "${GITHUB_OUTPUT}"
+        echo "tag_name=${tag_name}" >> "${GITHUB_OUTPUT}"
+        echo "branch_name=${branch_name}" >> "${GITHUB_OUTPUT}"
 
-        gh pr create \
-          --base main \
-          --head "${branch_name}" \
-          --title "Release ${tag_name}" \
-          --body "Updates SourceKitBSPVersion.current to ${version}. After this PR is merged, the Release workflow will create ${tag_name} and upload the release assets."
+    - name: Create Release Pull Request
+      uses: peter-evans/create-pull-request@v8
+      with:
+        token: ${{ secrets.RELEASE_TOKEN }}
+        base: main
+        branch: ${{ steps.release-version.outputs.branch_name }}
+        delete-branch: true
+        commit-message: 'chore: release ${{ steps.release-version.outputs.tag_name }}'
+        title: Release ${{ steps.release-version.outputs.tag_name }}
+        body: |
+          Updates SourceKitBSPVersion.current to ${{ steps.release-version.outputs.version }}.
+
+          After this PR is merged, the Release workflow will create
+          ${{ steps.release-version.outputs.tag_name }} and upload the release assets.
 
   build-release:
     name: Build Release Binaries
