@@ -159,6 +159,18 @@ injection environment. The process waits for the debugger before executing tests
 Connect to the returned DAP endpoint and attach with `stopOnEntry: false`.
 Set breakpoints, then send `configurationDone` to start the tests.
 
+Test debug builds default to `SWIFT_DEBUG_INFORMATION_VERSION=dwarf4`. This makes
+Swift write macro expansion sources to files that LLDB-DAP can open when stepping
+through `@Test` wrappers. Ordinary builds and test runs keep their existing
+settings. Pass an explicit `SWIFT_DEBUG_INFORMATION_VERSION` to override this
+default.
+
+With Xcode 26.6, a breakpoint directly on `#expect` can still show disassembly
+because the compiler assigns part of the expansion to `<stdin>` without a source
+line. Put the breakpoint on an ordinary statement before the assertion to inspect
+its inputs. After the test returns, stepping can enter generated wrappers or the
+Testing runtime.
+
 This runs the entire target, including XCTest and Swift Testing cases. UI tests,
 non-hosted test bundles, physical devices, and test filters are not supported by
 this debug path. It does not run the scheme's Test Plan or create an `.xcresult`
