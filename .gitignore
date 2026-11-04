@@ -71,3 +71,4 @@ DerivedData/
 **/.swiftpm/**/*
 *.profraw
 .claude/
+*.pyc

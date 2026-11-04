@@ -1,7 +1,4 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
         {
@@ -9,15 +6,6 @@
             "request": "launch",
             "type": "bsp-debug",
             "stopOnEntry": true
-        },
-        {
-            "name": "BSP Attach",
-            "request": "attach",
-            "type": "bsp-debug",
-            "connect": {
-                "host": "localhost",
-                "port": 5005
-            }
         }
     ]
 }
