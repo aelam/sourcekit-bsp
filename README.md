@@ -64,9 +64,13 @@ Use the folder that contains the `.xcodeproj` or `.xcworkspace`.
 
 ## Release
 
-Releases are built by GitHub Actions when a `v*.*.*` tag is pushed. The tag
-must match `SourceKitBSPVersion.current`; otherwise the release workflow stops
-before it builds or uploads artifacts.
+Use the **Release** workflow in GitHub Actions for a one-click release. Run it
+from `main` and enter the new version, for example `0.2.4`. The workflow updates
+`SourceKitBSPVersion.current`, commits the version bump to `main`, creates the
+matching `v*.*.*` tag, and uploads the release assets.
+
+Tag pushes are still supported. The tag must match `SourceKitBSPVersion.current`;
+otherwise the release workflow stops before it builds or uploads artifacts.
 
 ```sh
 version="$(

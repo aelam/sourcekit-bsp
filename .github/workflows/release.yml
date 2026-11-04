@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version, for example 0.2.4 or v0.2.4'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -23,16 +29,82 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
 
-    - name: Verify Release Version
+    - name: Prepare Manual Release
+      id: manual-release
+      if: github.event_name == 'workflow_dispatch'
+      env:
+        REQUESTED_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
+
+        version="${REQUESTED_VERSION#v}"
+        tag_name="v${version}"
+
+        if ! echo "${version}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+          echo "Version must use semantic version format, for example 0.2.4."
+          exit 1
+        fi
+
+        git fetch --tags origin
+        if git rev-parse -q --verify "refs/tags/${tag_name}" >/dev/null; then
+          echo "Tag ${tag_name} already exists."
+          exit 1
+        fi
 
         release_version="$(
           sed -n 's/^[[:space:]]*static let current = "\(.*\)"[[:space:]]*$/\1/p' \
             Sources/sourcekit-bsp/SourceKitBSPVersion.swift
         )"
-        tag_version="${GITHUB_REF_NAME#v}"
+
+        if [ -z "${release_version}" ]; then
+          echo "Could not read SourceKitBSPVersion.current."
+          exit 1
+        fi
+
+        if [ "${release_version}" != "${version}" ]; then
+          RELEASE_VERSION="${version}" perl -0pi -e \
+            's/static let current = "[^"]+"/static let current = "$ENV{RELEASE_VERSION}"/' \
+            Sources/sourcekit-bsp/SourceKitBSPVersion.swift
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Sources/sourcekit-bsp/SourceKitBSPVersion.swift
+          git commit -m "chore: release ${tag_name}"
+          git push origin HEAD:main
+        else
+          echo "SourceKitBSPVersion.current is already ${version}."
+        fi
+
+        git tag -a "${tag_name}" -m "Release ${tag_name}"
+        git push origin "${tag_name}"
+
+        echo "release_version=${version}" >> "${GITHUB_OUTPUT}"
+        echo "tag_name=${tag_name}" >> "${GITHUB_OUTPUT}"
+
+    - name: Verify Release Version
+      id: release-info
+      env:
+        MANUAL_RELEASE_VERSION: ${{ steps.manual-release.outputs.release_version }}
+        MANUAL_TAG_NAME: ${{ steps.manual-release.outputs.tag_name }}
+      run: |
+        set -euo pipefail
+
+        if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+          release_version="${MANUAL_RELEASE_VERSION}"
+          tag_name="${MANUAL_TAG_NAME}"
+        else
+          release_version="$(
+            sed -n 's/^[[:space:]]*static let current = "\(.*\)"[[:space:]]*$/\1/p' \
+              Sources/sourcekit-bsp/SourceKitBSPVersion.swift
+          )"
+          tag_name="${GITHUB_REF_NAME}"
+        fi
+
+        tag_version="${tag_name#v}"
 
         if [ -z "$release_version" ]; then
           echo "Could not read SourceKitBSPVersion.current."
@@ -40,11 +112,13 @@ jobs:
         fi
 
         if [ "$tag_version" != "$release_version" ]; then
-          echo "Release tag ${GITHUB_REF_NAME} does not match version ${release_version}."
+          echo "Release tag ${tag_name} does not match version ${release_version}."
           exit 1
         fi
 
-        echo "Release version ${release_version} matches tag ${GITHUB_REF_NAME}."
+        echo "Release version ${release_version} matches tag ${tag_name}."
+        echo "release_version=${release_version}" >> "${GITHUB_OUTPUT}"
+        echo "tag_name=${tag_name}" >> "${GITHUB_OUTPUT}"
 
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
@@ -80,12 +154,13 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
+        tag_name: ${{ steps.release-info.outputs.tag_name }}
         files: |
           sourcekit-bsp-macos-universal.tar.gz
           sourcekit-bsp-macos-universal.zip
           checksums.txt
         generate_release_notes: true
-        prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+        prerelease: ${{ contains(steps.release-info.outputs.tag_name, 'alpha') || contains(steps.release-info.outputs.tag_name, 'beta') || contains(steps.release-info.outputs.tag_name, 'rc') }}
         body: |
           ## Changes in this Release
 

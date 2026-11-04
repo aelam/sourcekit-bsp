@@ -52,8 +52,10 @@ This directory contains all the GitHub Actions workflows for sourcekit-bsp. Each
 
 **Triggers:**
 - Tag pushes matching `v*.*.*` pattern
+- Manual runs from GitHub Actions with a release version input
 
 **Features:**
+- One-click version bump, commit, and tag creation
 - Universal binary builds (ARM64 + x86_64)
 - Multiple archive formats (tar.gz, zip)
 - SHA256 checksums generation
