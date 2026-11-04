@@ -39,7 +39,7 @@ struct SourceKitBSP {
                 exit(0)
             } else if firstArg == "xcode-project" {
                 #if os(macOS)
-                await XcodeProjectCommand.main(Array(arguments.dropFirst()))
+                await XcodeProjectCommand.main(Array(arguments.dropFirst(2)))
                 #else
                 print("The xcode-project command is only available on macOS.")
                 #endif
