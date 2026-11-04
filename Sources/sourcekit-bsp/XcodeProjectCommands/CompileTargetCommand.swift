@@ -1,3 +1,4 @@
+#if os(macOS)
 //
 //  CompileTargetCommand.swift
 //  sourcekit-bsp
@@ -77,3 +78,4 @@ struct CompileTargetCommand: AsyncParsableCommand {
         print("Loading time: \(endTimestamp.timeIntervalSince(timestamp)) seconds")
     }
 }
+#endif

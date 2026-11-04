@@ -37,6 +37,13 @@ struct SourceKitBSP {
             } else if firstArg == "--version" {
                 print(SourceKitBSPVersion.current)
                 exit(0)
+            } else if firstArg == "xcode-project" {
+                #if os(macOS)
+                await XcodeProjectCommand.main(Array(arguments.dropFirst()))
+                #else
+                print("The xcode-project command is only available on macOS.")
+                #endif
+                exit(0)
             }
         }
 
@@ -89,6 +96,7 @@ struct SourceKitBSP {
         print("Options:")
         print("  -h, --help      Show this help message and exit")
         print("  --version       Show the version and exit")
+        print("  xcode-project   Inspect and compile Xcode projects")
         print("")
         print("BSP Protocol:")
         print("  The server implements the Build Server Protocol specification.")
@@ -96,6 +104,7 @@ struct SourceKitBSP {
         print("")
         print("Examples:")
         print("  sourcekit-bsp                    # Start BSP server")
+        print("  sourcekit-bsp xcode-project --help")
         print("  echo '{\"id\":1,\"method\":\"build/initialize\"...}' | sourcekit-bsp")
     }
 

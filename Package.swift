@@ -38,13 +38,6 @@ let multiPlatformTargets: [Target] = [
             "BuildServerProtocol",
         ]
     ),
-    .executableTarget(
-        name: "sourcekit-bsp",
-        dependencies: [
-            "BSPServer",
-            "Logger",
-        ]
-    ),
     .testTarget(
         name: "SwiftPMProjectManagerProviderTests",
         dependencies: [
@@ -60,6 +53,16 @@ let multiPlatformTargets: [Target] = [
 ]
 
 #if os(macOS)
+let sourceKitBSPTarget: Target = .executableTarget(
+    name: "sourcekit-bsp",
+    dependencies: [
+        "BSPServer",
+        "Logger",
+        "XcodeProjectManagerProvider",
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+    ]
+)
+
 let bspServerTarget: Target = .target(
     name: "BSPServer",
     dependencies: [
@@ -72,6 +75,14 @@ let bspServerTarget: Target = .target(
     ]
 )
 #else
+let sourceKitBSPTarget: Target = .executableTarget(
+    name: "sourcekit-bsp",
+    dependencies: [
+        "BSPServer",
+        "Logger",
+    ]
+)
+
 let bspServerTarget: Target = .target(
     name: "BSPServer",
     dependencies: [
@@ -132,18 +143,6 @@ let macOnlyTargets: [Target] = [
             .define("MACOS_ONLY", .when(platforms: [.macOS]))
         ]
     ),
-    .executableTarget(
-        name: "XcodeProjectCLI",
-        dependencies: [
-            "Logger",
-            .product(name: "ArgumentParser", package: "swift-argument-parser"),
-            "XcodeProjectManagerProvider",
-        ],
-        path: "Sources-MacOS/XcodeProjectCLI",
-        swiftSettings: [
-            .define("MACOS_ONLY", .when(platforms: [.macOS]))
-        ]
-    ),
     .testTarget(
         name: "XcodeProjectManagementTests",
         dependencies: [
@@ -175,19 +174,15 @@ let macOnlyProducts: [Product] = [
         name: "XcodeProjectManagement",
         targets: ["XcodeProjectManagement"]
     ),
-    .executable(
-        name: "XcodeProjectCLI",
-        targets: ["XcodeProjectCLI"]
-    ),
 ]
 
 #endif
 
 let targets: [Target] = {
     #if os(macOS)
-    return multiPlatformTargets + [bspServerTarget] + macOnlyTargets
+    return multiPlatformTargets + [bspServerTarget, sourceKitBSPTarget] + macOnlyTargets
     #else
-    return multiPlatformTargets + [bspServerTarget]
+    return multiPlatformTargets + [bspServerTarget, sourceKitBSPTarget]
     #endif
 }()
 

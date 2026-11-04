@@ -29,7 +29,6 @@ Download the latest `sourcekit-bsp-macos-universal.tar.gz` from the
 ```sh
 tar -xzf sourcekit-bsp-macos-universal.tar.gz
 sudo mv sourcekit-bsp /usr/local/bin/
-sudo mv XcodeProjectCLI /usr/local/bin/
 sourcekit-bsp --help
 ```
 
@@ -53,6 +52,12 @@ swift build
 The executable is `.build/debug/sourcekit-bsp`; `swift build -c release` produces
 `.build/release/sourcekit-bsp`. See [Getting started](Docs/wiki/Getting-Started.md)
 for Xcode builds and executable paths.
+
+Xcode project diagnostics are available as subcommands:
+
+```sh
+sourcekit-bsp xcode-project --help
+```
 
 ## Release
 

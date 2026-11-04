@@ -64,15 +64,13 @@ jobs:
       run: |
         mkdir -p release
         cp .build/apple/Products/Release/sourcekit-bsp release/sourcekit-bsp
-        cp .build/apple/Products/Release/XcodeProjectCLI release/XcodeProjectCLI
         chmod +x release/sourcekit-bsp
-        chmod +x release/XcodeProjectCLI
 
         # Create tar.gz
-        tar -czf sourcekit-bsp-macos-universal.tar.gz -C release sourcekit-bsp XcodeProjectCLI
+        tar -czf sourcekit-bsp-macos-universal.tar.gz -C release sourcekit-bsp
 
         # Create zip
-        cd release && zip ../sourcekit-bsp-macos-universal.zip sourcekit-bsp XcodeProjectCLI && cd ..
+        cd release && zip ../sourcekit-bsp-macos-universal.zip sourcekit-bsp && cd ..
 
     - name: Generate Checksums
       run: |
@@ -96,7 +94,7 @@ jobs:
           #### Manual Installation
           1. Download `sourcekit-bsp-macos-universal.tar.gz`
           2. Extract the binary: `tar -xzf sourcekit-bsp-macos-universal.tar.gz`
-          3. Move the executables to PATH: `sudo mv sourcekit-bsp XcodeProjectCLI /usr/local/bin/`
+          3. Move the executable to PATH: `sudo mv sourcekit-bsp /usr/local/bin/`
 
           ### Usage
           ```bash
