@@ -39,9 +39,9 @@ jobs:
         fetch-depth: 0
         ref: main
 
-    - name: Create Release Pull Request
+    - name: Update Release Version
+      id: release-version
       env:
-        GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         REQUESTED_VERSION: ${{ inputs.version }}
       run: |
@@ -68,11 +68,6 @@ jobs:
           exit 1
         fi
 
-        if git ls-remote --exit-code --heads origin "${branch_name}" >/dev/null; then
-          echo "Release branch ${branch_name} already exists."
-          exit 1
-        fi
-
         current_version="$(
           sed -n 's/^[[:space:]]*static let current = "\(.*\)"[[:space:]]*$/\1/p' \
             Sources/sourcekit-bsp/SourceKitBSPVersion.swift
@@ -88,46 +83,28 @@ jobs:
           exit 1
         fi
 
-        base_sha="$(git rev-parse HEAD)"
-        gh api \
-          --method POST \
-          "repos/${GITHUB_REPOSITORY}/git/refs" \
-          -f ref="refs/heads/${branch_name}" \
-          -f sha="${base_sha}"
-
         RELEASE_VERSION="${version}" perl -0pi -e \
           's/static let current = "[^"]+"/static let current = "$ENV{RELEASE_VERSION}"/' \
           Sources/sourcekit-bsp/SourceKitBSPVersion.swift
 
-        file_path="Sources/sourcekit-bsp/SourceKitBSPVersion.swift"
-        file_sha="$(
-          gh api "repos/${GITHUB_REPOSITORY}/contents/${file_path}?ref=${branch_name}" \
-            --jq .sha
-        )"
-        file_content="$(base64 -w 0 "${file_path}")"
+        echo "version=${version}" >> "${GITHUB_OUTPUT}"
+        echo "tag_name=${tag_name}" >> "${GITHUB_OUTPUT}"
+        echo "branch_name=${branch_name}" >> "${GITHUB_OUTPUT}"
 
-        jq -n \
-          --arg message "chore: release ${tag_name}" \
-          --arg content "${file_content}" \
-          --arg branch "${branch_name}" \
-          --arg sha "${file_sha}" \
-          '{
-            message: $message,
-            content: $content,
-            branch: $branch,
-            sha: $sha
-          }' > /tmp/release-version-update.json
+    - name: Create Release Pull Request
+      uses: peter-evans/create-pull-request@v8
+      with:
+        token: ${{ secrets.RELEASE_TOKEN }}
+        base: main
+        branch: ${{ steps.release-version.outputs.branch_name }}
+        delete-branch: true
+        commit-message: 'chore: release ${{ steps.release-version.outputs.tag_name }}'
+        title: Release ${{ steps.release-version.outputs.tag_name }}
+        body: |
+          Updates SourceKitBSPVersion.current to ${{ steps.release-version.outputs.version }}.
 
-        gh api \
-          --method PUT \
-          "repos/${GITHUB_REPOSITORY}/contents/${file_path}" \
-          --input /tmp/release-version-update.json
-
-        gh pr create \
-          --base main \
-          --head "${branch_name}" \
-          --title "Release ${tag_name}" \
-          --body "Updates SourceKitBSPVersion.current to ${version}. After this PR is merged, the Release workflow will create ${tag_name} and upload the release assets."
+          After this PR is merged, the Release workflow will create
+          ${{ steps.release-version.outputs.tag_name }} and upload the release assets.
 
   build-release:
     name: Build Release Binaries
