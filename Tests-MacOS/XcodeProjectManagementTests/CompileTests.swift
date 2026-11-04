@@ -69,6 +69,21 @@ struct CompileTests {
         #expect(failedRun.message?.contains("BSP-NOT-A-DEVICE") == true)
 
         let testTarget = try #require(base.xcodeTargets.first { $0.name == "HelloTests" })
+        let testDebugInput = [
+            "-destination", "id=SIM", "-configuration", "Debug", "-derivedDataPath", "/tmp/Custom",
+            "OTHER_SWIFT_FLAGS=$(inherited) -DTEST_DEBUG", "DEBUG_INFORMATION_FORMAT=dwarf-with-dsym"
+        ]
+        let testArguments = try await manager.testArguments(for: testTarget, arguments: testDebugInput)
+        let debugArguments = try await manager.testDebugArguments(for: testTarget, arguments: testDebugInput)
+        #expect(debugArguments == testArguments + ["SWIFT_DEBUG_INFORMATION_VERSION=dwarf4"])
+        #expect(!defaults.contains { $0.hasPrefix("SWIFT_DEBUG_INFORMATION_VERSION=") })
+        for version in ["dwarf4", "dwarf5", "compiler-default"] {
+            let input = testDebugInput + ["SWIFT_DEBUG_INFORMATION_VERSION=\(version)"]
+            let normal = try await manager.testArguments(for: testTarget, arguments: input)
+            let debug = try await manager.testDebugArguments(for: testTarget, arguments: input)
+            #expect(debug == normal)
+        }
+
         let testSettings = try await manager.resolvedBuildSettings(for: testTarget, arguments: defaults)
         #expect(testSettings["FULL_PRODUCT_NAME"] == "HelloTests.xctest")
         #expect(testSettings["TEST_HOST"]?.contains("Hello.app/") == true)
