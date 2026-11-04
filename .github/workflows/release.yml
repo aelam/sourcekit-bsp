@@ -71,17 +71,10 @@ jobs:
 
           ### Installation
 
-          #### Homebrew (Recommended)
-          ```bash
-          # Coming soon
-          brew install sourcekit-bsp
-          ```
-
           #### Manual Installation
-          1. Download the appropriate archive for your platform
+          1. Download `sourcekit-bsp-macos-universal.tar.gz`
           2. Extract the binary: `tar -xzf sourcekit-bsp-macos-universal.tar.gz`
-          3. Move to PATH: `mv sourcekit-bsp /usr/local/bin/`
-          4. Make executable: `chmod +x /usr/local/bin/sourcekit-bsp`
+          3. Move the executables to PATH: `sudo mv sourcekit-bsp XcodeProjectCLI /usr/local/bin/`
 
           ### Usage
           ```bash
