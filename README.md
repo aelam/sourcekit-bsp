@@ -21,6 +21,24 @@ older releases may have fewer features.
 
 ![Code navigation demo](Docs/Navigation.gif)
 
+## Install
+
+Download the latest `sourcekit-bsp-macos-universal.tar.gz` from the
+[GitHub Releases](https://github.com/aelam/sourcekit-bsp/releases/latest) page.
+
+```sh
+tar -xzf sourcekit-bsp-macos-universal.tar.gz
+sudo mv sourcekit-bsp /usr/local/bin/
+sudo mv XcodeProjectCLI /usr/local/bin/
+sourcekit-bsp --help
+```
+
+Or build and install the executables directly from this Swift package with Mint:
+
+```sh
+mint install aelam/sourcekit-bsp
+```
+
 ## Build
 
 Requires macOS 13+, Xcode with Swift 6.1+, and your project's SDKs and simulator runtimes.
