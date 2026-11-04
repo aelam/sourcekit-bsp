@@ -2,6 +2,10 @@ name: Release
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - Sources/sourcekit-bsp/SourceKitBSPVersion.swift
     tags:
       - 'v*.*.*'
   workflow_dispatch:
@@ -13,6 +17,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 env:
   # See ci.yml: pin to the newest stable Xcode instead of an exact version so
@@ -21,28 +26,36 @@ env:
   XCODE_VERSION: latest-stable
 
 jobs:
-  build-release:
-    name: Build Release Binaries
-    runs-on: macos-latest
-    timeout-minutes: 40
+  prepare-manual-release:
+    name: Prepare Manual Release PR
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+        ref: main
 
-    - name: Prepare Manual Release
-      id: manual-release
-      if: github.event_name == 'workflow_dispatch'
+    - name: Create Release Pull Request
       env:
+        GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         REQUESTED_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
 
+        if [ -z "${RELEASE_TOKEN}" ]; then
+          echo "Set the RELEASE_TOKEN secret before running manual releases."
+          echo "The token must be able to push branches and create pull requests."
+          exit 1
+        fi
+
         version="${REQUESTED_VERSION#v}"
         tag_name="v${version}"
+        branch_name="release/${tag_name}"
 
         if ! echo "${version}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
           echo "Version must use semantic version format, for example 0.2.4."
@@ -55,53 +68,69 @@ jobs:
           exit 1
         fi
 
+        if git ls-remote --exit-code --heads origin "${branch_name}" >/dev/null; then
+          echo "Release branch ${branch_name} already exists."
+          exit 1
+        fi
+
+        current_version="$(
+          sed -n 's/^[[:space:]]*static let current = "\(.*\)"[[:space:]]*$/\1/p' \
+            Sources/sourcekit-bsp/SourceKitBSPVersion.swift
+        )"
+
+        if [ -z "${current_version}" ]; then
+          echo "Could not read SourceKitBSPVersion.current."
+          exit 1
+        fi
+
+        if [ "${current_version}" = "${version}" ]; then
+          echo "SourceKitBSPVersion.current is already ${version}."
+          exit 1
+        fi
+
+        RELEASE_VERSION="${version}" perl -0pi -e \
+          's/static let current = "[^"]+"/static let current = "$ENV{RELEASE_VERSION}"/' \
+          Sources/sourcekit-bsp/SourceKitBSPVersion.swift
+
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git switch -c "${branch_name}"
+        git add Sources/sourcekit-bsp/SourceKitBSPVersion.swift
+        git commit -m "chore: release ${tag_name}"
+        git push "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${branch_name}"
+
+        gh pr create \
+          --base main \
+          --head "${branch_name}" \
+          --title "Release ${tag_name}" \
+          --body "Updates SourceKitBSPVersion.current to ${version}. After this PR is merged, the Release workflow will create ${tag_name} and upload the release assets."
+
+  build-release:
+    name: Build Release Binaries
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 40
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Verify Release Version
+      id: release-info
+      run: |
+        set -euo pipefail
+
         release_version="$(
           sed -n 's/^[[:space:]]*static let current = "\(.*\)"[[:space:]]*$/\1/p' \
             Sources/sourcekit-bsp/SourceKitBSPVersion.swift
         )"
 
-        if [ -z "${release_version}" ]; then
-          echo "Could not read SourceKitBSPVersion.current."
-          exit 1
-        fi
-
-        if [ "${release_version}" != "${version}" ]; then
-          RELEASE_VERSION="${version}" perl -0pi -e \
-            's/static let current = "[^"]+"/static let current = "$ENV{RELEASE_VERSION}"/' \
-            Sources/sourcekit-bsp/SourceKitBSPVersion.swift
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Sources/sourcekit-bsp/SourceKitBSPVersion.swift
-          git commit -m "chore: release ${tag_name}"
-          git push origin HEAD:main
-        else
-          echo "SourceKitBSPVersion.current is already ${version}."
-        fi
-
-        git tag -a "${tag_name}" -m "Release ${tag_name}"
-        git push origin "${tag_name}"
-
-        echo "release_version=${version}" >> "${GITHUB_OUTPUT}"
-        echo "tag_name=${tag_name}" >> "${GITHUB_OUTPUT}"
-
-    - name: Verify Release Version
-      id: release-info
-      env:
-        MANUAL_RELEASE_VERSION: ${{ steps.manual-release.outputs.release_version }}
-        MANUAL_TAG_NAME: ${{ steps.manual-release.outputs.tag_name }}
-      run: |
-        set -euo pipefail
-
-        if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-          release_version="${MANUAL_RELEASE_VERSION}"
-          tag_name="${MANUAL_TAG_NAME}"
-        else
-          release_version="$(
-            sed -n 's/^[[:space:]]*static let current = "\(.*\)"[[:space:]]*$/\1/p' \
-              Sources/sourcekit-bsp/SourceKitBSPVersion.swift
-          )"
+        if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
           tag_name="${GITHUB_REF_NAME}"
+        else
+          tag_name="v${release_version}"
         fi
 
         tag_version="${tag_name#v}"
@@ -119,6 +148,24 @@ jobs:
         echo "Release version ${release_version} matches tag ${tag_name}."
         echo "release_version=${release_version}" >> "${GITHUB_OUTPUT}"
         echo "tag_name=${tag_name}" >> "${GITHUB_OUTPUT}"
+
+    - name: Create Release Tag
+      if: github.ref_type != 'tag'
+      env:
+        TAG_NAME: ${{ steps.release-info.outputs.tag_name }}
+      run: |
+        set -euo pipefail
+
+        git fetch --tags origin
+        if git rev-parse -q --verify "refs/tags/${TAG_NAME}" >/dev/null; then
+          echo "Tag ${TAG_NAME} already exists."
+          exit 1
+        fi
+
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git tag -a "${TAG_NAME}" -m "Release ${TAG_NAME}"
+        git push origin "${TAG_NAME}"
 
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
