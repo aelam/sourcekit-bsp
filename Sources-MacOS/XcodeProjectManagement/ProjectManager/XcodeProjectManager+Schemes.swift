@@ -16,14 +16,24 @@ extension XcodeProjectManager {
             return try createScheme(for: target, buildConfiguration: buildConfiguration)
         }
 
-        let scheme = schemes.first { scheme in
-            scheme.primaryBuildTargetProjectURL == target.projectURL &&
+        let candidates = schemes.filter { scheme in
+            scheme.primaryBuildTargetProjectURL?.standardizedFileURL.path == target.projectURL.standardizedFileURL
+                .path &&
                 (scheme.primaryProductName == target.productNameWithExtension ||
-                    scheme.primaryTarget == target.productName
-                )
+                    scheme.primaryTarget == target.name
+                ) && buildsForRunning(scheme: scheme, target: target)
         }
 
-        if let scheme {
+        if let preferred = candidates.first(where: { $0.name == preferredSchemeName }) {
+            return preferred
+        }
+        if let scheme = candidates.sorted(by: { lhs, rhs in
+            if (lhs.name == target.name) != (rhs.name == target.name) { return lhs.name == target.name }
+            if (lhs.buildConfiguration == buildConfiguration) != (rhs.buildConfiguration == buildConfiguration) {
+                return lhs.buildConfiguration == buildConfiguration
+            }
+            return lhs.name < rhs.name
+        }).first {
             return scheme
         }
 
@@ -31,6 +41,24 @@ extension XcodeProjectManager {
             for: target,
             buildConfiguration: buildConfiguration
         )
+    }
+
+    private func buildsForRunning(scheme: XcodeScheme, target: XcodeTarget) -> Bool {
+        guard let nativeTarget = loadXcodeProjCache(projectURL: target.projectURL)?
+            .pbxproj.nativeTargets.first(where: { $0.name == target.name }),
+            let parsed = try? XCScheme(pathString: scheme.path.path) else { return false }
+        let components = scheme.path.pathComponents
+        guard let containerIndex = components.lastIndex(where: {
+            $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace")
+        }) else { return false }
+        let container = URL(fileURLWithPath: NSString.path(withComponents: Array(components[..<containerIndex])))
+        return parsed.buildAction?.buildActionEntries.contains { entry in
+            let reference = entry.buildableReference
+            let path = reference.referencedContainer.replacingOccurrences(of: "container:", with: "")
+            return entry.buildFor.contains(.running) && reference.blueprintIdentifier == nativeTarget.uuid &&
+                container.appendingPathComponent(path).standardizedFileURL.path == target.projectURL.standardizedFileURL
+                .path
+        } == true
     }
 
     private func containsTestTarget(scheme: XcodeScheme, target: XcodeTarget) -> Bool {

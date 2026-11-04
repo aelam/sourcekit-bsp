@@ -25,6 +25,7 @@ struct CompileTests {
         let toolchain = XcodeToolchain(workingDirectory: root)
         let manager = XcodeProjectManager(
             rootURL: root,
+            xcodeProjectReference: XcodeProjectReference(scheme: "CustomApp"),
             toolchain: toolchain,
             projectLocator: XcodeProjectLocator(),
             settingsLoader: XcodeSettingsLoader(commandBuilder: XcodeBuildCommandBuilder(), toolchain: toolchain)
@@ -39,9 +40,34 @@ struct CompileTests {
             buildConfiguration: "Release"
         )
         #expect(selected.name == "CustomApp")
+        let disabled = try XCScheme(pathString: renamed.path)
+        disabled.name = "DevelopmentTests"
+        disabled.buildAction?.buildActionEntries.forEach { $0.buildFor = [] }
+        let disabledURL = schemesURL.appendingPathComponent("DevelopmentTests.xcscheme")
+        try disabled.write(path: .init(disabledURL.path), override: true)
+        let disabledScheme = XcodeScheme(
+            xcscheme: disabled, isInWorkspace: false, isUserScheme: false,
+            projectURL: projectURL, path: disabledURL
+        )
+        let alternate = try XCScheme(pathString: renamed.path)
+        alternate.name = "A-OtherApp"
+        let alternateURL = schemesURL.appendingPathComponent("A-OtherApp.xcscheme")
+        try alternate.write(path: .init(alternateURL.path), override: true)
+        let alternateScheme = XcodeScheme(
+            xcscheme: alternate, isInWorkspace: false, isUserScheme: false,
+            projectURL: projectURL, path: alternateURL
+        )
+        let preferred = try await manager.findOrCreateScheme(
+            for: app, in: [disabledScheme, alternateScheme, renamedScheme]
+        )
+        #expect(preferred.name == "CustomApp")
+        let fallback = try await manager.findOrCreateScheme(
+            for: app, in: [disabledScheme, alternateScheme]
+        )
+        #expect(fallback.name == "A-OtherApp")
         let project = try await manager.buildConfiguration(for: app)
         if case let .project(_, .scheme(name)) = project {
-            #expect(name != "Hello")
+            #expect(name == "CustomApp")
             #expect(base.schemes.contains { $0.name == name })
         } else {
             Issue.record("Expected a project scheme")
@@ -101,5 +127,53 @@ struct CompileTests {
         let nativeTarget = try #require(projectFile.pbxproj.nativeTargets.first { $0.name == "HelloTests" })
         #expect(scheme.testAction?.testables.first?.buildableReference.blueprintIdentifier == nativeTarget.uuid)
         #expect(generated.primaryTarget == "HelloTests")
+    }
+
+    @Test
+    func debugWithoutBuildingChecksProductsWithoutInvokingTheBuildExecutor() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let fixture = try #require(Bundle.module.resourceURL?.appendingPathComponent("DemoProjects/HelloProject"))
+        try FileManager.default.copyItem(at: fixture, to: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let toolchain = XcodeToolchain(workingDirectory: root)
+        let manager = XcodeProjectManager(
+            rootURL: root, toolchain: toolchain, projectLocator: XcodeProjectLocator(),
+            settingsLoader: XcodeSettingsLoader(commandBuilder: XcodeBuildCommandBuilder(), toolchain: toolchain)
+        )
+        try await manager.initialize()
+        let base = try #require(await manager.xcodeProjectBaseInfo)
+        let app = try #require(base.xcodeTargets.first { $0.name == "Hello" })
+        let arguments = [
+            "-sdk", "iphonesimulator", "-derivedDataPath", root.appendingPathComponent("BuildData").path,
+            "TARGET_DEVICE_IDENTIFIER=BSP-TEST-SIMULATOR"
+        ]
+        let resolved = try await manager.resolveDebugProduct(
+            xcodeTargetIdentifier: app.targetIdentifier, arguments: arguments
+        )
+        // Any attempt to build after shutdown throws CancellationError.
+        await manager.shutdownBuilds()
+        do {
+            _ = try await manager.prepareDebugProduct(
+                xcodeTargetIdentifier: app.targetIdentifier, arguments: arguments, buildBeforeLaunch: false
+            )
+            Issue.record("Expected a missing-product error")
+        } catch let DebugSessionError.productNotFound(path) {
+            #expect(path == resolved.binaryPath)
+        }
+        let executable = try URL(fileURLWithPath: #require(resolved.executablePath))
+        try FileManager.default.createDirectory(
+            at: executable.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("fixture".utf8).write(to: executable)
+        let product = try await manager.prepareDebugProduct(
+            xcodeTargetIdentifier: app.targetIdentifier, arguments: arguments, buildBeforeLaunch: false
+        )
+        #expect(product.binaryPath == resolved.binaryPath)
+        await #expect(throws: CancellationError.self) {
+            try await manager.prepareDebugProduct(
+                xcodeTargetIdentifier: app.targetIdentifier, arguments: arguments, buildBeforeLaunch: true
+            )
+        }
     }
 }

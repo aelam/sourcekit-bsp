@@ -6,6 +6,8 @@ public extension XcodeProjectManager {
     func startDebugSession(
         xcodeTargetIdentifier: XcodeTargetIdentifier,
         arguments: [String]?,
+        buildBeforeLaunch: Bool = true,
+        outputHandler: ProcessOutputHandler? = nil,
         progressHandler: (@Sendable (String) async -> Void)? = nil
     ) async throws -> DebugSessionConnection {
         if let target = xcodeProjectBaseInfo?.xcodeTargets.first(where: {
@@ -14,25 +16,15 @@ public extension XcodeProjectManager {
             return try await startTestDebugSession(
                 target: target,
                 arguments: arguments,
+                buildBeforeLaunch: buildBeforeLaunch,
+                outputHandler: outputHandler,
                 progressHandler: progressHandler
             )
         }
-        await progressHandler?("Resolving debug build settings")
-        let product = try await resolveDebugProduct(
-            xcodeTargetIdentifier: xcodeTargetIdentifier, arguments: arguments
+        let product = try await prepareDebugProduct(
+            xcodeTargetIdentifier: xcodeTargetIdentifier, arguments: arguments,
+            buildBeforeLaunch: buildBeforeLaunch, outputHandler: outputHandler, progressHandler: progressHandler
         )
-        try product.validate()
-        await progressHandler?("Building app with the selected destination and signing settings")
-        let exitCode = try await compileTarget(
-            targetIdentifier: xcodeTargetIdentifier,
-            configuration: nil,
-            arguments: arguments
-        )
-        guard exitCode == 0 else { throw DebugSessionError.buildFailed }
-
-        guard FileManager.default.fileExists(atPath: product.binaryPath) else {
-            throw DebugSessionError.productNotFound(product.binaryPath)
-        }
 
         try Task.checkCancellation()
         if product.platform.isSimulator || product.platform == .iOS {
@@ -46,6 +38,44 @@ public extension XcodeProjectManager {
         }
 
         return try await getDebugSessionManager().makeConnection(for: product, progressHandler: progressHandler)
+    }
+
+    internal func prepareDebugProduct(
+        xcodeTargetIdentifier: XcodeTargetIdentifier,
+        arguments: [String]?,
+        buildBeforeLaunch: Bool,
+        outputHandler: ProcessOutputHandler? = nil,
+        progressHandler: (@Sendable (String) async -> Void)? = nil
+    ) async throws -> DebugProduct {
+        try Task.checkCancellation()
+        await progressHandler?("Resolving debug build settings")
+        let product = try await resolveDebugProduct(
+            xcodeTargetIdentifier: xcodeTargetIdentifier, arguments: arguments
+        )
+        try product.validate()
+        if buildBeforeLaunch {
+            await progressHandler?("Building app with the selected destination and signing settings")
+            let exitCode = try await compileTarget(
+                targetIdentifier: xcodeTargetIdentifier,
+                configuration: nil,
+                arguments: arguments,
+                outputHandler: outputHandler
+            )
+            guard exitCode == 0 else { throw DebugSessionError.buildFailed }
+        } else {
+            await progressHandler?("Using existing build product: \(product.binaryPath)")
+        }
+
+        guard FileManager.default.fileExists(atPath: product.binaryPath) else {
+            throw DebugSessionError.productNotFound(product.binaryPath)
+        }
+        if let executable = product.executablePath,
+           !FileManager.default.fileExists(atPath: executable) {
+            throw DebugSessionError.productNotFound(executable)
+        }
+
+        try Task.checkCancellation()
+        return product
     }
 
     internal func getDebugSessionManager() throws -> DebugSessionManager {
