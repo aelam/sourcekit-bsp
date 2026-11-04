@@ -24,6 +24,28 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    - name: Verify Release Version
+      run: |
+        set -euo pipefail
+
+        release_version="$(
+          sed -n 's/^[[:space:]]*static let current = "\(.*\)"[[:space:]]*$/\1/p' \
+            Sources/sourcekit-bsp/SourceKitBSPVersion.swift
+        )"
+        tag_version="${GITHUB_REF_NAME#v}"
+
+        if [ -z "$release_version" ]; then
+          echo "Could not read SourceKitBSPVersion.current."
+          exit 1
+        fi
+
+        if [ "$tag_version" != "$release_version" ]; then
+          echo "Release tag ${GITHUB_REF_NAME} does not match version ${release_version}."
+          exit 1
+        fi
+
+        echo "Release version ${release_version} matches tag ${GITHUB_REF_NAME}."
+
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
       with:

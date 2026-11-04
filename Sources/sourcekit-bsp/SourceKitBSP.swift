@@ -28,11 +28,14 @@ struct SourceKitBSP {
 
         let arguments = CommandLine.arguments
 
-        // Parse command line arguments - only for help
+        // Parse command line arguments before starting the BSP server.
         if arguments.count > 1 {
             let firstArg = arguments[1]
             if firstArg == "--help" || firstArg == "-h" {
                 printUsage()
+                exit(0)
+            } else if firstArg == "--version" {
+                print(SourceKitBSPVersion.current)
                 exit(0)
             }
         }
@@ -85,6 +88,7 @@ struct SourceKitBSP {
         print("")
         print("Options:")
         print("  -h, --help      Show this help message and exit")
+        print("  --version       Show the version and exit")
         print("")
         print("BSP Protocol:")
         print("  The server implements the Build Server Protocol specification.")

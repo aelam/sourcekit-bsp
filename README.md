@@ -54,6 +54,21 @@ The executable is `.build/debug/sourcekit-bsp`; `swift build -c release` produce
 `.build/release/sourcekit-bsp`. See [Getting started](Docs/wiki/Getting-Started.md)
 for Xcode builds and executable paths.
 
+## Release
+
+Releases are built by GitHub Actions when a `v*.*.*` tag is pushed. The tag
+must match `SourceKitBSPVersion.current`; otherwise the release workflow stops
+before it builds or uploads artifacts.
+
+```sh
+version="$(
+  sed -n 's/^[[:space:]]*static let current = "\(.*\)"[[:space:]]*$/\1/p' \
+    Sources/sourcekit-bsp/SourceKitBSPVersion.swift
+)"
+git tag -a "v$version" -m "Release v$version"
+git push origin "v$version"
+```
+
 ## Connect an editor
 
 Create `.bsp/sourcekit-bsp.json` in your application project:
