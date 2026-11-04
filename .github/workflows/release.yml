@@ -92,6 +92,7 @@ jobs:
         echo "branch_name=${branch_name}" >> "${GITHUB_OUTPUT}"
 
     - name: Create Release Pull Request
+      id: cpr
       uses: peter-evans/create-pull-request@v8
       with:
         token: ${{ secrets.RELEASE_TOKEN }}
@@ -105,6 +106,18 @@ jobs:
 
           After this PR is merged, the Release workflow will create
           ${{ steps.release-version.outputs.tag_name }} and upload the release assets.
+
+    - name: Enable Release Pull Request Auto-Merge
+      if: >-
+        ${{
+          steps.cpr.outputs.pull-request-number != '' &&
+          startsWith(steps.cpr.outputs.pull-request-branch, 'release/')
+        }}
+      env:
+        GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
+      run: |
+        gh pr merge "${PR_NUMBER}" --squash --auto --delete-branch
 
   build-release:
     name: Build Release Binaries

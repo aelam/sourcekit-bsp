@@ -71,6 +71,10 @@ release pull request that updates `SourceKitBSPVersion.current`.
 After the release pull request is merged, the same workflow creates the matching
 `v*.*.*` tag and uploads the release assets.
 
+If auto-merge is enabled for the repository, the workflow enables auto-merge on
+release pull requests. GitHub merges the pull request after the required checks
+and reviews pass.
+
 Manual release preparation requires a `RELEASE_TOKEN` secret with permission to
 push branches and create pull requests. This lets the release pull request start
 the required checks before merge.
