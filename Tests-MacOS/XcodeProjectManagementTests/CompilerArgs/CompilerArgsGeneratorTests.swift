@@ -54,7 +54,7 @@ struct CompilerArgsGeneratorTests {
         print("=============================")
         let flags = generator.compileArguments()
         let swiftVersionFlag = try #require(flags.firstIndex(of: "-swift-version"))
-        #expect(flags[swiftVersionFlag + 1] == "5.0")
+        #expect(flags[swiftVersionFlag + 1] == "5")
         for flag in flags {
             print(flag)
         }

@@ -5,8 +5,8 @@ struct SDKStatCacheProvider: CompileArgProvider, Sendable {
         guard
             let buildVersion = context.buildSettings["SDK_BUILD_VERSION"],
             let sdkPath = context.buildSettings["SDKROOT_PATH"],
-            let sdkVersion = context.buildSettings["SDK_VERSION"],
-            let platformName = context.buildSettings["PLATFORM_NAME"]
+            let platformName = context.buildSettings["PLATFORM_NAME"],
+            let sdkVersion = sdkBundleVersion(from: sdkPath)
         else {
             return []
         }
@@ -15,20 +15,46 @@ struct SDKStatCacheProvider: CompileArgProvider, Sendable {
             .deletingLastPathComponent()
             .appendingPathComponent("SDKStatCaches.noindex")
 
-        let sdkHash = sdkPath.md5()
-        let pathComponent = "\(platformName)\(sdkVersion)-\(buildVersion)-\(sdkHash).sdkstatcache"
-        let sdkStateCachePath = sdkStatCachesDir.appendingPathComponent(pathComponent).path
+        let filePrefix = "\(platformName)\(sdkVersion)-\(buildVersion)-"
+        let fileSuffix = "\(sdkPath.md5()).sdkstatcache"
+        let candidates = (try? FileManager.default.contentsOfDirectory(
+            at: sdkStatCachesDir,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ))?.filter { url in
+            let name = url.lastPathComponent
+            let isRegularFile = try? url.resourceValues(
+                forKeys: [.isRegularFileKey]
+            ).isRegularFile
+            return name.hasPrefix(filePrefix) &&
+                name.hasSuffix(fileSuffix) &&
+                isRegularFile == true
+        } ?? []
+
+        guard candidates.count == 1, let sdkStatCache = candidates.first else {
+            return []
+        }
 
         if context.compiler == .clang {
             return [
                 "-ivfsstatcache",
-                sdkStateCachePath
+                sdkStatCache.path
             ]
         } else {
             return [
                 "-Xcc", "-ivfsstatcache",
-                "-Xcc", sdkStateCachePath
+                "-Xcc", sdkStatCache.path
             ]
         }
+    }
+
+    private func sdkBundleVersion(from sdkPath: String) -> String? {
+        let sdkName = URL(fileURLWithPath: sdkPath)
+            .deletingPathExtension()
+            .lastPathComponent
+        guard let versionStart = sdkName.firstIndex(where: { $0.isNumber }) else {
+            return nil
+        }
+        return String(sdkName[versionStart...])
     }
 }

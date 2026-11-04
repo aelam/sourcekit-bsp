@@ -13,10 +13,27 @@ struct LanguageStandardProvider: CompileArgProvider, Sendable {
         var flags: [String] = []
 
         if let swiftVersion = settings["SWIFT_VERSION"] {
-            flags.append(contentsOf: ["-swift-version", swiftVersion])
+            flags.append(contentsOf: [
+                "-swift-version",
+                swiftLanguageMode(from: swiftVersion),
+            ])
         }
 
         return flags
+    }
+
+    private func swiftLanguageMode(from xcodeVersion: String) -> String {
+        let components = xcodeVersion.split(separator: ".")
+        guard let majorVersion = components.first,
+              Int(majorVersion) != nil
+        else {
+            return xcodeVersion
+        }
+
+        if majorVersion == "4", components.dropFirst().first == "2" {
+            return "4.2"
+        }
+        return String(majorVersion)
     }
 
     private func buildClangFlags(settings: [String: String]) -> [String] {
