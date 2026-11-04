@@ -9,12 +9,15 @@
 import ArgumentParser
 
 struct SharedOptions: ParsableArguments {
-    @Option(name: .shortAndLong, help: "Xcode project/workspace folder path")
+    @Option(
+        name: .shortAndLong,
+        help: "Folder that contains an .xcodeproj or .xcworkspace"
+    )
     var workspaceFolder: String
 
     @Option(
         name: .shortAndLong,
-        help: "Xcode project file path relative to the workspace folder, e.g., MyApp.xcodeproj"
+        help: "Xcode project path relative to the project folder, e.g. MyApp.xcodeproj"
     )
     var xcodeproj: String
 

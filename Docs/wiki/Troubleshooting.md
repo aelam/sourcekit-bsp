@@ -68,5 +68,5 @@ there. End any paused debug session for the same app, or use another simulator.
 For project discovery errors, inspect the resolved project:
 
 ```sh
-swift run sourcekit-bsp xcode-project resolveProject --workspace-folder /absolute/path/to/HelloProject
+swift run sourcekit-bsp xcode-project resolve-project --workspace-folder /absolute/path/to/HelloProject
 ```

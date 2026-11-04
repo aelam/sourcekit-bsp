@@ -11,15 +11,18 @@ import Foundation
 import XcodeProjectManagement
 
 struct CompileTargetCommand: AsyncParsableCommand {
-    @Option(name: .shortAndLong, help: "Xcode project/workspace folder path")
+    @Option(
+        name: .shortAndLong,
+        help: "Folder that contains an .xcodeproj or .xcworkspace"
+    )
     var workspaceFolder: String
 
-    @Option(name: .shortAndLong, help: "compile target name")
+    @Option(name: .shortAndLong, help: "Xcode target name")
     var target: String
 
     static let configuration = CommandConfiguration(
-        commandName: "compileTarget",
-        abstract: "compileTarget: Compile Xcode Project/Workspace"
+        commandName: "compile-target",
+        abstract: "Compile an Xcode target."
     )
 
     mutating func run() async throws {

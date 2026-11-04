@@ -10,8 +10,8 @@ struct BuildSettingsCommand: AsyncParsableCommand {
     var options: SharedOptions
 
     static let configuration = CommandConfiguration(
-        commandName: "buildSettings",
-        abstract: "buildSettings: Print build settings for an Xcode target"
+        commandName: "build-settings",
+        abstract: "Print build settings for an Xcode target."
     )
 
     mutating func run() async throws {

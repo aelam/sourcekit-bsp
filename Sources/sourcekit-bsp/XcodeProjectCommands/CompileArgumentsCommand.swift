@@ -8,12 +8,15 @@ import XcodeProjectManagement
 struct CompileArgumentsCommand: AsyncParsableCommand {
     @OptionGroup
     var options: SharedOptions
-    @Option(name: .shortAndLong, help: "source file path to get compile arguments, relative to project folder")
+    @Option(
+        name: .shortAndLong,
+        help: "Source file path relative to the project folder"
+    )
     var sourceFile: String
 
     static let configuration = CommandConfiguration(
-        commandName: "compileArguments",
-        abstract: "compileArguments: Print compile arguments for an Xcode target"
+        commandName: "compile-arguments",
+        abstract: "Print compile arguments for a source file."
     )
 
     mutating func run() async throws {

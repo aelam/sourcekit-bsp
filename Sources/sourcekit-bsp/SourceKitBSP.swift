@@ -96,7 +96,7 @@ struct SourceKitBSP {
         print("Options:")
         print("  -h, --help      Show this help message and exit")
         print("  --version       Show the version and exit")
-        print("  xcode-project   Inspect and compile Xcode projects")
+        print("  xcode-project   Inspect or compile Xcode projects")
         print("")
         print("BSP Protocol:")
         print("  The server implements the Build Server Protocol specification.")
@@ -105,6 +105,7 @@ struct SourceKitBSP {
         print("Examples:")
         print("  sourcekit-bsp                    # Start BSP server")
         print("  sourcekit-bsp xcode-project --help")
+        print("  sourcekit-bsp xcode-project resolve-project --workspace-folder /path/to/project")
         print("  echo '{\"id\":1,\"method\":\"build/initialize\"...}' | sourcekit-bsp")
     }
 
