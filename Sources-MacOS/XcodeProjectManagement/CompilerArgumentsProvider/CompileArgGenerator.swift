@@ -76,6 +76,7 @@ public extension CompileArgGenerator {
             ModuleProvider(),
             ModuleMapFilesProvider(),
             ObjectiveCFeaturesProvider(),
+            LanguageStandardProvider(),
             SwiftProvider(),
             SwiftFilesProvider(),
             PCHProvider(),

@@ -13,7 +13,7 @@ struct LanguageStandardProvider: CompileArgProvider, Sendable {
         var flags: [String] = []
 
         if let swiftVersion = settings["SWIFT_VERSION"] {
-            flags.append("-swift-version \(swiftVersion)")
+            flags.append(contentsOf: ["-swift-version", swiftVersion])
         }
 
         return flags
