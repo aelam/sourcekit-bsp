@@ -53,9 +53,11 @@ This directory contains all the GitHub Actions workflows for sourcekit-bsp. Each
 **Triggers:**
 - Tag pushes matching `v*.*.*` pattern
 - Manual runs from GitHub Actions with a release version input
+- Merges to `main` that update `SourceKitBSPVersion.current`
 
 **Features:**
-- One-click version bump, commit, and tag creation
+- Release pull request creation from a manual workflow run
+- Tag creation and asset upload after the release pull request is merged
 - Universal binary builds (ARM64 + x86_64)
 - Multiple archive formats (tar.gz, zip)
 - SHA256 checksums generation
@@ -84,6 +86,7 @@ This directory contains all the GitHub Actions workflows for sourcekit-bsp. Each
 | `CODECOV_TOKEN` | Code coverage reporting | CI |
 | `SEMGREP_APP_TOKEN` | Security scanning | Code Quality |
 | `FOSSA_API_KEY` | License compliance | Security |
+| `RELEASE_TOKEN` | Create release pull requests that trigger required checks | Manual release |
 
 ### Environment Variables
 

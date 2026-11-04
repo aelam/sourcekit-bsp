@@ -64,10 +64,16 @@ Use the folder that contains the `.xcodeproj` or `.xcworkspace`.
 
 ## Release
 
-Use the **Release** workflow in GitHub Actions for a one-click release. Run it
-from `main` and enter the new version, for example `0.2.4`. The workflow updates
-`SourceKitBSPVersion.current`, commits the version bump to `main`, creates the
-matching `v*.*.*` tag, and uploads the release assets.
+Use the **Release** workflow in GitHub Actions to prepare a release. Run it from
+`main` and enter the new version, for example `0.2.4`. The workflow creates a
+release pull request that updates `SourceKitBSPVersion.current`.
+
+After the release pull request is merged, the same workflow creates the matching
+`v*.*.*` tag and uploads the release assets.
+
+Manual release preparation requires a `RELEASE_TOKEN` secret with permission to
+push branches and create pull requests. This lets the release pull request start
+the required checks before merge.
 
 Tag pushes are still supported. The tag must match `SourceKitBSPVersion.current`;
 otherwise the release workflow stops before it builds or uploads artifacts.
