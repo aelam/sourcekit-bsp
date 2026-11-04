@@ -1,3 +1,4 @@
+#if os(macOS)
 //
 //  SharedOptions.swift
 //  sourcekit-bsp
@@ -23,3 +24,4 @@ struct SharedOptions: ParsableArguments {
     @Option(name: .shortAndLong, help: "Build configuration, e.g., Debug or Release")
     var configuration: String = "Debug"
 }
+#endif

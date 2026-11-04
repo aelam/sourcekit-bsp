@@ -1,3 +1,4 @@
+#if os(macOS)
 import ArgumentParser
 import Foundation
 import PathKit
@@ -5,7 +6,8 @@ import XcodeProj
 import XcodeProjectManagement
 
 struct CompileArgumentsCommand: AsyncParsableCommand {
-    @OptionGroup var options: SharedOptions
+    @OptionGroup
+    var options: SharedOptions
     @Option(name: .shortAndLong, help: "source file path to get compile arguments, relative to project folder")
     var sourceFile: String
 
@@ -60,3 +62,4 @@ struct CompileArgumentsCommand: AsyncParsableCommand {
         print("=============================")
     }
 }
+#endif

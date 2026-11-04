@@ -1,3 +1,4 @@
+#if os(macOS)
 //
 //  SourceFileInfo.swift
 //  sourcekit-bsp
@@ -47,3 +48,4 @@ extension TargetInfo {
         )
     }
 }
+#endif

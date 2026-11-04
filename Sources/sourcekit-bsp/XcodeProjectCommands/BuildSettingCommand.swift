@@ -1,3 +1,4 @@
+#if os(macOS)
 import ArgumentParser
 import Foundation
 import PathKit
@@ -5,7 +6,8 @@ import XcodeProj
 import XcodeProjectManagement
 
 struct BuildSettingsCommand: AsyncParsableCommand {
-    @OptionGroup var options: SharedOptions
+    @OptionGroup
+    var options: SharedOptions
 
     static let configuration = CommandConfiguration(
         commandName: "buildSettings",
@@ -43,3 +45,4 @@ struct BuildSettingsCommand: AsyncParsableCommand {
         }
     }
 }
+#endif

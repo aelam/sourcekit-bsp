@@ -1,3 +1,4 @@
+#if os(macOS)
 //
 //  ResolveProjectCommand.swift
 //  sourcekit-bsp
@@ -92,3 +93,4 @@ struct ResolveProjectCommand: AsyncParsableCommand {
         print("Loading time: \(endTimestamp.timeIntervalSince(timestamp)) seconds")
     }
 }
+#endif
