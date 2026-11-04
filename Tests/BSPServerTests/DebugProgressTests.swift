@@ -57,9 +57,12 @@ struct DebugProgressTests {
         let messages = try await notifications.messages.map {
             try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any])
         }
-        let logs = messages.filter { $0["method"] as? String == "build/logMessage" }.compactMap {
-            ($0["params"] as? [String: Any])?["message"] as? String
-        }.joined(separator: "\n")
+        let logs = messages
+            .filter { $0["method"] as? String == "build/logMessage" }
+            .compactMap {
+                ($0["params"] as? [String: Any])?["message"] as? String
+            }
+            .joined(separator: "\n")
         #expect(logs.contains("xcodebuild -scheme CustomApp build"))
         #expect(logs.contains(fail ? "build failed" : "BUILD SUCCEEDED"))
         #expect(messages.last?["method"] as? String == "build/taskFinish")

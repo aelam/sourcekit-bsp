@@ -23,8 +23,11 @@ extension BSPServerService {
             originId: originId, buildContext: buildContext
         ) { progress, log in
             try await projectManager.startDebugSession(
-                targetIdentifiers: targets, arguments: arguments, buildBeforeLaunch: buildBeforeLaunch,
-                logHandler: log, progressHandler: progress
+                targetIdentifiers: targets,
+                arguments: arguments,
+                buildBeforeLaunch: buildBeforeLaunch,
+                logHandler: log,
+                progressHandler: progress
             )
         }
     }
