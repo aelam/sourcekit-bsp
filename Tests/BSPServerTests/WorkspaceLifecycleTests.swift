@@ -4,7 +4,9 @@ import JSONRPCConnection
 import Testing
 @testable import BSPServer
 
-private actor RefreshProjectManager: ProjectManager {
+private protocol WorkspaceProjectManagerStub: ProjectManager {}
+
+private actor RefreshProjectManager: WorkspaceProjectManagerStub {
     let rootURL = URL(fileURLWithPath: "/tmp/BSPWorkspace")
     nonisolated let projectType = "test"
     var revision = 0
@@ -51,7 +53,9 @@ private actor RefreshProjectManager: ProjectManager {
             )
         }
     }
+}
 
+private extension WorkspaceProjectManagerStub {
     func getSourceFileList(targetIdentifiers: [BSPBuildTargetIdentifier]) async throws -> [SourcesItem] {
         []
     }
@@ -127,6 +131,34 @@ private actor RefreshProjectManager: ProjectManager {
     }
 }
 
+private actor FileChangeProjectManager: WorkspaceProjectManagerStub {
+    let rootURL = URL(fileURLWithPath: "/tmp/BSPWorkspace")
+    nonisolated let projectType = "test"
+    let project: BSPProject? = nil
+    var receivedChanges: [[ProjectFileChange]] = []
+    var revision = 0
+    var reloadRequired = false
+
+    func setReloadRequired(_ required: Bool) {
+        reloadRequired = required
+    }
+
+    func shouldReloadProject(for changes: [ProjectFileChange]) -> Bool {
+        receivedChanges.append(changes)
+        return reloadRequired
+    }
+
+    func getProjectState() -> ProjectState {
+        .init()
+    }
+
+    func initialize() async throws {}
+
+    func updateBuildGraph() async throws {
+        revision += 1
+    }
+}
+
 private extension BSPServerService {
     func useTestManager(_ manager: any ProjectManager) {
         projectManager = manager
@@ -134,22 +166,74 @@ private extension BSPServerService {
 }
 
 struct WorkspaceLifecycleTests {
-    private struct Harness {
+    private struct Harness<Manager: ProjectManager> {
         let service: BSPServerService
         let handler: BSPMessageHandler
-        let manager: RefreshProjectManager
+        let manager: Manager
         let transport: MemoryTransport
     }
 
-    private func setup() async -> Harness {
+    private func setup() async -> Harness<RefreshProjectManager> {
+        await setup(manager: RefreshProjectManager())
+    }
+
+    private func setup<Manager: ProjectManager>(manager: Manager) async -> Harness<Manager> {
         let transport = MemoryTransport()
         let handler = BSPMessageHandler()
         let connection = JSONRPCConnection(transport: transport, messageRegistry: bspRegistry, messageHandler: handler)
         let service = BSPServerService(projectManagerProvider: ProjectManagerFactory(), jsonrpcConnection: connection)
-        let manager = RefreshProjectManager()
         await service.useTestManager(manager)
         handler.setBSPServerService(service)
         return Harness(service: service, handler: handler, manager: manager, transport: transport)
+    }
+
+    @Test
+    func fileChangesUseTheProviderDecision() async throws {
+        let harness = await setup(manager: FileChangeProjectManager())
+        let root = harness.manager.rootURL
+        let events: [WorkspaceDidChangeWatchedFilesNotification.FileEvent] = [
+            .init(uri: URI(root.appendingPathComponent("build.custom")), type: .created),
+            .init(uri: URI(root.appendingPathComponent("input.custom")), type: .changed),
+            .init(uri: URI(root.appendingPathComponent("removed.custom")), type: .deleted)
+        ]
+        let expected: [ProjectFileChange] = [
+            .init(uri: events[0].uri, kind: .created),
+            .init(uri: events[1].uri, kind: .changed),
+            .init(uri: events[2].uri, kind: .deleted)
+        ]
+        try await harness.service.filesDidChange(events)
+        #expect(await harness.manager.receivedChanges == [expected])
+        #expect(await harness.manager.revision == 0)
+        #expect(await harness.transport.sent.isEmpty)
+
+        await harness.manager.setReloadRequired(true)
+        try await harness.service.filesDidChange(events)
+        #expect(await harness.manager.receivedChanges == [expected, expected])
+        #expect(await harness.manager.revision == 1)
+        #expect(await harness.transport.sent.count == 1)
+    }
+
+    @Test(arguments: [
+        "Package.swift", "build.gradle.kts", "BUILD.bazel", "Sources/Main.kt",
+        "DerivedData/Generated.swift", ".build/Input.swift",
+        "App.xcodeproj/xcshareddata/xcschemes/sourcekit-bsp-App.xcscheme"
+    ])
+    func defaultProviderReloadsForUnknownFiles(path: String) async throws {
+        let harness = await setup()
+        let file = harness.manager.rootURL.appendingPathComponent(path)
+        for kind in [WorkspaceDidChangeWatchedFilesNotification.FileEvent.Kind.created, .changed, .deleted] {
+            try await harness.service.filesDidChange([.init(uri: URI(file), type: kind)])
+        }
+        #expect(await harness.manager.revision == 3)
+        #expect(await harness.transport.sent.count == 3)
+    }
+
+    @Test
+    func defaultProviderIgnoresEmptyBatches() async throws {
+        let harness = await setup()
+        try await harness.service.filesDidChange([])
+        #expect(await harness.manager.revision == 0)
+        #expect(await harness.transport.sent.isEmpty)
     }
 
     @Test
@@ -159,13 +243,6 @@ struct WorkspaceLifecycleTests {
         let handler = harness.handler
         let manager = harness.manager
         let transport = harness.transport
-        let ignored = #"{"params":{"changes":[{"uri":"file:///tmp/BSPWorkspace/DerivedData/Generated.swift","type":1},{"uri":"file:///tmp/BSPWorkspace/.build/Input.swift","type":3},{"uri":"file:///tmp/BSPWorkspace/Edited.swift","type":2}]}}"#
-        let notification = try JSONDecoder().decode(
-            WorkspaceDidChangeWatchedFilesNotification.self,
-            from: Data(ignored.utf8)
-        )
-        try await notification.handle(contextualHandler: handler)
-        #expect(await manager.revision == 0)
         let changed = #"{"params":{"changes":[{"uri":"file:///tmp/BSPWorkspace/New.swift","type":1}]}}"#
         let update = try JSONDecoder().decode(WorkspaceDidChangeWatchedFilesNotification.self, from: Data(changed.utf8))
         try await update.handle(contextualHandler: handler)

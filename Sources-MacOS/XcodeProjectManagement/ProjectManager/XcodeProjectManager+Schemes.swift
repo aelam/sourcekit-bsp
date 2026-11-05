@@ -27,13 +27,13 @@ extension XcodeProjectManager {
         if let preferred = candidates.first(where: { $0.name == preferredSchemeName }) {
             return preferred
         }
-        if let scheme = candidates.sorted(by: { lhs, rhs in
+        if let scheme = candidates.min(by: { lhs, rhs in
             if (lhs.name == target.name) != (rhs.name == target.name) { return lhs.name == target.name }
             if (lhs.buildConfiguration == buildConfiguration) != (rhs.buildConfiguration == buildConfiguration) {
                 return lhs.buildConfiguration == buildConfiguration
             }
             return lhs.name < rhs.name
-        }).first {
+        }) {
             return scheme
         }
 
@@ -213,8 +213,14 @@ extension XcodeProjectManager {
 
         let schemeURL = schemesDir.appendingPathComponent("\(xcscheme.name).xcscheme")
 
-        try xcscheme.write(path: .init(schemeURL.path), override: true)
-        logger.info("Created scheme file at: \(schemeURL.path)")
+        guard let data = try xcscheme.dataRepresentation() else {
+            throw XcodeProjectError.invalidConfig("Cannot encode scheme: \(xcscheme.name)")
+        }
+        // Keep the modification time stable when another request needs the same helper scheme.
+        if (try? Data(contentsOf: schemeURL)) != data {
+            try data.write(to: schemeURL, options: .atomic)
+            logger.debug("Updated generated scheme: \(schemeURL.path)")
+        }
 
         return schemeURL
     }
