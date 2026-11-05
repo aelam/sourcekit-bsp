@@ -49,13 +49,13 @@ public enum StreamingFileHandleReader {
                     lineBuffer.removeFirst(lineData.count)
 
                     if let string = String(data: lineData, encoding: .utf8) {
-                        await lineHandler(string.trimmingCharacters(in: .whitespacesAndNewlines))
+                        await lineHandler(string.trimmingCharacters(in: .newlines))
                     }
                 }
             }
 
             if !lineBuffer.isEmpty, let string = String(data: lineBuffer, encoding: .utf8) {
-                let finalString = string.trimmingCharacters(in: .whitespacesAndNewlines)
+                let finalString = string.trimmingCharacters(in: .newlines)
                 if !finalString.isEmpty {
                     await lineHandler(finalString)
                 }
