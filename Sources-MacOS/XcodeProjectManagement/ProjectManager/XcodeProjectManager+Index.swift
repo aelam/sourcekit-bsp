@@ -86,7 +86,7 @@ extension XcodeProjectManager {
         for target in targets {
             try Task.checkCancellation()
             let identifier = target.targetIdentifier
-            let before = try indexingOptions(for: identifier)
+            let before = try await indexingOptions(for: identifier)
             let output = IndexPreparationOutput(logHandler: logHandler)
             logger.info("Preparing index inputs for \(target.name)")
             let status = try await compileTarget(
@@ -101,14 +101,14 @@ extension XcodeProjectManager {
                 )
             }
             // Notify only when options changed, so preparation does not trigger an indexing loop.
-            if try indexingOptions(for: identifier) != before {
+            if try await indexingOptions(for: identifier) != before {
                 changedTargets.append(identifier)
             }
         }
         return changedTargets
     }
 
-    func indexingOptions(for target: XcodeTargetIdentifier) throws -> [String: CompilerOptionsSnapshot] {
+    private func indexingOptions(for target: XcodeTargetIdentifier) async throws -> [String: CompilerOptionsSnapshot] {
         let files = getSourcesItems(targetIdentifiers: [target])
             .flatMap(\.sources)
             .filter { $0.itemKind == .file }
