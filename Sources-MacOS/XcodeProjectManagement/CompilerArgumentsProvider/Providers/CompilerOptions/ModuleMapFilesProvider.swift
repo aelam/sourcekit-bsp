@@ -17,7 +17,7 @@ struct ModuleMapFilesProvider: CompileArgProvider, Sendable {
             return []
         }
 
-        let moduleMapFiles = contents.filter { $0.pathExtension.lowercased() == "modulemap" }.map(\.path)
+        let moduleMapFiles = contents.filter { $0.pathExtension.lowercased() == "modulemap" }.map(\.path).sorted()
 
         return moduleMapFiles.flatMap { moduleMapFile in
             if compiler == .swift {

@@ -108,15 +108,18 @@ extension XcodeProjectManager {
         return changedTargets
     }
 
-    private func indexingOptions(for target: XcodeTargetIdentifier) async throws -> [URL: [String]] {
-        var result: [URL: [String]] = [:]
-        for item in getSourcesItems(targetIdentifiers: [target]).flatMap(\.sources) where item.itemKind == .file {
-            switch XcodeLanguageDialect(fileExtension: item.path.pathExtension) {
-            case .swift, .c, .cpp, .objc, .objcCpp:
-                result[item.path] = try await getCompileArguments(targetIdentifier: target, sourceFileURL: item.path)
-            default:
-                break
+    private func indexingOptions(for target: XcodeTargetIdentifier) async throws -> [String: CompilerOptionsSnapshot] {
+        let files = getSourcesItems(targetIdentifiers: [target])
+            .flatMap(\.sources)
+            .filter { $0.itemKind == .file }
+            .map(\.path)
+        var result: [String: CompilerOptionsSnapshot] = [:]
+        for dialect in [XcodeLanguageDialect.swift, .c, .cpp, .objc, .objcCpp] {
+            let matching = files.filter { XcodeLanguageDialect(fileExtension: $0.pathExtension) == dialect }
+            guard !matching.isEmpty, let template = try compilerArgumentsTemplate(for: target, dialect: dialect) else {
+                continue
             }
+            result[dialect.rawValue] = template.snapshot(for: matching)
         }
         return result
     }
