@@ -17,7 +17,7 @@ The server implements a subset of BSP 2.2.0. Clients should check
 | `buildTarget/compile` | Client request | Compile targets and stream logs |
 | `buildTarget/run` | Client request | Install/launch an existing product |
 | `buildTarget/test` | Client request | Build and run test bundles; publish case results and target reports |
-| `debugSession/start` | Client request | Build and return an LLDB DAP connection for macOS/simulators |
+| `debugSession/start` | Client request | Return an LLDB DAP connection for existing macOS/simulator products |
 | `buildTarget/outputPaths` | Client request | Return each target's default project product directory |
 | `buildTarget/cleanCache` | Client request | Clear shared project products and indexes, not isolated target caches |
 | `workspace/reload` | Client request | Reload state and emit target changes |

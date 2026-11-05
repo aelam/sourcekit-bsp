@@ -15,13 +15,12 @@ public extension XcodeProjectManager {
             return try await startTestDebugSession(
                 target: target,
                 arguments: arguments,
-                outputHandler: outputHandler,
                 progressHandler: progressHandler
             )
         }
         let product = try await prepareDebugProduct(
             xcodeTargetIdentifier: xcodeTargetIdentifier, arguments: arguments,
-            outputHandler: outputHandler, progressHandler: progressHandler
+            progressHandler: progressHandler
         )
 
         try Task.checkCancellation()
@@ -41,7 +40,6 @@ public extension XcodeProjectManager {
     internal func prepareDebugProduct(
         xcodeTargetIdentifier: XcodeTargetIdentifier,
         arguments: [String]?,
-        outputHandler: ProcessOutputHandler? = nil,
         progressHandler: (@Sendable (String) async -> Void)? = nil
     ) async throws -> DebugProduct {
         try Task.checkCancellation()
@@ -50,14 +48,7 @@ public extension XcodeProjectManager {
             xcodeTargetIdentifier: xcodeTargetIdentifier, arguments: arguments
         )
         try product.validate()
-        await progressHandler?("Building app with the selected destination and signing settings")
-        let exitCode = try await compileTarget(
-            targetIdentifier: xcodeTargetIdentifier,
-            configuration: nil,
-            arguments: arguments,
-            outputHandler: outputHandler
-        )
-        guard exitCode == 0 else { throw DebugSessionError.buildFailed }
+        await progressHandler?("Using existing build product: \(product.binaryPath)")
 
         guard FileManager.default.fileExists(atPath: product.binaryPath) else {
             throw DebugSessionError.productNotFound(product.binaryPath)
