@@ -85,3 +85,12 @@ For project discovery errors, inspect the resolved project:
 ```sh
 swift run sourcekit-bsp xcode-project resolve-project --workspace-folder /absolute/path/to/HelloProject
 ```
+
+## Concurrent index preparation
+
+Concurrent preparations of the same target share work while their build graph
+and input versions match. Watched file events, graph reloads, and build completion
+advance these versions. Clients must report saved input changes through
+`workspace/didChangeWatchedFiles`, including content edits that do not change target
+membership. Completed preparations are not cached. Cancelling one request leaves
+the shared build running for other requests.

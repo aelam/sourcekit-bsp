@@ -20,6 +20,9 @@ public protocol ProjectManager: AnyObject, Sendable {
 
     func shutdown() async
 
+    /// Mark active index preparation inputs as changed without reloading the graph.
+    func invalidateIndexInputs() async
+
     /// workspace/buildTargets
     func getTargetList() async -> [BSPBuildTarget]
 
@@ -141,6 +144,8 @@ public extension ProjectManager {
     }
 
     func shutdown() async {}
+
+    func invalidateIndexInputs() async {}
 
     func run(
         targetIdentifier: BSPBuildTargetIdentifier,

@@ -19,7 +19,18 @@ public enum IndexPreparationError: Error, LocalizedError {
     }
 }
 
+struct IndexPreparationKey: Hashable, Sendable {
+    let target: XcodeTargetIdentifier
+    let buildGraphVersion: UUID
+    let inputVersion: UUID
+}
+
 public extension XcodeProjectManager {
+    /// Watched input changes must separate new requests from an active preparation.
+    func invalidateIndexInputs() {
+        indexInputVersion = UUID()
+    }
+
     /// Build the inputs SourceKit-LSP needs before it indexes a target.
     func prepareForIndexing(
         targetIdentifiers: [XcodeTargetIdentifier],
@@ -63,10 +74,36 @@ public extension XcodeProjectManager {
         for task in tasks {
             _ = await task.result
         }
+        await indexPreparationCoordinator.cancelAll()
     }
 }
 
 extension XcodeProjectManager {
+    private func prepareIndexTarget(
+        _ target: XcodeTarget, key: IndexPreparationKey, logHandler: @escaping @Sendable (String) -> Void
+    ) async throws -> Bool {
+        guard key.buildGraphVersion == buildGraphVersion else { throw CancellationError() }
+        try Task.checkCancellation()
+        let identifier = target.targetIdentifier
+        let before = try await indexingOptions(for: identifier)
+        let output = IndexPreparationOutput(logHandler: logHandler)
+        logger.info("Preparing index inputs for \(target.name)")
+        let status = try await compileTarget(
+            targetIdentifier: identifier,
+            configuration: nil,
+            arguments: indexBuildArguments(for: target),
+            outputHandler: output
+        )
+        guard status == 0 else {
+            throw await IndexPreparationError.buildFailed(
+                target: target.name, exitCode: status, output: output.summary
+            )
+        }
+        guard key.buildGraphVersion == buildGraphVersion else { throw CancellationError() }
+        // Notify only when options changed, so preparation does not trigger an indexing loop.
+        return try await indexingOptions(for: identifier) != before
+    }
+
     func indexBuildArguments(for target: XcodeTarget) -> [String] {
         var arguments = [
             "CODE_SIGNING_ALLOWED=NO",
@@ -79,31 +116,22 @@ extension XcodeProjectManager {
         return buildArguments(for: target, configuration: nil, arguments: arguments)
     }
 
+    func indexPreparationKey(for target: XcodeTargetIdentifier) -> IndexPreparationKey {
+        IndexPreparationKey(target: target, buildGraphVersion: buildGraphVersion, inputVersion: indexInputVersion)
+    }
+
     private func prepareIndexTargets(
         _ targets: [XcodeTarget], logHandler: (@Sendable (String) -> Void)?
     ) async throws -> [XcodeTargetIdentifier] {
         var changedTargets: [XcodeTargetIdentifier] = []
         for target in targets {
             try Task.checkCancellation()
-            let identifier = target.targetIdentifier
-            let before = try await indexingOptions(for: identifier)
-            let output = IndexPreparationOutput(logHandler: logHandler)
-            logger.info("Preparing index inputs for \(target.name)")
-            let status = try await compileTarget(
-                targetIdentifier: identifier,
-                configuration: nil,
-                arguments: indexBuildArguments(for: target),
-                outputHandler: output
-            )
-            guard status == 0 else {
-                throw await IndexPreparationError.buildFailed(
-                    target: target.name, exitCode: status, output: output.summary
-                )
+            let key = indexPreparationKey(for: target.targetIdentifier)
+            let handler: @Sendable (String) -> Void = logHandler ?? { logger.info($0) }
+            let changed = try await indexPreparationCoordinator.prepare(for: key, logHandler: handler) { sharedLog in
+                try await self.prepareIndexTarget(target, key: key, logHandler: sharedLog)
             }
-            // Notify only when options changed, so preparation does not trigger an indexing loop.
-            if try await indexingOptions(for: identifier) != before {
-                changedTargets.append(identifier)
-            }
+            if changed { changedTargets.append(target.targetIdentifier) }
         }
         return changedTargets
     }

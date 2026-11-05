@@ -10,6 +10,12 @@ private actor RefreshProjectManager: WorkspaceProjectManagerStub {
     let rootURL = URL(fileURLWithPath: "/tmp/BSPWorkspace")
     nonisolated let projectType = "test"
     var revision = 0
+    var inputInvalidations = 0
+
+    func invalidateIndexInputs() {
+        inputInvalidations += 1
+    }
+
     var failReload = false
     var project: BSPProject? {
         BSPProject(
@@ -345,5 +351,19 @@ struct WorkspaceLifecycleTests {
         #expect(notifications.first??["method"] as? String == "build/taskStart")
         #expect(notifications.last??["method"] as? String == "build/taskFinish")
         #expect(notifications.contains { $0?["method"] as? String == "build/logMessage" })
+    }
+
+    @Test
+    func fileEventsInvalidatePreparationInputs() async throws {
+        let harness = await setup()
+        let source = harness.manager.rootURL.appendingPathComponent("Edited.swift")
+        let edited = WorkspaceDidChangeWatchedFilesNotification(params: .init(changes: [
+            .init(uri: URI(source), type: .changed)
+        ]))
+        try await edited.handle(contextualHandler: harness.handler)
+        #expect(await harness.manager.inputInvalidations == 1)
+        let empty = WorkspaceDidChangeWatchedFilesNotification(params: .init(changes: []))
+        try await empty.handle(contextualHandler: harness.handler)
+        #expect(await harness.manager.inputInvalidations == 1)
     }
 }

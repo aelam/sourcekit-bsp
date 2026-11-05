@@ -47,7 +47,7 @@ public extension XcodeProjectManager {
         )
 
         // Build scripts can change source lists even when the build fails.
-        defer { projectStore.invalidateSources() }
+        defer { invalidateSourceFileCache() }
         return try await buildExecutor.execute(
             command: command,
             workingDirectory: rootURL,
