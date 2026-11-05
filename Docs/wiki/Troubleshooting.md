@@ -34,6 +34,11 @@ Use that same executable with the probe's `--server` option.
 For application project changes, the client must send file notifications or
 `workspace/reload` with a request ID.
 
+Schemes named `sourcekit-bsp-*.xcscheme` under an Xcode project's
+`xcshareddata/xcschemes/` directory are generated build helpers. Their file
+events do not reload the workspace. Changes to user schemes and project
+configuration still trigger reloads.
+
 ## Definition lookup or references fail
 
 1. Check that the Swift extension and SourceKit-LSP are running.

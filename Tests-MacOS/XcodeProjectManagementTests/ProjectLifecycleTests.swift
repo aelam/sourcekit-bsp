@@ -24,6 +24,30 @@ struct ProjectLifecycleTests {
     }
 
     @Test
+    func generatedSchemeWritesPreserveUnchangedFiles() async throws {
+        let root = try copyProject()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = try await manager(at: root)
+        let snapshot = try #require(await manager.projectSnapshot)
+        let target = try #require(snapshot.xcodeTargets.first { $0.name == "Hello" })
+        let scheme = try await manager.findOrCreateScheme(for: target, in: [])
+        let original = try Data(contentsOf: scheme.path)
+        let timestamp = Date(timeIntervalSince1970: 1_000_000_000)
+        try FileManager.default.setAttributes([.modificationDate: timestamp], ofItemAtPath: scheme.path.path)
+
+        let repeated = try await manager.findOrCreateScheme(for: target, in: [])
+        #expect(repeated.path == scheme.path)
+        #expect(try Data(contentsOf: scheme.path) == original)
+        let attributes = try FileManager.default.attributesOfItem(atPath: scheme.path.path)
+        #expect(attributes[.modificationDate] as? Date == timestamp)
+
+        _ = try await manager.findOrCreateScheme(for: target, in: [], buildConfiguration: "Release")
+        let changed = try XCScheme(pathString: scheme.path.path)
+        #expect(changed.launchAction?.buildConfiguration == "Release")
+        #expect(try Data(contentsOf: scheme.path) != original)
+    }
+
+    @Test
     func reloadsSourcesSettingsAndTargetsAndPreservesStateAfterInvalidSave() async throws {
         let root = try copyProject()
         defer { try? FileManager.default.removeItem(at: root) }

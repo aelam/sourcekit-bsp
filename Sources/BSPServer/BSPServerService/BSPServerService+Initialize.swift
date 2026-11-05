@@ -48,24 +48,16 @@ public extension BSPServerService {
     }
 
     func filesDidChange(_ changes: [WorkspaceDidChangeWatchedFilesNotification.FileEvent]) async throws {
-        guard let info = await projectManager?.project else { return }
-        let sourceExtensions: Set = ["swift", "c", "cc", "cpp", "cxx", "m", "mm", "h", "hpp", "hxx"]
-        let configurationExtensions: Set = ["pbxproj", "xcworkspace", "xcconfig", "xcscheme", "xcfilelist"]
-        let relevant = changes.contains { change in
-            guard let file = change.uri.fileURL else { return false }
-            let path = file.standardizedFileURL.path
-            let derivedData = info.buildRootURL.standardizedFileURL.path
-            guard path != derivedData, !path.hasPrefix(derivedData + "/"),
-                  !file.pathComponents.contains(".build") else { return false }
-            if configurationExtensions.contains(file.pathExtension)
-                || file.lastPathComponent == "contents.xcworkspacedata"
-                || file.lastPathComponent == "Package.resolved"
-                || file == info.rootURL.appendingPathComponent(".sourcekit-bsp/project.json") {
-                return true
+        guard let projectManager else { return }
+        let events = changes.map { change in
+            let kind: ProjectFileChange.Kind = switch change.type {
+            case .created: .created
+            case .changed: .changed
+            case .deleted: .deleted
             }
-            return change.type != .changed && sourceExtensions.contains(file.pathExtension)
+            return ProjectFileChange(uri: change.uri, kind: kind)
         }
-        guard relevant else { return }
+        guard await projectManager.shouldReloadProject(for: events) else { return }
         do {
             try await reloadProject()
         } catch {

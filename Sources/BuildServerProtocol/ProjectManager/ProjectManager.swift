@@ -34,6 +34,9 @@ public protocol ProjectManager: AnyObject, Sendable {
 
     func updateBuildGraph() async throws
 
+    /// Decide whether file changes require a build graph reload.
+    func shouldReloadProject(for changes: [ProjectFileChange]) async -> Bool
+
     /// Prepare dependencies and return targets whose compiler options changed.
     func buildIndex(for targetIdentifiers: [BSPBuildTargetIdentifier]) async throws -> [BSPBuildTargetIdentifier]
 
@@ -98,6 +101,11 @@ public protocol ProjectManager: AnyObject, Sendable {
 }
 
 public extension ProjectManager {
+    /// Reload for every nonempty batch unless the provider can safely filter it.
+    func shouldReloadProject(for changes: [ProjectFileChange]) async -> Bool {
+        !changes.isEmpty
+    }
+
     func getTargetList() async -> [BSPBuildTarget] {
         await project?.targets ?? []
     }
