@@ -117,7 +117,7 @@ struct SimulatorTestDebugLauncher: WaitForDebuggerLaunching {
 
 extension XcodeProjectManager {
     func startTestDebugSession(
-        target: XcodeTarget, arguments: [String]?, buildBeforeLaunch: Bool = true,
+        target: XcodeTarget, arguments: [String]?,
         outputHandler: ProcessOutputHandler? = nil, progressHandler: (@Sendable (String) async -> Void)?
     ) async throws -> DebugSessionConnection {
         guard target.xcodeProductType == .unitTestBundle, let base = projectSnapshot else {
@@ -137,18 +137,14 @@ extension XcodeProjectManager {
         let arguments = try testDebugArguments(for: target, arguments: arguments)
         let settings = try await resolvedBuildSettings(for: target, arguments: arguments)
         let testProduct = try SimulatorTestDebugProduct(settings: settings, arguments: arguments)
-        if buildBeforeLaunch {
-            await progressHandler?("Building test target and host app")
-            guard try await compileTarget(
-                targetIdentifier: target.targetIdentifier,
-                configuration: nil,
-                arguments: arguments,
-                outputHandler: outputHandler
-            ) == 0 else {
-                throw DebugSessionError.buildFailed
-            }
-        } else {
-            await progressHandler?("Using existing test host: \(testProduct.hostApp.path)")
+        await progressHandler?("Building test target and host app")
+        guard try await compileTarget(
+            targetIdentifier: target.targetIdentifier,
+            configuration: nil,
+            arguments: arguments,
+            outputHandler: outputHandler
+        ) == 0 else {
+            throw DebugSessionError.buildFailed
         }
         try Task.checkCancellation()
         let product = try testProduct.debugProduct()

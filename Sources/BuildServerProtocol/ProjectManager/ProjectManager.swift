@@ -97,7 +97,6 @@ public protocol ProjectManager: AnyObject, Sendable {
     func startDebugSession(
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?,
-        buildBeforeLaunch: Bool,
         logHandler: (@Sendable (String) -> Void)?,
         progressHandler: (@Sendable (String) async -> Void)?
     ) async throws -> DebugSessionConnection

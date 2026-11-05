@@ -6,7 +6,6 @@ public extension XcodeProjectManager {
     func startDebugSession(
         xcodeTargetIdentifier: XcodeTargetIdentifier,
         arguments: [String]?,
-        buildBeforeLaunch: Bool = true,
         outputHandler: ProcessOutputHandler? = nil,
         progressHandler: (@Sendable (String) async -> Void)? = nil
     ) async throws -> DebugSessionConnection {
@@ -16,14 +15,13 @@ public extension XcodeProjectManager {
             return try await startTestDebugSession(
                 target: target,
                 arguments: arguments,
-                buildBeforeLaunch: buildBeforeLaunch,
                 outputHandler: outputHandler,
                 progressHandler: progressHandler
             )
         }
         let product = try await prepareDebugProduct(
             xcodeTargetIdentifier: xcodeTargetIdentifier, arguments: arguments,
-            buildBeforeLaunch: buildBeforeLaunch, outputHandler: outputHandler, progressHandler: progressHandler
+            outputHandler: outputHandler, progressHandler: progressHandler
         )
 
         try Task.checkCancellation()
@@ -43,7 +41,6 @@ public extension XcodeProjectManager {
     internal func prepareDebugProduct(
         xcodeTargetIdentifier: XcodeTargetIdentifier,
         arguments: [String]?,
-        buildBeforeLaunch: Bool,
         outputHandler: ProcessOutputHandler? = nil,
         progressHandler: (@Sendable (String) async -> Void)? = nil
     ) async throws -> DebugProduct {
@@ -53,18 +50,14 @@ public extension XcodeProjectManager {
             xcodeTargetIdentifier: xcodeTargetIdentifier, arguments: arguments
         )
         try product.validate()
-        if buildBeforeLaunch {
-            await progressHandler?("Building app with the selected destination and signing settings")
-            let exitCode = try await compileTarget(
-                targetIdentifier: xcodeTargetIdentifier,
-                configuration: nil,
-                arguments: arguments,
-                outputHandler: outputHandler
-            )
-            guard exitCode == 0 else { throw DebugSessionError.buildFailed }
-        } else {
-            await progressHandler?("Using existing build product: \(product.binaryPath)")
-        }
+        await progressHandler?("Building app with the selected destination and signing settings")
+        let exitCode = try await compileTarget(
+            targetIdentifier: xcodeTargetIdentifier,
+            configuration: nil,
+            arguments: arguments,
+            outputHandler: outputHandler
+        )
+        guard exitCode == 0 else { throw DebugSessionError.buildFailed }
 
         guard FileManager.default.fileExists(atPath: product.binaryPath) else {
             throw DebugSessionError.productNotFound(product.binaryPath)
