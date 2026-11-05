@@ -79,6 +79,31 @@ public extension XcodeProjectManager {
 }
 
 extension XcodeProjectManager {
+    private func prepareIndexTarget(
+        _ target: XcodeTarget, key: IndexPreparationKey, logHandler: @escaping @Sendable (String) -> Void
+    ) async throws -> Bool {
+        guard key.buildGraphVersion == buildGraphVersion else { throw CancellationError() }
+        try Task.checkCancellation()
+        let identifier = target.targetIdentifier
+        let before = try await indexingOptions(for: identifier)
+        let output = IndexPreparationOutput(logHandler: logHandler)
+        logger.info("Preparing index inputs for \(target.name)")
+        let status = try await compileTarget(
+            targetIdentifier: identifier,
+            configuration: nil,
+            arguments: indexBuildArguments(for: target),
+            outputHandler: output
+        )
+        guard status == 0 else {
+            throw await IndexPreparationError.buildFailed(
+                target: target.name, exitCode: status, output: output.summary
+            )
+        }
+        guard key.buildGraphVersion == buildGraphVersion else { throw CancellationError() }
+        // Notify only when options changed, so preparation does not trigger an indexing loop.
+        return try await indexingOptions(for: identifier) != before
+    }
+
     func indexBuildArguments(for target: XcodeTarget) -> [String] {
         var arguments = [
             "CODE_SIGNING_ALLOWED=NO",
@@ -109,31 +134,6 @@ extension XcodeProjectManager {
             if changed { changedTargets.append(target.targetIdentifier) }
         }
         return changedTargets
-    }
-
-    private func prepareIndexTarget(
-        _ target: XcodeTarget, key: IndexPreparationKey, logHandler: @escaping @Sendable (String) -> Void
-    ) async throws -> Bool {
-        guard key.buildGraphVersion == buildGraphVersion else { throw CancellationError() }
-        try Task.checkCancellation()
-        let identifier = target.targetIdentifier
-        let before = try await indexingOptions(for: identifier)
-        let output = IndexPreparationOutput(logHandler: logHandler)
-        logger.info("Preparing index inputs for \(target.name)")
-        let status = try await compileTarget(
-            targetIdentifier: identifier,
-            configuration: nil,
-            arguments: indexBuildArguments(for: target),
-            outputHandler: output
-        )
-        guard status == 0 else {
-            throw await IndexPreparationError.buildFailed(
-                target: target.name, exitCode: status, output: output.summary
-            )
-        }
-        guard key.buildGraphVersion == buildGraphVersion else { throw CancellationError() }
-        // Notify only when options changed, so preparation does not trigger an indexing loop.
-        return try await indexingOptions(for: identifier) != before
     }
 
     private func indexingOptions(for target: XcodeTargetIdentifier) async throws -> [URL: [String]] {
