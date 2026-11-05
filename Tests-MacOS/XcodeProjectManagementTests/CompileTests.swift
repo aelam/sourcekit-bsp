@@ -31,7 +31,7 @@ struct CompileTests {
             settingsLoader: XcodeSettingsLoader(commandBuilder: XcodeBuildCommandBuilder(), toolchain: toolchain)
         )
         try await manager.initialize()
-        let base = try #require(await manager.xcodeProjectBaseInfo)
+        let base = try #require(await manager.projectSnapshot)
         let app = try #require(base.xcodeTargets.first { $0.name == "Hello" })
         let renamedScheme = try #require(base.schemes.first { $0.name == "CustomApp" })
         let selected = try await manager.findOrCreateScheme(
@@ -141,7 +141,7 @@ struct CompileTests {
             settingsLoader: XcodeSettingsLoader(commandBuilder: XcodeBuildCommandBuilder(), toolchain: toolchain)
         )
         try await manager.initialize()
-        let base = try #require(await manager.xcodeProjectBaseInfo)
+        let base = try #require(await manager.projectSnapshot)
         let app = try #require(base.xcodeTargets.first { $0.name == "Hello" })
         let arguments = [
             "-sdk", "iphonesimulator", "-derivedDataPath", root.appendingPathComponent("BuildData").path,

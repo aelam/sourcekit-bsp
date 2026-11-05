@@ -2,7 +2,7 @@ import BuildServerProtocol
 import Foundation
 import XcodeProjectManagement
 
-public extension XcodeProjectManager {
+public extension XcodeBSPProjectManager {
     /// BSP entry point: convert the BSP target identifier to the Xcode domain
     /// and delegate to the debug orchestration in `XcodeProjectManagement`.
     func startDebugSession(
@@ -15,7 +15,7 @@ public extension XcodeProjectManager {
         guard let bspIdentifier = targetIdentifiers.first else {
             throw DebugSessionError.buildFailed
         }
-        return try await startDebugSession(
+        return try await backend.startDebugSession(
             xcodeTargetIdentifier: XcodeTargetIdentifier(bspIdentifier),
             arguments: arguments,
             buildBeforeLaunch: buildBeforeLaunch,

@@ -14,11 +14,6 @@ import Glibc
 public final class StdioJSONRPCConnectionTransport: JSONRPCServerTransport, @unchecked Sendable {
     private let input: FileHandle
     private let output: FileHandle
-    private let jsonEncoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return encoder
-    }()
 
     /// Serial queue for all stdout writes. Responses are produced concurrently
     /// (JSONRPCConnection spawns a task per request), so without serialization
@@ -142,12 +137,9 @@ public final class StdioJSONRPCConnectionTransport: JSONRPCServerTransport, @unc
             throw JSONRPCTransportError.transportClosed
         }
 
-        let data = try jsonEncoder.encode(message)
+        let data = try JSONEncoder().encode(message)
         let header = "Content-Length:\(data.count)\r\n\r\n"
         let headerData = header.data(using: .utf8)!
-
-        // Log sent data with pretty JSON formatting (already formatted by jsonEncoder)
-        logger.debug("Sending (\(data.count) bytes):\n\(String(data: data, encoding: .utf8) ?? "[Invalid UTF-8]")")
 
         // Perform write operations with timeout to prevent hanging
         try await withThrowingTaskGroup(of: Void.self) { group in

@@ -44,8 +44,8 @@ extension XcodeProjectManager {
         progressHandler: (@Sendable (String) async -> Void)? = nil
     ) async -> XcodeRunResult {
         guard
-            let xcodeProjectBaseInfo,
-            let target = xcodeProjectBaseInfo.xcodeTargets
+            let projectSnapshot,
+            let target = projectSnapshot.xcodeTargets
             .first(where: { $0.targetIdentifier == xcodeTargetIdentifier })
         else {
             return XcodeRunResult(statusCode: .error, message: "Project not loaded")
@@ -244,7 +244,7 @@ extension XcodeProjectManager {
         deviceID: String,
         progressHandler: (@Sendable (String) async -> Void)? = nil
     ) async throws {
-        let commands = DeviceCommandRunner(developerDirectory: xcodeProjectBaseInfo?.xcodeInstallation.developerDir)
+        let commands = DeviceCommandRunner(developerDirectory: projectSnapshot?.xcodeInstallation.developerDir)
         let installer: AppInstaller = isSimulator ? SimulatorInstaller() : DeviceInstaller(commands: commands)
         _ = try await installer.installApp(
             appPath: outputPath,
@@ -254,7 +254,7 @@ extension XcodeProjectManager {
     }
 
     private func launchAppOnNonMac(isSimulator: Bool, deviceID: String, appIdentifier: String) async throws {
-        let commands = DeviceCommandRunner(developerDirectory: xcodeProjectBaseInfo?.xcodeInstallation.developerDir)
+        let commands = DeviceCommandRunner(developerDirectory: projectSnapshot?.xcodeInstallation.developerDir)
         let launcher: AppLauncher = isSimulator ? SimulatorLauncher() : DeviceLauncher(commands: commands)
         _ = try await launcher.launchApp(
             deviceID: deviceID,

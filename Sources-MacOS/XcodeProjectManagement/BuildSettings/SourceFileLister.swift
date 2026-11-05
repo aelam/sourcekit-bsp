@@ -1,4 +1,5 @@
 import Foundation
+import Logger
 import PathKit
 import XcodeProj
 
@@ -12,7 +13,7 @@ public enum SourceFileLister {
         targets: Set<String>
     ) -> SourceMap {
         guard let xcodeProjPath = xcodeProj.path else {
-            print(
+            logger.warning(
                 "Cannot open Xcode project at \(xcodeProj.path?.string ?? "unknown path")"
             )
             return SourceMap()
@@ -109,7 +110,7 @@ public enum SourceFileLister {
                     } else if let rel = fileRef.path {
                         return (sourceRoot + Path(rel)).string
                     } else {
-                        print("Cannot resolve path for \(fileRef)")
+                        logger.warning("Cannot resolve path for \(fileRef)")
                         return nil
                     }
                 }

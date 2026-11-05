@@ -57,12 +57,12 @@ struct XcodeTestSelection: Decodable {
     }
 }
 
-public extension XcodeProjectManager {
+public extension XcodeBSPProjectManager {
     func testArguments(
         targetIdentifiers: [BSPBuildTargetIdentifier], arguments: [String]?, dataKind: String?, data: LSPAny?
     ) async throws -> [String]? {
-        try XcodeTestSelection.arguments(
-            targets: xcodeProjectBaseInfo?.xcodeTargets ?? [],
+        try await XcodeTestSelection.arguments(
+            targets: backend.projectSnapshot?.xcodeTargets ?? [],
             requested: targetIdentifiers,
             arguments: arguments,
             dataKind: dataKind,

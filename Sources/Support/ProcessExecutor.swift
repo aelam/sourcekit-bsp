@@ -160,7 +160,6 @@ public actor ProcessExecutor {
         // Start process
         do {
             try process.run()
-            logger.debug("Process started successfully")
         } catch {
             throw ProcessExecutorError.processStartFailed(error.localizedDescription)
         }
@@ -246,12 +245,9 @@ public actor ProcessExecutor {
         isError: Bool,
         progress: ProcessProgress?
     ) async {
-        logger.debug("Starting to read from \(isError ? "error" : "output") pipe")
-
         await StreamingFileHandleReader.streamPipe(fileHandle) { line in
             let event: ProcessProgressEvent = isError ? .errorLine(line + "\n") : .outputLine(line + "\n")
             await progress?(event)
-            logger.debug("Finished reading from \(isError ? "error" : "output") pipe")
         }
     }
 

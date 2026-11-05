@@ -1,89 +1,11 @@
 import BuildServerProtocol
 import Foundation
-import Logger
-import Support
 import XcodeProjectManagement
-
-extension XcodeProjectManager: @preconcurrency ProjectManager {
-    public func getProjectState() async -> BuildServerProtocol.ProjectState {
-        .init()
-    }
-
-    public func addStateObserver(_ observer: any BuildServerProtocol.ProjectStateObserver) async {}
-
-    public func removeStateObserver(_ observer: any BuildServerProtocol.ProjectStateObserver) async {}
-
-    public var projectType: String {
-        "xcodeproj"
-    }
-
-    public func updateBuildGraph() async throws {
-        try await reloadProject()
-    }
-
-    public func shutdown() async {
-        await shutdownBuilds()
-        await stopIndexPreparation()
-        await stopDebugSessions()
-    }
-
-    public func buildIndex(for targets: [BSPBuildTargetIdentifier]) async throws -> [BSPBuildTargetIdentifier] {
-        try await buildIndex(for: targets, logHandler: nil)
-    }
-
-    public func buildIndex(
-        for targets: [BSPBuildTargetIdentifier],
-        logHandler: (@Sendable (String) -> Void)?
-    ) async throws -> [BSPBuildTargetIdentifier] {
-        try await prepareForIndexing(
-            targetIdentifiers: targets.map { XcodeTargetIdentifier($0) }, logHandler: logHandler
-        ).map(\.bspIdentifier)
-    }
-
-    public var projectInfo: ProjectInfo? {
-        xcodeProjectBaseInfo?.asProjectInfo()
-    }
-
-    public func getTargetList(
-        resolveSourceFiles: Bool,
-        resolveDependencies: Bool
-    ) async -> [BSPBuildTarget] {
-        guard let xcodeProjectBaseInfo else {
-            return []
-        }
-
-        var dependenciesByTarget: [XcodeTargetIdentifier: [XcodeTargetIdentifier]] = [:]
-        if resolveDependencies {
-            dependenciesByTarget = resolveDirectDependencies()
-        }
-
-        return xcodeProjectBaseInfo.xcodeTargets.compactMap { target in
-            let dependencies = (dependenciesByTarget[target.targetIdentifier] ?? []).map(\.bspIdentifier)
-            return target.asBSPBuildTarget(
-                dependencies: dependencies, toolchain: xcodeProjectBaseInfo.xcodeInstallation.toolchainDir
-            )
-        }
-    }
-
-    public func getSourceFileList(targetIdentifiers: [BSPBuildTargetIdentifier]) async throws
-        -> [BuildServerProtocol.SourcesItem] {
-        let xcodeTargetIdentifiers = targetIdentifiers.map { XcodeTargetIdentifier($0) }
-        let xcodeSourceItems = getSourcesItems(targetIdentifiers: xcodeTargetIdentifiers)
-        return try xcodeSourceItems.compactMap {
-            try $0.asBSPSourcesItems()
-        }
-    }
-
-    public func getCompileArguments(targetIdentifier: String, sourceFileURL: URL) async throws -> [String] {
-        let xcodeTargetIdentifier = XcodeTargetIdentifier(rawValue: targetIdentifier)
-        return try await getCompileArguments(targetIdentifier: xcodeTargetIdentifier, sourceFileURL: sourceFileURL)
-    }
-}
 
 extension XcodeTarget {
     func asBSPBuildTarget(
         dependencies: [BSPBuildTargetIdentifier] = [], toolchain: URL? = nil
-    ) -> BSPBuildTarget? {
+    ) -> BSPBuildTarget {
         let capabilities = BuildTargetCapabilities(
             canCompile: true,
             canTest: self.xcodeProductType.isTestBundle,
@@ -94,7 +16,7 @@ extension XcodeTarget {
             )
         )
 
-        return try? BSPBuildTarget(
+        return BSPBuildTarget(
             id: self.targetIdentifier.bspIdentifier,
             displayName: self.targetName,
             baseDirectory: URI(self.projectURL.deletingLastPathComponent()),

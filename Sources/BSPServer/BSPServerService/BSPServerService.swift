@@ -49,15 +49,11 @@ public actor BSPServerService: ProjectStateObserver, BSPNotificationService {
         }
         serviceState = .starting
 
-        logger.info("Starting BSP Server Service for project")
-
         do {
             // 启动网络服务
-            logger.info("Starting network service...")
             try await jsonrpcConnection.listen()
 
             serviceState = .running
-            logger.info("BSP Server Service started successfully")
         } catch {
             serviceState = .stopped
             logger.error("Failed to start BSP Server Service: \(error)")
@@ -73,7 +69,7 @@ public actor BSPServerService: ProjectStateObserver, BSPNotificationService {
         }
         serviceState = .stopping
 
-        logger.info("Stopping BSP Server Service...")
+        logger.debug("Stopping BSP server")
 
         await jsonrpcConnection.close()
 

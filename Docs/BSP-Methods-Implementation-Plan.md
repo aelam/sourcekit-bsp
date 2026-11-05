@@ -75,7 +75,7 @@ outputPaths}` and does **not** handle `buildTarget/didChange`.
   today it's a no-op on the server, so the extension's reload does nothing.
 - **Server status:** TODO — handler empty (`WorkspaceReloadNotification.swift`).
 - **Client status:** DONE (already sends). May want a follow-up refresh after.
-- **Server plan:** re-run project resolution (reload `XcodeProjectBaseInfo`),
+- **Server plan:** re-run project resolution (reload `XcodeProjectSnapshot` and replace the converted `BSPProject`),
   `clearCaches()`, then emit `buildTarget/didChange` so the client re-queries.
   Shares the cache-invalidation path with item 1.
 

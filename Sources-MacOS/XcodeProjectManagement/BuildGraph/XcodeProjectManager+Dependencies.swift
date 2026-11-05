@@ -15,7 +15,7 @@ public extension XcodeProjectManager {
     ///
     /// Returns an empty map before `initialize()` has populated the base info.
     func resolveDirectDependencies() -> [XcodeTargetIdentifier: [XcodeTargetIdentifier]] {
-        guard let baseInfo = xcodeProjectBaseInfo else { return [:] }
+        guard let baseInfo = projectSnapshot else { return [:] }
 
         let targets = baseInfo.xcodeTargets
         guard !targets.isEmpty else { return [:] }

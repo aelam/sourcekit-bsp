@@ -23,7 +23,6 @@ public struct OnBuildInitializedNotification: ContextualNotificationType, Sendab
         await contextualHandler.withContext { _ in
             // build/initialized notification handler
             // This notification is sent after build/initialize request is processed
-            logger.debug("Received build/initialized notification")
         }
     }
 }

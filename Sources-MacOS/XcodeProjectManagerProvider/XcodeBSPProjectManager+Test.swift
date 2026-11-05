@@ -5,7 +5,7 @@ import PathKit
 import XcodeProj
 import XcodeProjectManagement
 
-public extension XcodeProjectManager {
+public extension XcodeBSPProjectManager {
     func test(
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?, // e.g. ["-configuration", "Debug"]
@@ -18,10 +18,12 @@ public extension XcodeProjectManager {
             arguments: arguments,
             environmentVariables: environmentVariables,
             workingDirectory: workingDirectory,
-            logHandler: logHandler, testEventHandler: nil
+            logHandler: logHandler,
+            testEventHandler: nil
         )
     }
 
+    // swiftlint:disable:next function_parameter_count
     func test(
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?, // e.g. ["-configuration", "Debug"]
@@ -30,9 +32,9 @@ public extension XcodeProjectManager {
         logHandler: (@Sendable (String) -> Void)?,
         testEventHandler: (@Sendable (TestExecutionEvent) async -> Void)?
     ) async throws -> StatusCode {
-        let xcodeTargetIdentifiers = targetIdentifiers.map { XcodeTargetIdentifier(rawValue: $0.uri.stringValue) }
+        let xcodeTargetIdentifiers = targetIdentifiers.map { XcodeTargetIdentifier($0) }
 
-        let result = try await test(
+        let result = try await backend.test(
             xcodeTargetIdentifiers: xcodeTargetIdentifiers,
             arguments: arguments,
             environmentVariables: environmentVariables,

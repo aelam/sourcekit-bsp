@@ -61,7 +61,7 @@ struct ResolveProjectCommand: AsyncParsableCommand {
 
         try await projectManager.initialize()
 
-        guard let baseProjectInfo = await projectManager.xcodeProjectBaseInfo else {
+        guard let baseProjectInfo = await projectManager.projectSnapshot else {
             print("❌ Project loaded Failed")
             return
         }

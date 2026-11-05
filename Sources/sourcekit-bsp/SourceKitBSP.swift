@@ -8,7 +8,6 @@ import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
 import Logger
-import SwiftyBeaver
 #if os(macOS)
 import XcodeProjectManagerProvider
 #endif
@@ -17,15 +16,6 @@ import SwiftPMProjectManagerProvider
 @main
 struct SourceKitBSP {
     static func main() async {
-        // 获取环境信息
-        let processID = ProcessInfo.processInfo.processIdentifier
-        let environment = ProcessInfo.processInfo.environment["BSP_ENVIRONMENT"] ?? "development"
-
-        // Log startup message
-        logger.info(
-            "sourcekit-bsp started successfully - PID: \(processID) - Environment: \(environment)"
-        )
-
         let arguments = CommandLine.arguments
 
         // Parse command line arguments before starting the BSP server.
@@ -47,13 +37,8 @@ struct SourceKitBSP {
             }
         }
 
-        // Check for debug mode from environment variable
-        let isDebugMode = ProcessInfo.processInfo.environment["BSP_DEBUG"] != nil ||
-            arguments.contains("--debug")
-
-        if isDebugMode {
-            logger.debug("🔧 BSP Debug Mode Enabled - PID: \(processID)")
-        }
+        defer { logger.flush() }
+        logger.info("sourcekit-bsp started; debug=\(logger.isDebugEnabled); log=\(logger.logFileURL.path)")
 
         // 使用清晰的分层架构 - BSPServerService 作为服务层
         // 使用工厂来管理多个项目管理器提供者
@@ -70,7 +55,7 @@ struct SourceKitBSP {
 
         // 获取当前工作目录作为项目路径
         let projectURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        logger.info("Project directory: \(projectURL.path)")
+        logger.debug("Working directory: \(projectURL.path)")
 
         do {
             try await bspService.start()
@@ -96,6 +81,7 @@ struct SourceKitBSP {
         print("Options:")
         print("  -h, --help      Show this help message and exit")
         print("  --version       Show the version and exit")
+        print("  --debug         Enable debug logs (or set BSP_DEBUG=1)")
         print("  xcode-project   Inspect or compile Xcode projects")
         print("")
         print("BSP Protocol:")

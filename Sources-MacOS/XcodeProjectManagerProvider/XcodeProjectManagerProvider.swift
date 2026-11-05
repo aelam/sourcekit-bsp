@@ -34,9 +34,7 @@ public struct XcodeProjectManagerProvider: ProjectManagerProvider {
     ) async throws -> any ProjectManager {
         let toolchain: XcodeToolchain = try await Task.detached {
             let toolchain = XcodeToolchain(workingDirectory: rootURL)
-            logger.debug("toolchain is initializing")
             try await toolchain.initialize()
-            logger.debug("toolchain is initialized successfully")
             return toolchain
         }.value
 
@@ -50,9 +48,8 @@ public struct XcodeProjectManagerProvider: ProjectManagerProvider {
                 toolchain: toolchain
             )
         )
-        logger.debug("Creating project manager successfully \(projectManager)")
 
-        return projectManager
+        return XcodeBSPProjectManager(backend: projectManager)
     }
 }
 

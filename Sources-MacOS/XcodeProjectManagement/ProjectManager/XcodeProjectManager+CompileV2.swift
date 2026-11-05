@@ -13,11 +13,11 @@ public extension XcodeProjectManager {
         arguments: [String]? = nil,
         outputHandler: ProcessOutputHandler? = nil
     ) async throws -> XcodeBuildExitCode {
-        guard let xcodeProjectBaseInfo else {
+        guard let projectSnapshot else {
             return 1
         }
 
-        guard let xcodeTarget = xcodeProjectBaseInfo.xcodeTargets
+        guard let xcodeTarget = projectSnapshot.xcodeTargets
             .first(where: { $0.targetIdentifier == targetIdentifier }) else {
             return 1
         }
@@ -46,6 +46,8 @@ public extension XcodeProjectManager {
             options: options
         )
 
+        // Build scripts can change source lists even when the build fails.
+        defer { projectStore.invalidateSources() }
         return try await buildExecutor.execute(
             command: command,
             workingDirectory: rootURL,
@@ -75,7 +77,7 @@ public extension XcodeProjectManager {
     }
 
     internal func buildConfiguration(for target: XcodeTarget) throws -> XcodeProjectConfiguration {
-        guard let base = xcodeProjectBaseInfo else {
+        guard let base = projectSnapshot else {
             throw XcodeProjectError.invalidConfig("Project not initialized")
         }
         let scheme = try findOrCreateScheme(for: target, in: base.schemes)
@@ -100,7 +102,7 @@ public extension XcodeProjectManager {
     ) -> [String] {
         var result = arguments ?? []
         if !result.contains("-configuration") {
-            result += ["-configuration", configuration ?? xcodeProjectBaseInfo?.configuration ?? "Debug"]
+            result += ["-configuration", configuration ?? projectSnapshot?.configuration ?? "Debug"]
         }
         if !result.contains("-destination"), !result.contains("-sdk") {
             let platform = target.xcodeTargetPlatform.simulatorVariant
@@ -114,7 +116,7 @@ public extension XcodeProjectManager {
             }
             result += ["-destination", destination]
         }
-        if !result.contains("-derivedDataPath"), let base = xcodeProjectBaseInfo {
+        if !result.contains("-derivedDataPath"), let base = projectSnapshot {
             result += ["-derivedDataPath", base.xcodeGlobalSettings.derivedDataPath.path]
         }
         return result

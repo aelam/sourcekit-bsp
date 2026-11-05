@@ -7,6 +7,7 @@
 
 import Foundation
 import JSONRPCConnection
+import Logger
 
 /// Like the language server protocol, a notification to ask the
 /// server to exit its process. The server should exit with success
@@ -22,6 +23,7 @@ public struct OnBuildExitNotification: ContextualNotificationType, Sendable {
     public func handle(
         contextualHandler: some ContextualMessageHandler
     ) async throws {
+        logger.flush()
         exit(0)
     }
 }

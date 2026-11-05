@@ -6,7 +6,6 @@
 
 import Foundation
 import Logger
-import PathKit
 import XcodeProj
 
 /// Project Level buildSettings
@@ -68,19 +67,16 @@ public actor XcodeProjectManager {
         currentProjectReference?.scheme
     }
 
-    public private(set) var xcodeProjectBaseInfo: XcodeProjectBaseInfo?
+    public private(set) var projectSnapshot: XcodeProjectSnapshot?
 
-    private var xcodeProjCache: [URL: XcodeProj] = [:]
-    private var sourceFileMapCache: [String: [SourceItem]] = [:]
+    var projectStore = XcodeProjectStore()
+
+    func invalidateSourceFileCache() {
+        projectStore.invalidateSources()
+    }
 
     func loadXcodeProjCache(projectURL: URL) -> XcodeProj? {
-        if let cachedXcodeProj = xcodeProjCache[projectURL] {
-            return cachedXcodeProj
-        }
-        let projectURLPath = Path(projectURL.path)
-        let xcodeProj = try? XcodeProj(path: projectURLPath)
-        xcodeProjCache[projectURL] = xcodeProj
-        return xcodeProj
+        projectStore.project(at: projectURL)
     }
 
     public init(
@@ -108,19 +104,21 @@ public actor XcodeProjectManager {
 
     public func initialize() async throws {
         let configURL = rootURL.appendingPathComponent(".sourcekit-bsp/project.json")
-        currentProjectReference = if FileManager.default.fileExists(atPath: configURL.path) {
+        let reference = if FileManager.default.fileExists(atPath: configURL.path) {
             try JSONDecoder().decode(XcodeProjectReference.self, from: Data(contentsOf: configURL))
         } else {
             xcodeProjectReference
         }
+        let start = ContinuousClock.now
         try await toolchain.initialize()
+        let toolchainReady = ContinuousClock.now
         guard let selectedXcodeInstallation = await toolchain.getSelectedInstallation() else {
             throw XcodeProjectError.toolchainError("No Xcode installation selected")
         }
 
         let projectLocation = try projectLocator.resolveProjectType(
             rootURL: rootURL,
-            xcodeProjectReference: currentProjectReference
+            xcodeProjectReference: reference
         )
 
         // Get project-level buildSettings without `xcodebuild`
@@ -128,45 +126,43 @@ public actor XcodeProjectManager {
         let xcodeGlobalSettings = XcodeGlobalSettings(derivedDataPath: derivedDataPath)
 
         try await destinationLoader.loadDestinations(reload: true)
+        let destinationsReady = ContinuousClock.now
 
         // Load containers for workspace projects to get actual targets
-        let actualTargets = try await loadActualTargets(
-            projectLocation: projectLocation
+        var store = XcodeProjectStore()
+        let actualTargets = try loadActualTargets(
+            projectLocation: projectLocation, store: &store
         )
 
+        let targetsReady = ContinuousClock.now
         let schemes = try schemeLoader.listSchemes(
             projectLocation: projectLocation,
             includeUserSchemes: true
         )
 
-        let xcodeProjectBaseInfo = XcodeProjectBaseInfo(
+        let projectSnapshot = XcodeProjectSnapshot(
             rootURL: rootURL,
             projectLocation: projectLocation,
             xcodeGlobalSettings: xcodeGlobalSettings,
             xcodeTargets: actualTargets,
             schemes: schemes,
-            configuration: currentProjectReference?.configuration ?? "Debug",
+            configuration: reference?.configuration ?? "Debug",
             xcodeInstallation: selectedXcodeInstallation,
         )
-        self.xcodeProjectBaseInfo = xcodeProjectBaseInfo
+        // Publish the project and its caches together after loading succeeds.
+        self.currentProjectReference = reference
+        self.projectStore = store
+        self.projectSnapshot = projectSnapshot
+        logger.info(
+            "Project initialized: toolchain=\(toolchainReady - start), " +
+                "destinations=\(destinationsReady - toolchainReady), " +
+                "targets=\(targetsReady - destinationsReady), " +
+                "schemes=\(ContinuousClock.now - targetsReady), targetCount=\(actualTargets.count)"
+        )
     }
 
     public func reloadProject() async throws {
-        let oldSources = sourceFileMapCache
-        let oldCache = xcodeProjCache
-        let oldReference = currentProjectReference
-        let oldInfo = xcodeProjectBaseInfo
-        do {
-            xcodeProjCache.removeAll()
-            sourceFileMapCache.removeAll()
-            try await initialize()
-        } catch {
-            sourceFileMapCache = oldSources
-            xcodeProjCache = oldCache
-            currentProjectReference = oldReference
-            xcodeProjectBaseInfo = oldInfo
-            throw error
-        }
+        try await initialize()
     }
 }
 
@@ -193,10 +189,5 @@ extension XcodeProjectManager {
             // Fallback: treat as relative path
             return workspaceDir.appendingPathComponent(path)
         }
-    }
-
-    /// Load targets from a single project using XcodeProj
-    private func loadTargetsFromProject(projectURL: URL) async throws -> [XcodeTarget] {
-        try loadTargetsFromXcodeProj(projectURL: projectURL)
     }
 }

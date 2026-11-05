@@ -14,7 +14,7 @@ extension BSPServerService {
             throw BuildServerError.invalidConfiguration("Project manager not initialized")
         }
         let root = await projectManager.rootURL
-        let directory = await projectManager.projectInfo?.derivedDataPath ?? root
+        let directory = await projectManager.project?.buildRootURL ?? root
             .appendingPathComponent(".sourcekit-bsp")
         let buildContext = buildBeforeLaunch ? BuildOutputContext(
             rootURL: root, logDirectory: directory.appendingPathComponent("Logs/sourcekit-bsp")

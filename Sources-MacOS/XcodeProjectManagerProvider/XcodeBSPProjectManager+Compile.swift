@@ -5,13 +5,13 @@ import PathKit
 import XcodeProj
 import XcodeProjectManagement
 
-public extension XcodeProjectManager {
+public extension XcodeBSPProjectManager {
     func startBuild(
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]? = nil,
         logHandler: (@Sendable (String) -> Void)? = nil
     ) async throws -> StatusCode {
-        logger.info("Starting build for targets: \(targetIdentifiers) with arguments: \(arguments ?? [])")
+        logger.debug("Starting build for \(targetIdentifiers.count) targets")
         var results: [XcodeBuildExitCode] = []
 
         // Forward each build line to the BSP layer (which streams it to the
@@ -23,7 +23,7 @@ public extension XcodeProjectManager {
         for identifier in targetIdentifiers {
             let xcodeTargetIdentifier = XcodeTargetIdentifier(identifier)
 
-            let xcodeBuildResult = try await compileTarget(
+            let xcodeBuildResult = try await backend.compileTarget(
                 targetIdentifier: xcodeTargetIdentifier,
                 configuration: nil, // arguments has "-configuration" flag
                 arguments: arguments,

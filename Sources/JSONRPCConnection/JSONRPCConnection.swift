@@ -13,7 +13,6 @@ public final actor JSONRPCConnection {
     private let messageRegistry: MessageRegistry
     private let messageHandler: MessageHandler
     private let jsonDecoder = JSONDecoder()
-    private let jsonEncoder = JSONEncoder()
 
     // Task handles for stream processing
     private var messageProcessingTask: Task<Void, Never>?
@@ -133,10 +132,8 @@ public final actor JSONRPCConnection {
     /// Process a single message from the message stream
     private func processMessage(_ message: JSONRPCMessage) async {
         if let requestType = messageRegistry.requestType(for: message.request.method) {
-            logger.debug("Found request type for method: \(message.request.method)")
             await handleRequest(message: message, requestType: requestType)
         } else if let notificationType = messageRegistry.notificationType(for: message.request.method) {
-            logger.debug("Found notification type for method: \(message.request.method)")
             await handleNotification(message: message, notificationType: notificationType)
         } else {
             logger.warning("No handler found for method: \(message.request.method)")
@@ -162,41 +159,37 @@ public final actor JSONRPCConnection {
             return
         }
 
-        logger.debug("Handling request ID: \(requestID) method: \(message.request.method)")
+        let start = ContinuousClock.now
+        var outcome = "failed"
+        defer {
+            let elapsed = ContinuousClock.now - start
+            let summary = "Request \(message.request.method) ID \(requestID): \(outcome), " +
+                "\(message.rawData.count) request bytes, \(elapsed)"
+            if elapsed >= .seconds(1) {
+                logger.info("Request timing: \(summary)")
+            } else {
+                logger.debug(summary)
+            }
+        }
 
         do {
             let typedRequest = try jsonDecoder.decode(requestType, from: message.rawData)
-            logger.debug("Successfully decoded request for method: \(message.request.method)")
-
-            let prettyJSON: String = if let jsonObject = try? JSONSerialization.jsonObject(
-                with: message.rawData,
-                options: []
-            ),
-                let prettyData = try? JSONSerialization.data(
-                    withJSONObject: jsonObject,
-                    options: [.prettyPrinted, .sortedKeys]
-                ),
-                let prettyString = String(data: prettyData, encoding: .utf8) {
-                prettyString
-            } else {
-                "<invalid JSON>"
-            }
-            logger.debug("requestBody: \n\(prettyJSON)")
 
             if let response = await typedRequest.handle(handler: messageHandler, id: requestID) {
                 if Task.isCancelled {
+                    outcome = "cancelled"
                     await sendErrorResponse(
                         id: requestID, error: JSONRPCError(code: -32800, message: "Request cancelled")
                     )
                     return
                 }
                 do {
-                    logger.debug(
-                        "Request handler returned response for method: \(message.request.method), " +
-                            "response type: \(type(of: response))"
-                    )
                     try await send(response: response)
-                    logger.debug("Successfully sent response for request ID: \(requestID)")
+                    if let failure = response as? JSONRPCErrorResponse {
+                        outcome = "error(\(failure.error.code))"
+                    } else {
+                        outcome = "completed"
+                    }
                 } catch {
                     logger.error("Failed to send response for request ID: \(requestID), error: \(error)")
                 }
@@ -215,14 +208,11 @@ public final actor JSONRPCConnection {
 
     /// Handle a JSON-RPC notification
     private func handleNotification(message: JSONRPCMessage, notificationType: any NotificationType.Type) async {
-        logger.debug("Handling notification for method: \(message.request.method)")
-
         do {
             let typedNotification = try jsonDecoder.decode(notificationType, from: message.rawData)
-            logger.debug("Successfully decoded notification for method: \(message.request.method)")
 
             try await typedNotification.handle(handler: messageHandler)
-            logger.debug("Successfully handled notification for method: \(message.request.method)")
+            logger.debug("Notification \(message.request.method): handled, \(message.rawData.count) bytes")
         } catch {
             // Notifications don't have responses, so we can only log the error
             logger.error("Notification processing error for method: \(message.request.method), error: \(error)")

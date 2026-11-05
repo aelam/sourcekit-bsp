@@ -9,12 +9,12 @@ private actor RefreshProjectManager: ProjectManager {
     nonisolated let projectType = "test"
     var revision = 0
     var failReload = false
-    var projectInfo: ProjectInfo? {
-        ProjectInfo(
+    var project: BSPProject? {
+        BSPProject(
             rootURL: rootURL,
             name: "Test",
-            targets: [],
-            derivedDataPath: rootURL.appendingPathComponent("DerivedData"),
+            targets: makeTargets(),
+            buildRootURL: rootURL.appendingPathComponent("DerivedData"),
             indexStoreURL: rootURL.appendingPathComponent("IndexStore"),
             indexDatabaseURL: rootURL.appendingPathComponent("IndexDatabase")
         )
@@ -34,7 +34,7 @@ private actor RefreshProjectManager: ProjectManager {
         revision += 1
     }
 
-    func getTargetList(resolveSourceFiles: Bool, resolveDependencies: Bool) -> [BSPBuildTarget] {
+    private func makeTargets() -> [BSPBuildTarget] {
         ["Keep", revision == 0 ? "Removed" : "Added"].map {
             BSPBuildTarget(
                 id: .init(uri: URI(rootURL.appendingPathComponent($0))),

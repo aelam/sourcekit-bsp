@@ -25,7 +25,7 @@ public extension XcodeProjectManager {
         targetIdentifiers: [XcodeTargetIdentifier],
         logHandler: (@Sendable (String) -> Void)? = nil
     ) async throws -> [XcodeTargetIdentifier] {
-        guard let base = xcodeProjectBaseInfo else {
+        guard let base = projectSnapshot else {
             throw IndexPreparationError.projectNotInitialized
         }
         var targets: [XcodeTarget] = []
@@ -73,7 +73,7 @@ extension XcodeProjectManager {
             "COMPILER_INDEX_STORE_ENABLE=YES",
             "ONLY_ACTIVE_ARCH=YES"
         ]
-        if let settings = xcodeProjectBaseInfo?.xcodeGlobalSettings {
+        if let settings = projectSnapshot?.xcodeGlobalSettings {
             arguments.append("INDEX_DATA_STORE_DIR=\(settings.indexStoreURL.path)")
         }
         return buildArguments(for: target, configuration: nil, arguments: arguments)

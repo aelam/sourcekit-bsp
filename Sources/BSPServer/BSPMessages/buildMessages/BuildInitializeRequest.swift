@@ -39,9 +39,7 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
         contextualHandler: Handler,
         id: RequestID
     ) async -> ResponseType? where Handler.Context == BSPServerService {
-        logger.debug("BuildInitializeRequest params - rootUri: \(params.rootUri)")
-
-        return await contextualHandler.withContext { service -> ResponseType in
+        await contextualHandler.withContext { service -> ResponseType in
             // 从请求参数中获取项目根路径
             guard let rootURL = URL(string: self.params.rootUri) else {
                 logger.error("BuildInitializeRequest: failed to create rootURL from: \(self.params.rootUri)")
@@ -54,10 +52,8 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
                 )
             }
 
-            logger.debug("BuildInitializeRequest: initializing project...")
             do {
                 try await service.initializeProject(rootURL: rootURL)
-                logger.debug("BuildInitializeRequest: project initialized successfully")
             } catch {
                 logger.error("Failed to initialize project: \(error)")
                 return JSONRPCErrorResponse(
@@ -72,7 +68,7 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
             // 获取项目信息
             guard
                 let projectManager = await service.getCurrentProjectManager(),
-                let projectInfo = await projectManager.projectInfo
+                let projectInfo = await projectManager.project
             else {
                 logger
                     .error(
@@ -87,15 +83,12 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
                 )
             }
 
-            let response = createResponseForBuildInitializeRequest(
+            return createResponseForBuildInitializeRequest(
                 rootURL: rootURL,
                 indexStoreURL: projectInfo.indexStoreURL,
                 indexDatabaseURL: projectInfo.indexDatabaseURL,
                 clientCapabilities: self.params.capabilities
             )
-
-            logger.debug("BuildInitializeRequest: response created successfully, returning")
-            return response
         }
     }
 
@@ -112,7 +105,6 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
         let fileWatchers = createFileSystemWatchers(
             rootURL: rootURL
         )
-        logger.debug("BuildInitializeRequest: creating response")
         return BuildInitializeResponse(
             jsonrpc: "2.0",
             id: id,
@@ -150,16 +142,13 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
     private func createServerCapabilities(
         clientCapabilities: Params.BuildClientCapabilities
     ) -> BuildServerCapabilities {
-        logger.debug("createServerCapabilities: client languages: \(clientCapabilities.languageIds)")
         let clientLanguages = Set(clientCapabilities.languageIds)
         let supportedLanguages = Array(buildServerSupportedLanguages.intersection(clientLanguages))
-        logger.debug("createServerCapabilities: supported languages: \(supportedLanguages)")
 
         // Create capabilities based on supported languages
         let hasLanguages = !supportedLanguages.isEmpty
-        logger.debug("createServerCapabilities: hasLanguages: \(hasLanguages)")
 
-        let capabilities = BuildServerCapabilities(
+        return BuildServerCapabilities(
             compileProvider: hasLanguages ? CompileProvider(languageIds: supportedLanguages) : nil,
             testProvider: hasLanguages ? TestProvider(languageIds: supportedLanguages) : nil,
             runProvider: hasLanguages ? RunProvider(languageIds: supportedLanguages) : nil,
@@ -171,8 +160,6 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
             buildTargetChangedProvider: true,
             canReload: true
         )
-        logger.debug("createServerCapabilities: capabilities created successfully")
-        return capabilities
     }
 }
 
