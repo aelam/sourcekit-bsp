@@ -19,15 +19,21 @@ public enum StreamingFileHandleReader {
                     let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
                     defer { buffer.deallocate() }
 
-                    let bytesRead = read(fileHandle.fileDescriptor, buffer, bufferSize)
-                    if bytesRead > 0 {
-                        let data = Data(bytes: buffer, count: bytesRead)
-                        continuation.yield(data)
-                    } else if bytesRead == 0 {
-                        continuation.finish()
-                    } else {
-                        continuation.finish(throwing: POSIXError(.EIO))
-                    }
+                    // A Linux hangup can include unread bytes with no later EOF event.
+                    let drainToEOF = source.data == 0
+                    repeat {
+                        let bytesRead = read(fileHandle.fileDescriptor, buffer, bufferSize)
+                        if bytesRead > 0 {
+                            let data = Data(bytes: buffer, count: bytesRead)
+                            continuation.yield(data)
+                        } else if bytesRead == 0 {
+                            continuation.finish()
+                            return
+                        } else {
+                            continuation.finish(throwing: POSIXError(.EIO))
+                            return
+                        }
+                    } while drainToEOF
                 }
 
                 source.setCancelHandler {

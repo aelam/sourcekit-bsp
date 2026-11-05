@@ -105,6 +105,7 @@ struct BuildOutputTests {
                     diagnosticContext,
                 ].joined(separator: lineEnding)
                 try pipe.fileHandleForWriting.write(contentsOf: Data(output.utf8))
+                // Close the writer before reading to cover buffered output and EOF in one event.
                 try pipe.fileHandleForWriting.close()
                 await StreamingFileHandleReader.streamPipe(pipe.fileHandleForReading) { log($0) }
                 return .ok
