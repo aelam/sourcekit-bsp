@@ -27,7 +27,7 @@ struct XcodeProjectManagerProviderTests {
             xcodeProductType: .application,
             destinations: [XcodeDestination(name: "Destination", id: destination, platform: .iOS, type: .simulator)]
         )
-        let bspTarget = try #require(target.asBSPBuildTarget())
+        let bspTarget = target.asBSPBuildTarget()
         let object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(bspTarget)) as? [String: Any])
         let data = try #require(object["data"] as? [String: Any])
         let selectors = try #require(data["selectors"] as? [[String: Any]])
@@ -40,7 +40,7 @@ struct XcodeProjectManagerProviderTests {
     func xcodeProjectManagerProvider() {}
 
     @Test(arguments: [XcodeProductType.unitTestBundle, .uiTestBundle, .application])
-    func advertisesTestDebuggingForUnitTests(productType: XcodeProductType) throws {
+    func advertisesTestDebuggingForUnitTests(productType: XcodeProductType) {
         let projectURL = URL(fileURLWithPath: "/tmp/Hello.xcodeproj")
         let target = XcodeTarget(
             targetIdentifier: XcodeTargetIdentifier(projectFilePath: projectURL.path, targetName: "Tests"),
@@ -49,6 +49,6 @@ struct XcodeProjectManagerProviderTests {
             productName: "Tests",
             xcodeProductType: productType
         )
-        #expect(try #require(target.asBSPBuildTarget()).capabilities.canDebug == (productType != .uiTestBundle))
+        #expect(target.asBSPBuildTarget().capabilities.canDebug == (productType != .uiTestBundle))
     }
 }

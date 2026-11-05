@@ -9,23 +9,17 @@ struct BuildOutputContext: Sendable {
     var affectedTargets: [BSPBuildTargetIdentifier] = []
 
     static func load(using manager: any ProjectManager, targets requested: [BSPBuildTargetIdentifier]) async -> Self {
-        let targets = await manager.getTargetList(resolveSourceFiles: true, resolveDependencies: true)
-        var affected = Set(requested)
-        var pending = requested
-        while let id = pending.popLast() {
-            for dependency in targets.first(where: { $0.id == id })?.dependencies ?? []
-                where affected.insert(dependency).inserted {
-                pending.append(dependency)
-            }
-        }
+        let project = await manager.project
+        let targets = project?.targets ?? []
+        let affected = project?.dependencyClosure(for: requested) ?? requested
         let root = await manager.rootURL
-        let directory = await manager.projectInfo?.derivedDataPath ?? root.appendingPathComponent(".sourcekit-bsp")
+        let directory = project?.buildRootURL ?? root.appendingPathComponent(".sourcekit-bsp")
         return await Self(
             rootURL: root,
             logDirectory: directory.appendingPathComponent("Logs/sourcekit-bsp"),
             targets: targets,
-            sources: (try? manager.getSourceFileList(targetIdentifiers: Array(affected))) ?? [],
-            affectedTargets: Array(affected)
+            sources: (try? manager.getSourceFileList(targetIdentifiers: affected)) ?? [],
+            affectedTargets: affected
         )
     }
 

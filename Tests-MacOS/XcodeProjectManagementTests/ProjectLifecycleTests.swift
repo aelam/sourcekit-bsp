@@ -30,13 +30,23 @@ struct ProjectLifecycleTests {
         let manager = try await manager(at: root)
         let projectURL = root.appendingPathComponent("Hello.xcodeproj")
         let pbx = projectURL.appendingPathComponent("project.pbxproj")
-        let base = try #require(await manager.xcodeProjectBaseInfo)
+        let base = try #require(await manager.projectSnapshot)
         let identifier = try #require(base.xcodeTargets.first { $0.name == "Hello" }).targetIdentifier
+        let initialSources = await manager.getSourcesItems(targetIdentifiers: [identifier])
+        #expect(initialSources.first?.sources.isEmpty == false)
         let added = root.appendingPathComponent("Hello/NewFile.swift")
         try "struct NewFile {}".write(to: added, atomically: true, encoding: .utf8)
+        let cachedOptions = try await manager.getCompileArguments(
+            targetIdentifier: identifier, sourceFileURL: root.appendingPathComponent("Hello/ContentView.swift")
+        )
+        #expect(!cachedOptions.contains { $0.hasSuffix("/Hello/NewFile.swift") })
         try await manager.reloadProject()
         let sources = await manager.getSourcesItems(targetIdentifiers: [identifier])
         #expect(sources.first?.sources.contains { $0.path.lastPathComponent == "NewFile.swift" } == true)
+        let addedOptions = try await manager.getCompileArguments(
+            targetIdentifier: identifier, sourceFileURL: root.appendingPathComponent("Hello/ContentView.swift")
+        )
+        #expect(addedOptions.contains { $0.hasSuffix("/Hello/NewFile.swift") })
         try FileManager.default.removeItem(at: added)
 
         let config = root.appendingPathComponent(".sourcekit-bsp/project.json")
@@ -51,29 +61,34 @@ struct ProjectLifecycleTests {
         target.name = "RenamedTests"
         try project.pbxproj.write(path: .init(pbx.path), override: true, outputSettings: .init())
         try await manager.reloadProject()
-        let reloaded = try #require(await manager.xcodeProjectBaseInfo)
+        let reloaded = try #require(await manager.projectSnapshot)
         #expect(reloaded.configuration == "Release")
         #expect(reloaded.xcodeTargets.contains { $0.name == "RenamedTests" })
         let afterDelete = await manager.getSourcesItems(targetIdentifiers: [identifier])
+        #expect(afterDelete.first?.sources.isEmpty == false)
         #expect(afterDelete.first?.sources.contains { $0.path.lastPathComponent == "NewFile.swift" } == false)
         let options = try await manager.getCompileArguments(
             targetIdentifier: identifier, sourceFileURL: root.appendingPathComponent("Hello/ContentView.swift")
         )
         #expect(!options.isEmpty)
+        #expect(!options.contains { $0.hasSuffix("/Hello/NewFile.swift") })
 
         let saved = try Data(contentsOf: pbx)
         try Data("incomplete project".utf8).write(to: pbx)
+        try "struct NewFile {}".write(to: added, atomically: true, encoding: .utf8)
         await #expect(throws: (any Error).self) { try await manager.reloadProject() }
-        let retained = try #require(await manager.xcodeProjectBaseInfo)
+        let retained = try #require(await manager.projectSnapshot)
         #expect(retained.xcodeTargets.map(\.name) == reloaded.xcodeTargets.map(\.name))
         let retainedOptions = try await manager.getCompileArguments(
             targetIdentifier: identifier, sourceFileURL: root.appendingPathComponent("Hello/ContentView.swift")
         )
         #expect(retainedOptions == options)
+        let retainedSources = await manager.getSourcesItems(targetIdentifiers: [identifier])
+        #expect(retainedSources == afterDelete)
         try saved.write(to: pbx)
         try FileManager.default.removeItem(at: config)
         try await manager.reloadProject()
-        #expect(await manager.xcodeProjectBaseInfo?.configuration == "Debug")
+        #expect(await manager.projectSnapshot?.configuration == "Debug")
     }
 
     @Test
@@ -81,7 +96,7 @@ struct ProjectLifecycleTests {
         let root = try copyProject()
         defer { try? FileManager.default.removeItem(at: root) }
         let manager = try await manager(at: root)
-        let base = try #require(await manager.xcodeProjectBaseInfo)
+        let base = try #require(await manager.projectSnapshot)
         let tests = base.xcodeTargets.filter(\.xcodeProductType.isTestBundle)
         #expect(tests.count == 2)
         let arguments = [

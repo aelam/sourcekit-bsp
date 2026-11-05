@@ -72,7 +72,7 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
             // 获取项目信息
             guard
                 let projectManager = await service.getCurrentProjectManager(),
-                let projectInfo = await projectManager.projectInfo
+                let projectInfo = await projectManager.project
             else {
                 logger
                     .error(

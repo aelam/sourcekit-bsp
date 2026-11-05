@@ -52,7 +52,7 @@ public struct XcodeProjectManagerProvider: ProjectManagerProvider {
         )
         logger.debug("Creating project manager successfully \(projectManager)")
 
-        return projectManager
+        return XcodeBSPProjectManager(backend: projectManager)
     }
 }
 

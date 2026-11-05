@@ -5,7 +5,7 @@ import PathKit
 import XcodeProj
 import XcodeProjectManagement
 
-public extension XcodeProjectManager {
+public extension XcodeBSPProjectManager {
     func run(
         targetIdentifier: BSPBuildTargetIdentifier,
         arguments: [String]?, // e.g. ["-configuration", "Debug"]
@@ -31,7 +31,7 @@ public extension XcodeProjectManager {
         try Task.checkCancellation()
         let xcodeTargetIdentifier = XcodeTargetIdentifier(targetIdentifier)
 
-        let result = await run(
+        let result = await backend.run(
             xcodeTargetIdentifier: xcodeTargetIdentifier,
             arguments: arguments,
             environmentVariables: environmentVariables,

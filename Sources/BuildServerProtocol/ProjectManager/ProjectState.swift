@@ -18,7 +18,7 @@ public struct ProjectState: Sendable {
 public enum ProjectLoadState: Sendable {
     case uninitialized
     case loading(projectPath: String)
-    case loaded(projectInfo: ProjectInfo)
+    case loaded(projectInfo: BSPProject)
     case failed(Error)
 }
 

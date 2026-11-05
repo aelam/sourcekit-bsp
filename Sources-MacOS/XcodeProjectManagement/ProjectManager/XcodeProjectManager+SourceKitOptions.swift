@@ -14,23 +14,20 @@ public extension XcodeProjectManager {
 
         let projectURL = URL(fileURLWithPath: projectFilePath)
         guard
-            let xcodeProjectBaseInfo,
+            let projectSnapshot,
             let xcodeProj = loadXcodeProjCache(projectURL: projectURL)
         else {
             return []
         }
 
-        let sourceItems = SourceFileLister.loadSourceFiles(
-            for: xcodeProj,
-            targets: [targetName]
-        )[targetIdentifier.rawValue] ?? []
+        let sourceItems = getSourcesItems(targetIdentifiers: [targetIdentifier]).first?.sources ?? []
 
         let generator = try CompileArgGenerator.create(
-            xcodeInstallation: xcodeProjectBaseInfo.xcodeInstallation,
-            xcodeGlobalSettings: xcodeProjectBaseInfo.xcodeGlobalSettings,
+            xcodeInstallation: projectSnapshot.xcodeInstallation,
+            xcodeGlobalSettings: projectSnapshot.xcodeGlobalSettings,
             xcodeProj: xcodeProj,
             target: targetName,
-            configurationName: xcodeProjectBaseInfo.configuration,
+            configurationName: projectSnapshot.configuration,
             fileURL: sourceFileURL,
             sourceItems: sourceItems
         )

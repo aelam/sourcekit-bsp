@@ -16,7 +16,7 @@ struct IndexPreparationTests {
             settingsLoader: XcodeSettingsLoader(commandBuilder: XcodeBuildCommandBuilder(), toolchain: toolchain)
         )
         try await manager.initialize()
-        let base = try #require(await manager.xcodeProjectBaseInfo)
+        let base = try #require(await manager.projectSnapshot)
         let app = try #require(base.xcodeTargets.first(where: { $0.name == "Hello" }))
         let derivedData = base.xcodeGlobalSettings.derivedDataPath
         defer { try? FileManager.default.removeItem(at: derivedData) }

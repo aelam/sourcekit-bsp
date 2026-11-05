@@ -10,7 +10,7 @@ public extension XcodeProjectManager {
         outputHandler: ProcessOutputHandler? = nil,
         progressHandler: (@Sendable (String) async -> Void)? = nil
     ) async throws -> DebugSessionConnection {
-        if let target = xcodeProjectBaseInfo?.xcodeTargets.first(where: {
+        if let target = projectSnapshot?.xcodeTargets.first(where: {
             $0.targetIdentifier == xcodeTargetIdentifier && $0.xcodeProductType.isTestBundle
         }) {
             return try await startTestDebugSession(
@@ -83,7 +83,7 @@ public extension XcodeProjectManager {
         if let existing = debugSessionManager {
             manager = existing
         } else {
-            guard let base = xcodeProjectBaseInfo else { throw DebugSessionError.buildFailed }
+            guard let base = projectSnapshot else { throw DebugSessionError.buildFailed }
             let adapter = LLDBDAPServer(developerDirectory: base.xcodeInstallation.developerDir)
             manager = DebugSessionManager(
                 adapter: adapter,
@@ -107,7 +107,7 @@ public extension XcodeProjectManager {
         xcodeTargetIdentifier: XcodeTargetIdentifier,
         arguments: [String]?
     ) async throws -> DebugProduct {
-        guard let base = xcodeProjectBaseInfo,
+        guard let base = projectSnapshot,
               let target = base.xcodeTargets.first(where: { $0.targetIdentifier == xcodeTargetIdentifier }) else {
             throw DebugSessionError.buildFailed
         }

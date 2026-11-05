@@ -64,7 +64,8 @@ public extension BSPTaskManager {
                 try? await self.finishTask(
                     taskId: task.taskId,
                     status: error is CancellationError ? .cancelled : .error,
-                    message: error is CancellationError ? "Task cancelled" : "Task failed: \(error.localizedDescription)"
+                    message: error is CancellationError
+                        ? "Task cancelled" : "Task failed: \(error.localizedDescription)"
                 )
             }.value
             throw error

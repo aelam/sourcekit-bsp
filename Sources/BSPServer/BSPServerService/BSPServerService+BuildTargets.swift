@@ -19,10 +19,7 @@ extension BSPServerService {
             throw BuildServerError.invalidConfiguration("Project manager not initialized")
         }
 
-        return await projectManager.getTargetList(
-            resolveSourceFiles: false,
-            resolveDependencies: true
-        )
+        return await projectManager.getTargetList()
     }
 
     /// 为索引构建目标（BSP 协议适配）
@@ -53,11 +50,11 @@ extension BSPServerService {
         guard let projectManager else {
             throw BuildServerError.invalidConfiguration("Project not initialized")
         }
-        guard let projectInfo = await projectManager.projectInfo else {
+        guard let projectInfo = await projectManager.project else {
             throw BuildServerError.invalidConfiguration("Project info not initialized")
         }
 
-        let productsDirectory = projectInfo.derivedDataPath.appendingPathComponent(
+        let productsDirectory = projectInfo.buildRootURL.appendingPathComponent(
             "Build/Products",
             isDirectory: true
         )
@@ -80,18 +77,18 @@ extension BSPServerService {
         guard let projectManager else {
             throw BuildServerError.invalidConfiguration("Project not initialized")
         }
-        guard let projectInfo = await projectManager.projectInfo else {
+        guard let projectInfo = await projectManager.project else {
             throw BuildServerError.invalidConfiguration("Project info not initialized")
         }
 
         let paths = [
             projectInfo.indexStoreURL,
             projectInfo.indexDatabaseURL,
-            projectInfo.derivedDataPath.appendingPathComponent(
+            projectInfo.buildRootURL.appendingPathComponent(
                 "Build/Intermediates.noindex",
                 isDirectory: true
             ),
-            projectInfo.derivedDataPath.deletingLastPathComponent().appendingPathComponent(
+            projectInfo.buildRootURL.deletingLastPathComponent().appendingPathComponent(
                 "ModuleCache.noindex",
                 isDirectory: true
             ),

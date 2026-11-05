@@ -18,8 +18,7 @@ struct XcodeTestSelectionTests {
 
     @Test
     func advertisesTestDiscoveryAndTheSelectedToolchain() throws {
-        let target = try #require(target()
-            .asBSPBuildTarget(toolchain: URL(fileURLWithPath: "/Xcode/Swift.xctoolchain")))
+        let target = target().asBSPBuildTarget(toolchain: URL(fileURLWithPath: "/Xcode/Swift.xctoolchain"))
         let data = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(target)) as? [String: Any])
         #expect(data["tags"] as? [String] == ["test"])
         let metadata = try #require(data["data"] as? [String: Any])

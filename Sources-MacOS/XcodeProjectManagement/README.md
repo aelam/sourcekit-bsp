@@ -7,18 +7,38 @@ generating `xcodebuild` arguments for BSP integration.
 
 ### XcodeProjectManager
 
-The main entry point for project management operations.
+The backend loads an `XcodeProjectSnapshot` from `XcodeProjectReference` and
+runs Xcode operations. The snapshot contains targets, schemes, build settings,
+and the selected toolchain.
 
-```swift
-import XcodeProjectManagement
+`XcodeProjectManagerProvider` wraps the backend in `XcodeBSPProjectManager`.
+After initialization or reload, the provider converts the snapshot and its
+resolved dependencies into a `BSPProject`. This internal model stores BSP targets
+by identifier; dependencies refer to identifiers rather than nested target copies.
+It is not a BSP wire message.
 
-let manager = XcodeProjectManager(rootURL: projectURL)
-let project = try await manager.loadProject()
-
-// Get available schemes and configurations
-let schemes = try await manager.getAvailableSchemes()
-let configurations = try await manager.getAvailableConfigurations()
+```text
+XcodeProjectReference → XcodeProjectSnapshot → BSPProject → BSP queries
+                                                   ↓
+                                         Xcode backend operations
 ```
+
+Target queries and build-log dependency traversal use the stored BSP model.
+Source queries load only requested targets through the backend's source cache.
+Compile, run, test, index preparation, and debug requests use the same Xcode
+execution paths as before. Reload replaces the model after loading succeeds;
+a failed reload retains the previous model.
+
+### XcodeProjectStore
+
+Each manager owns a store for parsed projects and source lists. Source queries
+load only the requested targets and cache the results, including empty lists.
+Compiler argument queries use the same source cache.
+
+A project reload replaces the store only after the new project loads successfully.
+A failed reload preserves the previous project and caches. Compile and test
+operations invalidate source lists on completion, failure, or cancellation because
+build scripts can change source files. Parsed projects remain cached until reload.
 
 ### XcodeBuildExecutor
 

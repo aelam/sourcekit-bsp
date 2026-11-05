@@ -48,13 +48,13 @@ public extension BSPServerService {
     }
 
     func filesDidChange(_ changes: [WorkspaceDidChangeWatchedFilesNotification.FileEvent]) async throws {
-        guard let info = await projectManager?.projectInfo else { return }
+        guard let info = await projectManager?.project else { return }
         let sourceExtensions: Set = ["swift", "c", "cc", "cpp", "cxx", "m", "mm", "h", "hpp", "hxx"]
         let configurationExtensions: Set = ["pbxproj", "xcworkspace", "xcconfig", "xcscheme", "xcfilelist"]
         let relevant = changes.contains { change in
             guard let file = change.uri.fileURL else { return false }
             let path = file.standardizedFileURL.path
-            let derivedData = info.derivedDataPath.standardizedFileURL.path
+            let derivedData = info.buildRootURL.standardizedFileURL.path
             guard path != derivedData, !path.hasPrefix(derivedData + "/"),
                   !file.pathComponents.contains(".build") else { return false }
             if configurationExtensions.contains(file.pathExtension)
@@ -83,10 +83,10 @@ public extension BSPServerService {
         }
 
         logger.info("Reloading project...")
-        let before = await Set(projectManager.getTargetList(resolveSourceFiles: false, resolveDependencies: false)
+        let before = await Set(projectManager.getTargetList()
             .map(\.id))
         try await projectManager.updateBuildGraph()
-        let after = await Set(projectManager.getTargetList(resolveSourceFiles: false, resolveDependencies: false)
+        let after = await Set(projectManager.getTargetList()
             .map(\.id))
         let changes = before.union(after).sorted { $0.uri.stringValue < $1.uri.stringValue }.map { target in
             BuildTargetEvent(

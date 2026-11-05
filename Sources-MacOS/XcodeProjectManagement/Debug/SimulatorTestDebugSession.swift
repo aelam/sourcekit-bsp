@@ -120,7 +120,7 @@ extension XcodeProjectManager {
         target: XcodeTarget, arguments: [String]?, buildBeforeLaunch: Bool = true,
         outputHandler: ProcessOutputHandler? = nil, progressHandler: (@Sendable (String) async -> Void)?
     ) async throws -> DebugSessionConnection {
-        guard target.xcodeProductType == .unitTestBundle, let base = xcodeProjectBaseInfo else {
+        guard target.xcodeProductType == .unitTestBundle, let base = projectSnapshot else {
             throw XcodeProjectError
                 .invalidConfig("Test debugging currently supports app-hosted unit tests on iOS simulators")
         }

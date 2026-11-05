@@ -5,7 +5,7 @@ import PathKit
 import XcodeProj
 import XcodeProjectManagement
 
-public extension XcodeProjectManager {
+public extension XcodeBSPProjectManager {
     func startBuild(
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]? = nil,
@@ -23,7 +23,7 @@ public extension XcodeProjectManager {
         for identifier in targetIdentifiers {
             let xcodeTargetIdentifier = XcodeTargetIdentifier(identifier)
 
-            let xcodeBuildResult = try await compileTarget(
+            let xcodeBuildResult = try await backend.compileTarget(
                 targetIdentifier: xcodeTargetIdentifier,
                 configuration: nil, // arguments has "-configuration" flag
                 arguments: arguments,

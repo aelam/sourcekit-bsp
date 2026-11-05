@@ -25,6 +25,7 @@ extension XcodeProjectManager {
             let bundle = try testResultBundle(command: &command, workingDirectory: directory)
             let target = try BSPBuildTargetIdentifier(uri: URI(string: invocation.target.rawValue))
             await testEventHandler?(.started(target))
+            defer { projectStore.invalidateSources() }
             let exitCode = try await buildExecutor.execute(
                 command: command,
                 environment: environment,
@@ -78,7 +79,7 @@ extension XcodeProjectManager {
     private func testInvocations(
         for identifiers: [XcodeTargetIdentifier], arguments: [String]?
     ) throws -> [(target: XcodeTargetIdentifier, command: [String])] {
-        guard let base = xcodeProjectBaseInfo, !identifiers.isEmpty else {
+        guard let base = projectSnapshot, !identifiers.isEmpty else {
             throw XcodeProjectError.invalidConfig("Testing requires at least one test target in an initialized project")
         }
         var seen: Set<XcodeTargetIdentifier> = []
@@ -134,7 +135,7 @@ extension XcodeProjectManager {
             let derivedData = command.firstIndex(of: "-derivedDataPath").flatMap { index in
                 command.indices.contains(index + 1)
                     ? URL(fileURLWithPath: command[index + 1], relativeTo: workingDirectory).standardizedFileURL : nil
-            } ?? xcodeProjectBaseInfo?.xcodeGlobalSettings.derivedDataPath
+            } ?? projectSnapshot?.xcodeGlobalSettings.derivedDataPath
                 ?? rootURL.appendingPathComponent(".sourcekit-bsp")
             bundle = derivedData.appendingPathComponent("Logs/Test/sourcekit-bsp-\(UUID().uuidString).xcresult")
             command += ["-resultBundlePath", bundle.path]
