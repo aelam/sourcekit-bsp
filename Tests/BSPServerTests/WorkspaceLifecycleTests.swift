@@ -8,6 +8,12 @@ private actor RefreshProjectManager: ProjectManager {
     let rootURL = URL(fileURLWithPath: "/tmp/BSPWorkspace")
     nonisolated let projectType = "test"
     var revision = 0
+    var inputInvalidations = 0
+
+    func invalidateIndexInputs() {
+        inputInvalidations += 1
+    }
+
     var failReload = false
     var project: BSPProject? {
         BSPProject(
@@ -144,6 +150,16 @@ struct WorkspaceLifecycleTests {
         await service.useTestManager(manager)
         handler.setBSPServerService(service)
         return Harness(service: service, handler: handler, manager: manager, transport: transport)
+    }
+
+    @Test
+    func fileEventsInvalidatePreparationInputs() async throws {
+        let harness = await setup()
+        let source = harness.manager.rootURL.appendingPathComponent("Edited.swift")
+        try await harness.service.filesDidChange([.init(uri: URI(source), type: .changed)])
+        #expect(await harness.manager.inputInvalidations == 1)
+        try await harness.service.filesDidChange([])
+        #expect(await harness.manager.inputInvalidations == 1)
     }
 
     @Test

@@ -60,6 +60,9 @@ public actor XcodeProjectManager {
     let destinationLoader = XcodeDestinationLoader()
     var debugSessionManager: DebugSessionManager?
     var indexPreparationTasks: [UUID: Task<[XcodeTargetIdentifier], Error>] = [:]
+    let indexPreparationCoordinator = IndexPreparationCoordinator<IndexPreparationKey>()
+    var indexInputVersion = UUID()
+    var buildGraphVersion = UUID()
 
     private let xcodeProjectReference: XcodeProjectReference?
     private var currentProjectReference: XcodeProjectReference?
@@ -73,6 +76,7 @@ public actor XcodeProjectManager {
 
     func invalidateSourceFileCache() {
         projectStore.invalidateSources()
+        invalidateIndexInputs()
     }
 
     func loadXcodeProjCache(projectURL: URL) -> XcodeProj? {
@@ -153,6 +157,8 @@ public actor XcodeProjectManager {
         self.currentProjectReference = reference
         self.projectStore = store
         self.projectSnapshot = projectSnapshot
+        self.buildGraphVersion = UUID()
+        invalidateIndexInputs()
         logger.info(
             "Project initialized: toolchain=\(toolchainReady - start), " +
                 "destinations=\(destinationsReady - toolchainReady), " +

@@ -12,14 +12,22 @@ struct IndexPreparationTests {
 
         let toolchain = XcodeToolchain(workingDirectory: root)
         let manager = XcodeProjectManager(
-            rootURL: root, toolchain: toolchain, projectLocator: XcodeProjectLocator(),
+            rootURL: root,
+            toolchain: toolchain,
+            projectLocator: XcodeProjectLocator(),
             settingsLoader: XcodeSettingsLoader(commandBuilder: XcodeBuildCommandBuilder(), toolchain: toolchain)
         )
         try await manager.initialize()
         let base = try #require(await manager.projectSnapshot)
-        let app = try #require(base.xcodeTargets.first(where: { $0.name == "Hello" }))
+        let appTarget = base.xcodeTargets.first { $0.name == "Hello" }
+        let app = try #require(appTarget)
         let derivedData = base.xcodeGlobalSettings.derivedDataPath
         defer { try? FileManager.default.removeItem(at: derivedData) }
+
+        let initialKey = await manager.indexPreparationKey(for: app.targetIdentifier)
+        #expect(await manager.indexPreparationKey(for: app.targetIdentifier) == initialKey)
+        await manager.invalidateIndexInputs()
+        #expect(await manager.indexPreparationKey(for: app.targetIdentifier) != initialKey)
 
         let arguments = await manager.indexBuildArguments(for: app)
         #expect(arguments.contains("generic/platform=iOS Simulator"))
@@ -41,6 +49,7 @@ struct IndexPreparationTests {
             targetIdentifier: app.targetIdentifier, configuration: nil, arguments: ["CODE_SIGNING_ALLOWED=NO"]
         )
         let (_, _, compileStatus) = try await (first, second, compile)
+        #expect(await manager.indexPreparationCoordinator.operationCount == 0)
         #expect(compileStatus == 0)
         let units = base.xcodeGlobalSettings.indexStoreURL.appendingPathComponent("v5/units")
         #expect(try !FileManager.default.contentsOfDirectory(atPath: units.path).isEmpty)

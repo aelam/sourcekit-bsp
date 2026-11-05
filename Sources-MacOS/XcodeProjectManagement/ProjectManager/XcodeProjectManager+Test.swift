@@ -25,7 +25,7 @@ extension XcodeProjectManager {
             let bundle = try testResultBundle(command: &command, workingDirectory: directory)
             let target = try BSPBuildTargetIdentifier(uri: URI(string: invocation.target.rawValue))
             await testEventHandler?(.started(target))
-            defer { projectStore.invalidateSources() }
+            defer { invalidateSourceFileCache() }
             let exitCode = try await buildExecutor.execute(
                 command: command,
                 environment: environment,
