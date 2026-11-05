@@ -111,10 +111,10 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
                 capabilities: serverCapabilities,
                 dataKind: "sourceKit",
                 data: .init(
-                    indexStorePath: indexStoreURL.path,
-                    indexDatabasePath: indexDatabaseURL.path,
-                    prepareProvider: true,
-                    sourceKitOptionsProvider: true,
+                    indexStorePath: project.indexStoreURL.path,
+                    indexDatabasePath: project.indexDatabaseURL.path,
+                    prepareProvider: projectCapabilities.contains(.prepare),
+                    sourceKitOptionsProvider: projectCapabilities.contains(.sourceKitOptions),
                     watchers: fileWatchers
                 ),
                 rootUri: self.params.rootUri,

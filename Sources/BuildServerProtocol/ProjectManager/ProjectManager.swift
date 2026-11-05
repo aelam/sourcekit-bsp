@@ -113,7 +113,7 @@ public extension ProjectManager {
 
     /// Preserve the capabilities of existing providers.
     var capabilities: ProjectManagerCapabilities {
-        [.compile, .test, .run, .debug, .prepare, .sourceKitOptions, .debugWithoutBuilding, .outputPaths, .cleanCache]
+        [.compile, .test, .run, .debug, .prepare, .sourceKitOptions, .outputPaths, .cleanCache]
     }
 
     /// Reload for every nonempty batch unless the provider can safely filter it.

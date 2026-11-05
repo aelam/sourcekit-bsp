@@ -384,6 +384,9 @@ struct WorkspaceLifecycleTests {
         #expect(capabilities.dependencySourcesProvider == false)
         #expect(capabilities.resourcesProvider == false)
         #expect(capabilities.canReload == true)
+        #expect(capabilities.debugProvider != nil)
+        #expect(response.result.data.prepareProvider == true)
+        #expect(response.result.data.sourceKitOptionsProvider == true)
         #expect(bspRegistry.requestType(for: "workspace/reload") != nil)
         #expect(response.result.data.watchers.allSatisfy { !$0.globPattern.hasPrefix("!") })
         let request = BuildTargetTestRequest(
@@ -425,7 +428,10 @@ struct WorkspaceLifecycleTests {
         #expect(capabilities.canReload == true)
         #expect(response.result.data.prepareProvider == false)
         #expect(response.result.data.sourceKitOptionsProvider == false)
-        #expect(response.result.data.debugWithoutBuildingProvider == false)
+        let encodedData = try #require(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(response.result.data)
+        ) as? [String: Any])
+        #expect(encodedData["debugWithoutBuildingProvider"] == nil)
         #expect(response.result.data.watchers.contains { $0.globPattern.hasPrefix("/tmp/SharedPackage/") })
         await #expect(throws: BuildServerError.self) {
             try await harness.service.outputPaths(for: [])
