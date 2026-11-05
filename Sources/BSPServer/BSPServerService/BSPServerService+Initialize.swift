@@ -11,8 +11,9 @@ import JSONRPCConnection
 
 public extension BSPServerService {
     func shutdownProject() async {
-        _ = await graphUpdateTask?.result
+        graphUpdateTask?.cancel()
         await projectManager?.shutdown()
+        _ = await graphUpdateTask?.result
     }
 
     func initializeProject(rootURL: URL) async throws {

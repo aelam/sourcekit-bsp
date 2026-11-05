@@ -49,3 +49,10 @@ jobs:
       env:
         CI: true
         LINUX_CI: true
+
+    - name: Verify SwiftPM loading with one cooperative thread
+      run: swift test --skip-build --filter SwiftPM
+      env:
+        CI: true
+        LINUX_CI: true
+        LIBDISPATCH_COOPERATIVE_POOL_STRICT: "1"

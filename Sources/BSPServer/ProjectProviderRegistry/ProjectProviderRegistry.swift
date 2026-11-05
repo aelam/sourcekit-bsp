@@ -18,14 +18,13 @@ public enum ProjectManagerProviderRegistry {
     public static func getAllProviders() -> [any ProjectManagerProvider] {
         var providers: [any ProjectManagerProvider] = []
 
-        // 总是注册SwiftPM支持
-        providers.append(SwiftPMProjectManagerProvider())
-
         #if os(macOS)
         // 只在macOS上注册Xcode支持
         providers.append(XcodeProjectManagerProvider())
         #endif
 
+        // Prefer an existing Xcode project when the folder also contains a package.
+        providers.append(SwiftPMProjectManagerProvider())
         return providers
     }
 
