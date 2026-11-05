@@ -86,7 +86,7 @@ extension XcodeProjectManager {
         for target in targets {
             try Task.checkCancellation()
             let identifier = target.targetIdentifier
-            let before = try await indexingOptions(for: identifier)
+            let before = try indexingOptions(for: identifier)
             let output = IndexPreparationOutput(logHandler: logHandler)
             logger.info("Preparing index inputs for \(target.name)")
             let status = try await compileTarget(
@@ -101,22 +101,25 @@ extension XcodeProjectManager {
                 )
             }
             // Notify only when options changed, so preparation does not trigger an indexing loop.
-            if try await indexingOptions(for: identifier) != before {
+            if try indexingOptions(for: identifier) != before {
                 changedTargets.append(identifier)
             }
         }
         return changedTargets
     }
 
-    private func indexingOptions(for target: XcodeTargetIdentifier) async throws -> [URL: [String]] {
-        var result: [URL: [String]] = [:]
-        for item in getSourcesItems(targetIdentifiers: [target]).flatMap(\.sources) where item.itemKind == .file {
-            switch XcodeLanguageDialect(fileExtension: item.path.pathExtension) {
-            case .swift, .c, .cpp, .objc, .objcCpp:
-                result[item.path] = try await getCompileArguments(targetIdentifier: target, sourceFileURL: item.path)
-            default:
-                break
+    func indexingOptions(for target: XcodeTargetIdentifier) throws -> [String: CompilerOptionsSnapshot] {
+        let files = getSourcesItems(targetIdentifiers: [target])
+            .flatMap(\.sources)
+            .filter { $0.itemKind == .file }
+            .map(\.path)
+        var result: [String: CompilerOptionsSnapshot] = [:]
+        for dialect in [XcodeLanguageDialect.swift, .c, .cpp, .objc, .objcCpp] {
+            let matching = files.filter { XcodeLanguageDialect(fileExtension: $0.pathExtension) == dialect }
+            guard !matching.isEmpty, let template = try compilerArgumentsTemplate(for: target, dialect: dialect) else {
+                continue
             }
+            result[dialect.rawValue] = template.snapshot(for: matching)
         }
         return result
     }

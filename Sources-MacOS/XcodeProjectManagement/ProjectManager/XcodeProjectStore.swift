@@ -5,6 +5,7 @@ import XcodeProj
 struct XcodeProjectStore {
     private var projects: [URL: XcodeProj] = [:]
     private var sourceFiles: [XcodeTargetIdentifier: [SourceItem]] = [:]
+    var compilerSettings = CompilerSettingsCache()
 
     mutating func project(at url: URL) -> XcodeProj? {
         let key = url.resolvingSymlinksInPath().standardizedFileURL
@@ -16,6 +17,7 @@ struct XcodeProjectStore {
 
     mutating func invalidateSources() {
         sourceFiles.removeAll()
+        compilerSettings.invalidate()
     }
 
     mutating func sources(for identifiers: [XcodeTargetIdentifier]) -> [SourcesItem] {

@@ -1,6 +1,10 @@
 import Foundation
 
 struct SwiftFilesProvider: CompileArgProvider {
+    var dependency: CompileArgDependency {
+        .swiftSources
+    }
+
     func arguments(for context: ArgContext) -> [String] {
         guard context.compiler == .swift else { return [] }
         let primaryFileURL = context.fileURL

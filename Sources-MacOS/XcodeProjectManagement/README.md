@@ -33,12 +33,17 @@ a failed reload retains the previous model.
 
 Each manager owns a store for parsed projects and source lists. Source queries
 load only the requested targets and cache the results, including empty lists.
-Compiler argument queries use the same source cache.
+Compiler argument queries use the same source cache. Resolved build settings are
+cached by target, configuration, toolchain, and DerivedData path. Index preparation
+compares common arguments and source lists once per language, plus the arguments
+that differ by file. Generated module maps and other build artifacts are checked
+again for each comparison.
 
 A project reload replaces the store only after the new project loads successfully.
 A failed reload preserves the previous project and caches. Compile and test
-operations invalidate source lists on completion, failure, or cancellation because
-build scripts can change source files. Parsed projects remain cached until reload.
+operations invalidate source lists and resolved settings on completion, failure,
+or cancellation because build scripts can change these inputs. Parsed projects
+remain cached until reload.
 
 ### XcodeBuildExecutor
 
