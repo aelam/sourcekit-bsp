@@ -1,13 +1,14 @@
 # sourcekit-bsp
 
 [![Swift](https://img.shields.io/badge/swift-6.1+-orange.svg)](https://swift.org)
-[![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://developer.apple.com/macos/)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](https://www.swift.org/install/)
 [![Build Status](https://github.com/aelam/sourcekit-bsp/actions/workflows/ci.yml/badge.svg)](https://github.com/aelam/sourcekit-bsp/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A Build Server Protocol (BSP) server for Xcode projects. It supplies targets and
-compiler arguments to SourceKit-LSP and runs Xcode build, run, test, and debug
-operations for BSP clients.
+A Build Server Protocol (BSP) server for Xcode projects and SwiftPM package discovery.
+For Xcode projects, it supplies compiler arguments to SourceKit-LSP and runs build,
+run, test, and debug operations. For SwiftPM packages, it loads targets, dependencies,
+and source lists on macOS and Linux.
 
 - Discover projects, workspaces, sources, and target dependencies.
 - Prepare compiler inputs and index data for SourceKit-LSP.
@@ -40,7 +41,9 @@ mint install aelam/sourcekit-bsp
 
 ## Build
 
-Requires macOS 13+, Xcode with Swift 6.1+, and your project's SDKs and simulator runtimes.
+Requires Swift 6.1 or later. Xcode operations also require macOS 13+, Xcode, and
+your project's SDKs and simulator runtimes. On Linux, install the Swift toolchain
+and run `swift build` without `DEVELOPER_DIR`.
 
 ```sh
 git clone https://github.com/aelam/sourcekit-bsp.git
@@ -112,6 +115,27 @@ restart their server connections.
 For projects with multiple workspaces, configure `.sourcekit-bsp/project.json`;
 see [project configuration](Docs/wiki/Getting-Started.md#configure-the-application-project).
 
+## SwiftPM packages
+
+Use a folder that contains `Package.swift` as the BSP workspace root. The SwiftPM
+provider loads package metadata with `swift package describe --type json`. It
+exposes targets, source files, dependencies, and workspace reloads without building
+package products. It loads local packages and uses `swift package show-dependencies`
+to locate resolved remote dependencies. Resolution can download packages. Plugins,
+macros, and binary targets are omitted with warnings. Dependency edges are not yet
+filtered by platform or build configuration.
+
+The Swift executable must be on `PATH`. If `SWIFT_EXEC` selects a `swiftc`
+compiler, the provider uses the `swift` executable in the same directory.
+
+This provider does not yet supply compiler arguments, prepare indexes, or run
+build, test, run, and debug operations. It advertises these capabilities as
+unsupported. SourceKit-LSP's native SwiftPM integration remains the option for
+SwiftPM code navigation; this BSP provider does not replace it yet.
+
+On macOS, an Xcode project takes precedence when the folder also contains
+`Package.swift`. Native Windows server support is not verified.
+
 ## Try without an editor
 
 With Python 3, run from this repository root:
@@ -141,8 +165,9 @@ another build. See the [client guide](Scripts/README.md) for options.
 CI=true MACOS_CI=true swift test --enable-code-coverage
 ```
 
-`CI=true` skips tests that use personal project paths. Integration tests use bundled
-fixtures and require Xcode SDKs. Linux CI covers the portable components.
+`CI=true` skips tests that use personal project paths. Xcode integration tests use bundled
+fixtures and require Xcode SDKs. SwiftPM loading tests use temporary local packages
+on macOS and Linux without Xcode or remote package dependencies.
 See [Contributing](CONTRIBUTING.md).
 
 ## References and license

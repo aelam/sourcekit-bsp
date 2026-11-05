@@ -8,7 +8,7 @@ import Foundation
 import JSONRPCConnection
 import Logger
 
-/// Languages supported by sourcekit-bsp for Xcode projects
+/// Languages supported by sourcekit-bsp project providers
 public let buildServerSupportedLanguages: Set<Language> = [.swift, .objective_c, .objective_cpp, .c, .cpp]
 
 public struct BuildInitializeRequest: ContextualRequestType, Sendable {
@@ -83,28 +83,27 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
                 )
             }
 
-            return createResponseForBuildInitializeRequest(
-                rootURL: rootURL,
-                indexStoreURL: projectInfo.indexStoreURL,
-                indexDatabaseURL: projectInfo.indexDatabaseURL,
+            return await createResponseForBuildInitializeRequest(
+                project: projectInfo,
+                projectCapabilities: projectManager.capabilities,
+                watchedRoots: projectManager.watchedFileRoots,
                 clientCapabilities: self.params.capabilities
             )
         }
     }
 
     private func createResponseForBuildInitializeRequest(
-        rootURL: URL,
-        indexStoreURL: URL,
-        indexDatabaseURL: URL,
+        project: BSPProject,
+        projectCapabilities: ProjectManagerCapabilities,
+        watchedRoots: [URL],
         clientCapabilities: Params.BuildClientCapabilities
     ) -> BuildInitializeResponse {
         // Create server capabilities based on client capabilities
         let serverCapabilities = createServerCapabilities(
-            clientCapabilities: clientCapabilities
+            clientCapabilities: clientCapabilities,
+            projectCapabilities: projectCapabilities
         )
-        let fileWatchers = createFileSystemWatchers(
-            rootURL: rootURL
-        )
+        let fileWatchers = createFileSystemWatchers(roots: watchedRoots)
         return BuildInitializeResponse(
             jsonrpc: "2.0",
             id: id,
@@ -112,11 +111,11 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
                 capabilities: serverCapabilities,
                 dataKind: "sourceKit",
                 data: .init(
-                    indexStorePath: indexStoreURL.path,
-                    indexDatabasePath: indexDatabaseURL.path,
-                    prepareProvider: true,
-                    sourceKitOptionsProvider: true,
-                    debugWithoutBuildingProvider: true,
+                    indexStorePath: project.indexStoreURL.path,
+                    indexDatabasePath: project.indexDatabaseURL.path,
+                    prepareProvider: projectCapabilities.contains(.prepare),
+                    sourceKitOptionsProvider: projectCapabilities.contains(.sourceKitOptions),
+                    debugWithoutBuildingProvider: projectCapabilities.contains(.debugWithoutBuilding),
                     watchers: fileWatchers
                 ),
                 rootUri: self.params.rootUri,
@@ -128,19 +127,22 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
     }
 
     private func createFileSystemWatchers(
-        rootURL: URL
+        roots: [URL]
     ) -> [FileSystemWatcher] {
         let patterns = [
             "**/*.{swift,c,cc,cpp,cxx,m,mm,h,hpp,hxx}",
             "**/*.{pbxproj,xcconfig,xcscheme,xcfilelist}",
             "**/contents.xcworkspacedata", "**/Package.resolved", ".sourcekit-bsp/project.json"
         ]
-        return patterns.map { FileSystemWatcher(globPattern: rootURL.path + "/" + $0) }
+        return Set(roots).sorted { $0.path < $1.path }.flatMap { root in
+            patterns.map { FileSystemWatcher(globPattern: root.path + "/" + $0) }
+        }
     }
 
     /// Create server capabilities based on client capabilities
     private func createServerCapabilities(
-        clientCapabilities: Params.BuildClientCapabilities
+        clientCapabilities: Params.BuildClientCapabilities,
+        projectCapabilities: ProjectManagerCapabilities
     ) -> BuildServerCapabilities {
         let clientLanguages = Set(clientCapabilities.languageIds)
         let supportedLanguages = Array(buildServerSupportedLanguages.intersection(clientLanguages))
@@ -149,14 +151,18 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
         let hasLanguages = !supportedLanguages.isEmpty
 
         return BuildServerCapabilities(
-            compileProvider: hasLanguages ? CompileProvider(languageIds: supportedLanguages) : nil,
-            testProvider: hasLanguages ? TestProvider(languageIds: supportedLanguages) : nil,
-            runProvider: hasLanguages ? RunProvider(languageIds: supportedLanguages) : nil,
-            debugProvider: hasLanguages ? DebugProvider(languageIds: supportedLanguages) : nil,
+            compileProvider: hasLanguages && projectCapabilities
+                .contains(.compile) ? CompileProvider(languageIds: supportedLanguages) : nil,
+            testProvider: hasLanguages && projectCapabilities
+                .contains(.test) ? TestProvider(languageIds: supportedLanguages) : nil,
+            runProvider: hasLanguages && projectCapabilities
+                .contains(.run) ? RunProvider(languageIds: supportedLanguages) : nil,
+            debugProvider: hasLanguages && projectCapabilities
+                .contains(.debug) ? DebugProvider(languageIds: supportedLanguages) : nil,
             inverseSourcesProvider: false,
             dependencySourcesProvider: false,
             resourcesProvider: false,
-            outputPathsProvider: true,
+            outputPathsProvider: projectCapabilities.contains(.outputPaths),
             buildTargetChangedProvider: true,
             canReload: true
         )
