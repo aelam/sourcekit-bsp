@@ -1,6 +1,10 @@
 import Foundation
 
 struct ClangProvider: CompileArgProvider, Sendable {
+    var dependency: CompileArgDependency {
+        .file
+    }
+
     func arguments(for context: ArgContext) -> [String] {
         guard context.compiler == .clang, let fileURL = context.fileURL else { return [] }
         return buildFlags(

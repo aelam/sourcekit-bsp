@@ -6,6 +6,10 @@ import Foundation
 // "/Pods.build/Debug-iphoneos/LCSComponents.build/Objects-normal/arm64/LCSComponents-dummy.o",
 
 struct OutputProvider: CompileArgProvider, Sendable {
+    var dependency: CompileArgDependency {
+        .file
+    }
+
     func arguments(for context: ArgContext) -> [String] {
         guard
             let fileURL = context.fileURL
