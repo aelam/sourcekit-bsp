@@ -89,25 +89,39 @@ git push origin "v$version"
 
 ## Connect an editor
 
-Create `.bsp/sourcekit-bsp.json` in your application project:
+[vscode-bsp](https://github.com/aelam/vscode-bsp) is a general BSP client for VS Code
+that provides build, run, test, and debug controls. The
+[Swift extension](https://github.com/swiftlang/vscode-swift) runs SourceKit-LSP
+for code completion and navigation. Each client uses its own BSP connection.
 
-```json
-{
-  "name": "sourcekit-bsp",
-  "version": "1.0",
-  "bspVersion": "2.2.0",
-  "languages": ["swift", "c", "cpp", "objective-c", "objective-cpp"],
-  "argv": ["/absolute/path/to/sourcekit-bsp"]
-}
-```
+1. Install the server as described [above](#install) and follow the
+   [vscode-bsp installation steps](https://github.com/aelam/vscode-bsp#installation).
+   For Swift editing, also install the Swift extension.
+2. Create `.bsp/sourcekit-bsp.json` in your application's root folder,
+   alongside its `.xcodeproj` or `.xcworkspace`:
 
-The client discovers `.bsp/*.json` and starts the executable in `argv`.
-Running the server directly waits for protocol messages on stdin.
+   ```json
+   {
+     "name": "sourcekit-bsp",
+     "version": "1.0",
+     "bspVersion": "2.2.0",
+     "languages": ["swift", "c", "cpp", "objective-c", "objective-cpp"],
+     "argv": ["/absolute/path/to/sourcekit-bsp"]
+   }
+   ```
 
-In VS Code, use the Swift extension for code navigation and
-[vscode-bsp](https://github.com/aelam/vscode-bsp) for build and debug controls.
-Use the same Xcode toolchain for both. After rebuilding the selected executable,
-restart their server connections.
+3. Replace the `argv` path with the absolute path to your installed or built executable.
+4. Open that application folder in VS Code, or add it as a folder in a workspace.
+   Its `.bsp` directory must be at that folder's root.
+5. vscode-bsp discovers and connects to the server on activation.
+   If needed, run **BSP: Connect BSP Servers** from the Command Palette.
+6. Run **BSP: Show Build Targets** to open **BSP Targets**.
+   Expand a target and select its **Configuration** and **Destination**.
+   Use its **Compile Target**, **Build and Run**, **Build and Test**, or **Build and Debug Target** action, as supported.
+
+Use the same Xcode toolchain for the server and Swift extension.
+After rebuilding the selected executable, restart both clients' server connections.
+The clients start the executable in `argv`; running it directly waits for protocol messages on stdin.
 
 For projects with multiple workspaces, configure `.sourcekit-bsp/project.json`;
 see [project configuration](Docs/wiki/Getting-Started.md#configure-the-application-project).
