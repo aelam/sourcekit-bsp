@@ -162,7 +162,6 @@ public actor SwiftPMProjectManager: ProjectManager {
     public func startDebugSession(
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?,
-        buildBeforeLaunch: Bool,
         logHandler: (@Sendable (String) -> Void)?,
         progressHandler: (@Sendable (String) async -> Void)?
     ) throws -> DebugSessionConnection {

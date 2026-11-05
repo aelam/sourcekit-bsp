@@ -130,7 +130,7 @@ struct CompileTests {
     }
 
     @Test
-    func debugWithoutBuildingChecksProductsWithoutInvokingTheBuildExecutor() async throws {
+    func debugPreparationChecksProductsWithoutInvokingTheBuildExecutor() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let fixture = try #require(Bundle.module.resourceURL?.appendingPathComponent("DemoProjects/HelloProject"))
         try FileManager.default.copyItem(at: fixture, to: root)
@@ -154,7 +154,7 @@ struct CompileTests {
         await manager.shutdownBuilds()
         do {
             _ = try await manager.prepareDebugProduct(
-                xcodeTargetIdentifier: app.targetIdentifier, arguments: arguments, buildBeforeLaunch: false
+                xcodeTargetIdentifier: app.targetIdentifier, arguments: arguments
             )
             Issue.record("Expected a missing-product error")
         } catch let DebugSessionError.productNotFound(path) {
@@ -167,13 +167,8 @@ struct CompileTests {
         )
         try Data("fixture".utf8).write(to: executable)
         let product = try await manager.prepareDebugProduct(
-            xcodeTargetIdentifier: app.targetIdentifier, arguments: arguments, buildBeforeLaunch: false
+            xcodeTargetIdentifier: app.targetIdentifier, arguments: arguments
         )
         #expect(product.binaryPath == resolved.binaryPath)
-        await #expect(throws: CancellationError.self) {
-            try await manager.prepareDebugProduct(
-                xcodeTargetIdentifier: app.targetIdentifier, arguments: arguments, buildBeforeLaunch: true
-            )
-        }
     }
 }

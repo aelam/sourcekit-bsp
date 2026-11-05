@@ -228,7 +228,6 @@ struct SwiftPMProjectProviderTests {
                 _ = try await manager.startDebugSession(
                     targetIdentifiers: [id],
                     arguments: nil,
-                    buildBeforeLaunch: false,
                     logHandler: nil,
                     progressHandler: nil
                 )

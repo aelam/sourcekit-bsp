@@ -13,26 +13,6 @@ private actor DebugNotifications: BSPNotificationService {
 }
 
 struct DebugProgressTests {
-    @Test
-    func decodesDebugBuildOptionsWithoutChangingTheDefault() throws {
-        func decode(_ fields: String) throws -> DebugSessionStartRequest.Params {
-            try JSONDecoder().decode(
-                DebugSessionStartRequest.Params.self,
-                from: Data("{\"targets\":[]\(fields)}".utf8)
-            )
-        }
-        #expect(try decode("").buildBeforeLaunch())
-        #expect(try decode(",\"dataKind\":\"sourcekit-bsp-debug\",\"data\":{}").buildBeforeLaunch())
-        #expect(try !decode(",\"dataKind\":\"sourcekit-bsp-debug\",\"data\":{\"buildBeforeLaunch\":false}")
-            .buildBeforeLaunch())
-        for fields in [
-            ",\"dataKind\":\"other\",\"data\":{\"buildBeforeLaunch\":false}",
-            ",\"dataKind\":\"sourcekit-bsp-debug\",\"data\":{\"buildBeforeLaunch\":\"false\"}"
-        ] {
-            #expect(throws: BuildServerError.self) { try decode(fields).buildBeforeLaunch() }
-        }
-    }
-
     @Test(arguments: [false, true])
     func flushesBuildOutputBeforeDebugFinishes(fail: Bool) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

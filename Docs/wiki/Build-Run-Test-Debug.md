@@ -126,9 +126,11 @@ python3 Scripts/bsp_client.py --server "$bsp_server" --project "$bsp_project" \
   --breakpoint /absolute/path/to/HelloProject/Hello/HelloApp.swift:14
 ```
 
-The server builds the app and returns an LLDB DAP endpoint. The probe connects,
-checks the breakpoint and stack, then terminates the app. Use an executable line
-for `--breakpoint`, or omit it to break at `main`.
+The server uses the existing app product and returns an LLDB DAP endpoint. The
+probe connects, checks the breakpoint and stack, then terminates the app. Use an
+executable line for `--breakpoint`, or omit it to break at `main`. If a client
+wants build-before-debug behavior, it must send `buildTarget/compile` first and
+then send `debugSession/start`.
 
 Use `--destination platform=macOS` for a Mac app or `--destination id=DEVICE-UDID`
 for an iPhone. The server uses the project's signing settings through
@@ -152,31 +154,24 @@ Apple device platforms are not enabled for debugging.
 
 ### Debug unit tests on an iOS simulator
 
-To debug existing products, send `dataKind: "sourcekit-bsp-debug"` and
-`data: { "buildBeforeLaunch": false }` with `debugSession/start`. Xcode projects
-advertise `data.debugWithoutBuildingProvider: true` in `build/initialize`.
-Without this option, the server builds before debugging and streams the build
-output to the client. It also saves a raw log under `Logs/sourcekit-bsp` in DerivedData.
-
-The existing products must match the selected configuration, destination and
-DerivedData directory. Missing products produce an error; the server does not
-silently build them. This option does not check whether source edits are newer
-than the products. It still resolves build settings and installs the app.
-For application builds, scheme selection prefers the configured scheme when it
-matches the target and enables building for running.
+Debug sessions use existing products. The selected configuration, destination
+and DerivedData directory must match the products that are already built. Missing
+products produce an error; the server does not silently build them.
 
 Request `debugSession/start` with an app-hosted unit test target such as
-`HelloTests` and a concrete iOS simulator destination. The server builds the test
-target and host app, installs the host, and launches it with XCTest's bundle
-injection environment. The process waits for the debugger before executing tests.
-Connect to the returned DAP endpoint and attach with `stopOnEntry: false`.
-Set breakpoints, then send `configurationDone` to start the tests.
+`HelloTests` and a concrete iOS simulator destination. The server resolves the
+existing test host and bundle, installs the host, and launches it with XCTest's
+bundle injection environment. The process waits for the debugger before
+executing tests. Connect to the returned DAP endpoint and attach with
+`stopOnEntry: false`. Set breakpoints, then send `configurationDone` to start the
+tests.
 
-Test debug builds default to `SWIFT_DEBUG_INFORMATION_VERSION=dwarf4`. This makes
-Swift write macro expansion sources to files that LLDB-DAP can open when stepping
-through `@Test` wrappers. Ordinary builds and test runs keep their existing
-settings. Pass an explicit `SWIFT_DEBUG_INFORMATION_VERSION` to override this
-default.
+For test debug sessions, the server resolves settings with
+`SWIFT_DEBUG_INFORMATION_VERSION=dwarf4` unless the request already sets that
+value. Clients that compile before test debugging should pass the same setting.
+This makes Swift write macro expansion sources to files that LLDB-DAP can open
+when stepping through `@Test` wrappers. Ordinary builds and test runs keep their
+existing settings.
 
 With Xcode 26.6, a breakpoint directly on `#expect` can still show disassembly
 because the compiler assigns part of the expansion to `<stdin>` without a source
