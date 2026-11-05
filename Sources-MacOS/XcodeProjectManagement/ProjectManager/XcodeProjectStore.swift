@@ -11,8 +11,28 @@ struct XcodeProjectStore {
         let key = url.resolvingSymlinksInPath().standardizedFileURL
         if let project = projects[key] { return project }
         guard let project = try? XcodeProj(pathString: url.path) else { return nil }
+        assignFileParents(in: project)
         projects[key] = project
         return project
+    }
+
+    private func assignFileParents(in project: XcodeProj) {
+        guard let root = try? project.pbxproj.rootGroup() else { return }
+        // Resolve child groups before assigning their parent links, as Xcode does.
+        // Direct references then take precedence over references in nested groups.
+        var visited: Set<ObjectIdentifier> = []
+        func visit(_ group: PBXGroup) {
+            guard visited.insert(ObjectIdentifier(group)).inserted else { return }
+            let children = group.children
+            for case let childGroup as PBXGroup in children {
+                visit(childGroup)
+            }
+            for child in children {
+                child.parent = group
+            }
+        }
+        visit(root)
+        root.parent = nil
     }
 
     mutating func invalidateSources() {

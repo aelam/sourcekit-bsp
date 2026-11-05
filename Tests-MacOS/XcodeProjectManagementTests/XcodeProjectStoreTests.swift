@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import XcodeProj
 @testable import XcodeProjectManagement
 
 struct XcodeProjectStoreTests {
@@ -114,5 +115,125 @@ struct XcodeProjectStoreTests {
         #expect(store.project(at: project) === parsed)
         #expect(store.sources(for: [tests])[0].sources
             .map { $0.path.resolvingSymlinksInPath() } == [added.resolvingSymlinksInPath()])
+    }
+
+    @Test(arguments: [true, false])
+    func resolvesDirectSharedGroupsRegardlessOfOrder(rootFirst: Bool) throws {
+        let root = try copyProject()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let projectURL = root.appendingPathComponent("Hello.xcodeproj")
+        let fixture = try XcodeProj(pathString: projectURL.path)
+        let mainGroup = try #require(try fixture.pbxproj.rootGroup())
+        let app = try #require(fixture.pbxproj.nativeTargets.first { $0.name == "Hello" })
+        let input = PBXFileReference(sourceTree: .group, path: "Input.swift")
+        let config = PBXFileReference(sourceTree: .group, path: "Settings.xcconfig")
+        let rooted = PBXFileReference(sourceTree: .sourceRoot, path: "Rooted.swift")
+        let absoluteURL = root.appendingPathComponent("Absolute.swift")
+        let absolute = PBXFileReference(sourceTree: .absolute, path: absoluteURL.path)
+        let shared = PBXGroup(children: [input, config, rooted, absolute], sourceTree: .group, path: "Module/Sources")
+        let nestedInput = PBXFileReference(sourceTree: .group, path: "Input.swift")
+        let nestedGroup = PBXGroup(children: [nestedInput], sourceTree: .group, path: "Module/Sources")
+        let wrapper = PBXGroup(children: [shared, nestedGroup], sourceTree: .group, path: "Module")
+        let files = [input, nestedInput, rooted, absolute].map { PBXBuildFile(file: $0) }
+        let phase = PBXSourcesBuildPhase(files: files)
+        for object in [
+            input,
+            nestedInput,
+            config,
+            rooted,
+            absolute,
+            shared,
+            nestedGroup,
+            wrapper,
+            phase
+        ] as [PBXObject] {
+            fixture.pbxproj.add(object: object)
+        }
+        for file in files {
+            fixture.pbxproj.add(object: file)
+        }
+        mainGroup.children = rootFirst ? [shared, wrapper] : [wrapper, shared]
+        app.buildPhases = [phase]
+        app.fileSystemSynchronizedGroups = nil
+        let debug = try #require(app.buildConfigurationList?.buildConfigurations.first { $0.name == "Debug" })
+        debug.baseConfiguration = config
+        try fixture.write(path: #require(fixture.path))
+        let projectFile = projectURL.appendingPathComponent("project.pbxproj")
+        let original = try Data(contentsOf: projectFile)
+
+        var store = XcodeProjectStore()
+        let loaded = store.project(at: projectURL)
+        let project = try #require(loaded)
+        let target = XcodeTargetIdentifier(projectFilePath: projectURL.path, targetName: "Hello")
+        let expectedFolder = root.appendingPathComponent("Module/Sources")
+        let expectedInput = expectedFolder.appendingPathComponent("Input.swift")
+        // Generated inputs must keep their declared paths before the files exist.
+        #expect(!FileManager.default.fileExists(atPath: expectedInput.path))
+        #expect(Set(store.sources(for: [target])[0].sources.map(\.path)) == [
+            expectedInput, root.appendingPathComponent("Module/Module/Sources/Input.swift"),
+            root.appendingPathComponent("Rooted.swift"), absoluteURL
+        ])
+        let loadedConfig = try #require(project.pbxproj.fileReferences.first { $0.path == "Settings.xcconfig" })
+        #expect(try loadedConfig.fullPath(sourceRoot: root.path) == expectedFolder
+            .appendingPathComponent("Settings.xcconfig").path)
+        store.invalidateSources()
+        #expect(store.sources(for: [target])[0].sources.contains { $0.path == expectedInput })
+        #expect(try Data(contentsOf: projectFile) == original)
+    }
+
+    @Test
+    func resolvesSharedSynchronizedGroups() throws {
+        let root = try copyProject()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let projectURL = root.appendingPathComponent("Hello.xcodeproj")
+        let fixture = try XcodeProj(pathString: projectURL.path)
+        let mainGroup = try #require(try fixture.pbxproj.rootGroup())
+        let app = try #require(fixture.pbxproj.nativeTargets.first { $0.name == "Hello" })
+        let group = try #require(app.fileSystemSynchronizedGroups?.first)
+        let wrapper = PBXGroup(children: [group], sourceTree: .group, path: "Extra")
+        fixture.pbxproj.add(object: wrapper)
+        mainGroup.children.append(wrapper)
+        try fixture.write(path: #require(fixture.path))
+
+        var store = XcodeProjectStore()
+        let loaded = store.project(at: projectURL)
+        _ = try #require(loaded)
+        let target = XcodeTargetIdentifier(projectFilePath: projectURL.path, targetName: "Hello")
+        let sources = store.sources(for: [target])[0].sources
+        #expect(Set(sources.map(\.path.lastPathComponent)) == ["ContentView.swift", "HelloApp.swift"])
+        #expect(Set(sources.map { $0.path.resolvingSymlinksInPath().deletingLastPathComponent().path }) == [
+            root.appendingPathComponent("Hello").path
+        ])
+    }
+
+    @Test(arguments: [true, false])
+    func resolvesSharedGroupsUnderSiblingParents(reverseOrder: Bool) throws {
+        let root = try copyProject()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let projectURL = root.appendingPathComponent("Hello.xcodeproj")
+        let fixture = try XcodeProj(pathString: projectURL.path)
+        let mainGroup = try #require(try fixture.pbxproj.rootGroup())
+        let app = try #require(fixture.pbxproj.nativeTargets.first { $0.name == "Hello" })
+        let input = PBXFileReference(sourceTree: .group, path: "Input.swift")
+        let shared = PBXGroup(children: [input], sourceTree: .group, path: "Sources")
+        let first = PBXGroup(children: [shared], sourceTree: .group, path: "First")
+        let second = PBXGroup(children: [shared], sourceTree: .group, path: "Second")
+        let buildFile = PBXBuildFile(file: input)
+        let phase = PBXSourcesBuildPhase(files: [buildFile])
+        for object in [input, shared, first, second, buildFile, phase] as [PBXObject] {
+            fixture.pbxproj.add(object: object)
+        }
+        mainGroup.children = reverseOrder ? [second, first] : [first, second]
+        app.buildPhases = [phase]
+        app.fileSystemSynchronizedGroups = nil
+        try fixture.write(path: #require(fixture.path))
+
+        var store = XcodeProjectStore()
+        let loaded = store.project(at: projectURL)
+        _ = try #require(loaded)
+        let target = XcodeTargetIdentifier(projectFilePath: projectURL.path, targetName: "Hello")
+        let expected = root
+            .appendingPathComponent(reverseOrder ? "First/Sources/Input.swift" : "Second/Sources/Input.swift")
+        #expect(store.sources(for: [target])[0].sources.map(\.path) == [expected])
     }
 }
