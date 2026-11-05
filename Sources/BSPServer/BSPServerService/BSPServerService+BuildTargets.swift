@@ -50,6 +50,9 @@ extension BSPServerService {
         guard let projectManager else {
             throw BuildServerError.invalidConfiguration("Project not initialized")
         }
+        guard await projectManager.capabilities.contains(.outputPaths) else {
+            throw BuildServerError.invalidConfiguration("Output paths are not supported by this project provider")
+        }
         guard let projectInfo = await projectManager.project else {
             throw BuildServerError.invalidConfiguration("Project info not initialized")
         }
@@ -76,6 +79,9 @@ extension BSPServerService {
     ) async throws -> BuildTargetCleanCacheResult {
         guard let projectManager else {
             throw BuildServerError.invalidConfiguration("Project not initialized")
+        }
+        guard await projectManager.capabilities.contains(.cleanCache) else {
+            throw BuildServerError.invalidConfiguration("Cache cleaning is not supported by this project provider")
         }
         guard let projectInfo = await projectManager.project else {
             throw BuildServerError.invalidConfiguration("Project info not initialized")

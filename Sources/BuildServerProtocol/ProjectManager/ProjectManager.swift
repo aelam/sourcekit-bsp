@@ -16,6 +16,10 @@ public protocol ProjectManager: AnyObject, Sendable {
 
     var projectType: String { get }
 
+    var capabilities: ProjectManagerCapabilities { get async }
+
+    var watchedFileRoots: [URL] { get async }
+
     func initialize() async throws
 
     func shutdown() async
@@ -104,6 +108,15 @@ public protocol ProjectManager: AnyObject, Sendable {
 }
 
 public extension ProjectManager {
+    var watchedFileRoots: [URL] {
+        get async { await [rootURL] }
+    }
+
+    /// Preserve the capabilities of existing providers.
+    var capabilities: ProjectManagerCapabilities {
+        [.compile, .test, .run, .debug, .prepare, .sourceKitOptions, .debugWithoutBuilding, .outputPaths, .cleanCache]
+    }
+
     /// Reload for every nonempty batch unless the provider can safely filter it.
     func shouldReloadProject(for changes: [ProjectFileChange]) async -> Bool {
         !changes.isEmpty

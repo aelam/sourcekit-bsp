@@ -11,6 +11,14 @@ private actor RefreshProjectManager: WorkspaceProjectManagerStub {
     nonisolated let projectType = "test"
     var revision = 0
     var inputInvalidations = 0
+    var capabilities = Set(ProjectManagerCapability.allCases)
+    var watchedFileRoots: [URL] {
+        [rootURL, rootURL.deletingLastPathComponent().appendingPathComponent("SharedPackage")]
+    }
+
+    func setCapabilities(_ capabilities: ProjectManagerCapabilities) {
+        self.capabilities = capabilities
+    }
 
     func invalidateIndexInputs() {
         inputInvalidations += 1
@@ -159,6 +167,40 @@ private actor FileChangeProjectManager: WorkspaceProjectManagerStub {
     }
 }
 
+private actor PendingReloadProjectManager: WorkspaceProjectManagerStub {
+    let rootURL = URL(fileURLWithPath: "/tmp/BSPPendingReload")
+    nonisolated let projectType = "test"
+    let project: BSPProject? = nil
+    var didShutdown = false
+    private var reloadContinuation: CheckedContinuation<Void, any Error>?
+    private var startContinuation: CheckedContinuation<Void, Never>?
+
+    func getProjectState() -> ProjectState {
+        .init()
+    }
+
+    func initialize() async throws {}
+
+    func updateBuildGraph() async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            reloadContinuation = continuation
+            startContinuation?.resume()
+            startContinuation = nil
+        }
+    }
+
+    func waitForReload() async {
+        if reloadContinuation != nil { return }
+        await withCheckedContinuation { startContinuation = $0 }
+    }
+
+    func shutdown() async {
+        didShutdown = true
+        reloadContinuation?.resume(throwing: CancellationError())
+        reloadContinuation = nil
+    }
+}
+
 private extension BSPServerService {
     func useTestManager(_ manager: any ProjectManager) {
         projectManager = manager
@@ -185,6 +227,17 @@ struct WorkspaceLifecycleTests {
         await service.useTestManager(manager)
         handler.setBSPServerService(service)
         return Harness(service: service, handler: handler, manager: manager, transport: transport)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func shutdownCancelsPendingProjectReload() async throws {
+        let harness = await setup(manager: PendingReloadProjectManager())
+        let reload = Task { try await harness.service.reloadProject() }
+        await harness.manager.waitForReload()
+        await harness.service.shutdownProject()
+        await #expect(throws: CancellationError.self) { try await reload.value }
+        #expect(await harness.manager.didShutdown)
+        #expect(await harness.transport.sent.isEmpty)
     }
 
     @Test
@@ -351,6 +404,37 @@ struct WorkspaceLifecycleTests {
         #expect(notifications.first??["method"] as? String == "build/taskStart")
         #expect(notifications.last??["method"] as? String == "build/taskFinish")
         #expect(notifications.contains { $0?["method"] as? String == "build/logMessage" })
+    }
+
+    @Test
+    func loadingOnlyProviderDoesNotAdvertiseBuildOperations() async throws {
+        let harness = await setup()
+        await harness.manager.setCapabilities([])
+        let data = Data(
+            #"{"id":1,"params":{"rootUri":"file:///tmp/BSPWorkspace","capabilities":{"languageIds":["swift"]}}}"#
+                .utf8
+        )
+        let request = try JSONDecoder().decode(BuildInitializeRequest.self, from: data)
+        let response = try #require(await request.handle(
+            contextualHandler: harness.handler, id: .int(1)
+        ) as? BuildInitializeResponse)
+        let capabilities = response.result.capabilities
+        #expect(capabilities.compileProvider == nil)
+        #expect(capabilities.testProvider == nil)
+        #expect(capabilities.runProvider == nil)
+        #expect(capabilities.debugProvider == nil)
+        #expect(capabilities.outputPathsProvider == false)
+        #expect(capabilities.canReload == true)
+        #expect(response.result.data.prepareProvider == false)
+        #expect(response.result.data.sourceKitOptionsProvider == false)
+        #expect(response.result.data.debugWithoutBuildingProvider == false)
+        #expect(response.result.data.watchers.contains { $0.globPattern.hasPrefix("/tmp/SharedPackage/") })
+        await #expect(throws: BuildServerError.self) {
+            try await harness.service.outputPaths(for: [])
+        }
+        await #expect(throws: BuildServerError.self) {
+            try await harness.service.cleanBuildTargetCaches(targets: [])
+        }
     }
 
     @Test

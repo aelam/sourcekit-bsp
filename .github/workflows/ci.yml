@@ -65,7 +65,7 @@ jobs:
         MACOS_CI: true
 
     - name: Test DAP relay and project loading with one cooperative thread
-      run: swift test --skip-build --filter 'DeviceDAPRelayTests|LLDBDAPServerTests|XcodeProjectManagerTests'
+      run: swift test --skip-build --filter 'DeviceDAPRelayTests|LLDBDAPServerTests|XcodeProjectManagerTests|SwiftPM'
       env:
         LIBDISPATCH_COOPERATIVE_POOL_STRICT: "1"
 
