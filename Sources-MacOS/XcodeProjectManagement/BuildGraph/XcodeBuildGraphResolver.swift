@@ -1,4 +1,5 @@
 import Foundation
+import Logger
 import PathKit
 import XcodeProj
 
@@ -76,7 +77,7 @@ public final class XcodeBuildGraphResolver {
     /// 计算构建顺序
     public func buildOrder(for target: XcodeTargetIdentifier) -> [XcodeTargetIdentifier] {
         guard let start = findTarget(by: target) else {
-            print("❌ Target '\(target.rawValue)' not found")
+            logger.warning("❌ Target '\(target.rawValue)' not found")
             return []
         }
 
@@ -145,7 +146,7 @@ public final class XcodeBuildGraphResolver {
         let uuid = entry.target.uuid
         if visited.contains(uuid) { return }
         if tempMark.contains(uuid) {
-            print("⚠️ Cycle at \(entry.target.name)")
+            logger.warning("⚠️ Cycle at \(entry.target.name)")
             return
         }
         tempMark.insert(uuid)

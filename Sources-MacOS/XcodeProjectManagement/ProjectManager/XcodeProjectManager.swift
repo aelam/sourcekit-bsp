@@ -71,6 +71,10 @@ public actor XcodeProjectManager {
 
     var projectStore = XcodeProjectStore()
 
+    func invalidateSourceFileCache() {
+        projectStore.invalidateSources()
+    }
+
     func loadXcodeProjCache(projectURL: URL) -> XcodeProj? {
         projectStore.project(at: projectURL)
     }
@@ -105,7 +109,9 @@ public actor XcodeProjectManager {
         } else {
             xcodeProjectReference
         }
+        let start = ContinuousClock.now
         try await toolchain.initialize()
+        let toolchainReady = ContinuousClock.now
         guard let selectedXcodeInstallation = await toolchain.getSelectedInstallation() else {
             throw XcodeProjectError.toolchainError("No Xcode installation selected")
         }
@@ -120,6 +126,7 @@ public actor XcodeProjectManager {
         let xcodeGlobalSettings = XcodeGlobalSettings(derivedDataPath: derivedDataPath)
 
         try await destinationLoader.loadDestinations(reload: true)
+        let destinationsReady = ContinuousClock.now
 
         // Load containers for workspace projects to get actual targets
         var store = XcodeProjectStore()
@@ -127,6 +134,7 @@ public actor XcodeProjectManager {
             projectLocation: projectLocation, store: &store
         )
 
+        let targetsReady = ContinuousClock.now
         let schemes = try schemeLoader.listSchemes(
             projectLocation: projectLocation,
             includeUserSchemes: true
@@ -145,6 +153,12 @@ public actor XcodeProjectManager {
         self.currentProjectReference = reference
         self.projectStore = store
         self.projectSnapshot = projectSnapshot
+        logger.info(
+            "Project initialized: toolchain=\(toolchainReady - start), " +
+                "destinations=\(destinationsReady - toolchainReady), " +
+                "targets=\(targetsReady - destinationsReady), " +
+                "schemes=\(ContinuousClock.now - targetsReady), targetCount=\(actualTargets.count)"
+        )
     }
 
     public func reloadProject() async throws {

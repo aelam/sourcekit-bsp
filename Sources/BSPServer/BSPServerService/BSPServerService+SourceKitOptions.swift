@@ -16,8 +16,6 @@ public extension BSPServerService {
             throw BuildServerError.invalidConfiguration("Project not initialized")
         }
 
-        logger.debug("Getting compile arguments for target: \(targetIdentifier.uri.stringValue), file: \(fileURL)")
-
         return try await projectManager.getCompileArguments(
             targetIdentifier: targetIdentifier.uri.stringValue,
             sourceFileURL: fileURL

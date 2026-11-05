@@ -69,6 +69,57 @@ struct JSONRPCParserTests {
 
 struct StdioTransportTests {
     @Test(.timeLimit(.minutes(1)))
+    func sendsConcurrentLargeUTF8MessagesWithoutChangingPayloads() async throws {
+        let input = Pipe()
+        let output = Pipe()
+        let unused = Pipe()
+        let sender = StdioJSONRPCConnectionTransport(
+            input: input.fileHandleForReading, output: output.fileHandleForWriting
+        )
+        let receiver = StdioJSONRPCConnectionTransport(
+            input: output.fileHandleForReading, output: unused.fileHandleForWriting
+        )
+        let senderListening = Task { try await sender.listen() }
+        let receiverListening = Task { try await receiver.listen() }
+        defer {
+            sender.close()
+            receiver.close()
+        }
+        try input.fileHandleForWriting.write(contentsOf: frame(id: 0))
+        var ready = sender.messageStream.makeAsyncIterator()
+        _ = await ready.next()
+        let payload = String(repeating: "编译📦\n", count: 4096)
+        let sending = Task {
+            defer { try? output.fileHandleForWriting.close() }
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                for id in 0 ..< 20 {
+                    group.addTask {
+                        try await sender.send(notification: ServerJSONRPCNotification(
+                            method: "test/payload", params: ["id": String(id), "text": payload]
+                        ))
+                    }
+                }
+                try await group.waitForAll()
+            }
+        }
+        var ids: [Int] = []
+        for await message in receiver.messageStream {
+            let decoded = try JSONDecoder().decode(
+                ServerJSONRPCNotification<[String: String]>.self, from: message.rawData
+            )
+            #expect(decoded.params["text"] == payload)
+            try ids.append(#require(decoded.params["id"].flatMap(Int.init)))
+        }
+        try await sending.value
+        try input.fileHandleForWriting.close()
+        try await senderListening.value
+        try await receiverListening.value
+        #expect(ids.sorted() == Array(0 ..< 20))
+        var errors = receiver.errorStream.makeAsyncIterator()
+        #expect(await errors.next() == nil)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
     func preservesOrderAcrossSeparateHeaderAndBodyWrites() async throws {
         let input = Pipe()
         let output = Pipe()

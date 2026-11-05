@@ -11,7 +11,7 @@ public extension XcodeBSPProjectManager {
         arguments: [String]? = nil,
         logHandler: (@Sendable (String) -> Void)? = nil
     ) async throws -> StatusCode {
-        logger.info("Starting build for targets: \(targetIdentifiers) with arguments: \(arguments ?? [])")
+        logger.debug("Starting build for \(targetIdentifiers.count) targets")
         var results: [XcodeBuildExitCode] = []
 
         // Forward each build line to the BSP layer (which streams it to the

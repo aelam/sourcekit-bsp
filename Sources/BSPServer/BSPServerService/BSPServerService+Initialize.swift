@@ -20,11 +20,11 @@ public extension BSPServerService {
             return
         }
 
-        logger.info("Initializing project...")
+        logger.debug("Initializing project at \(rootURL.path)")
 
         let projectManager = try await projectManagerProvider.createProjectManager(rootURL: rootURL)
         try await projectManager.initialize()
-        logger.info("!!projectManager created: \(projectManager)")
+        logger.info("Project ready: \(rootURL.path)")
         self.projectManager = projectManager
     }
 

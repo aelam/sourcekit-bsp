@@ -30,7 +30,7 @@ public extension XcodeSettingsLoader {
         do {
             return try jsonDecoder.decode([XcodeBuildSettings].self, from: data)
         } catch {
-            logger.debug(jsonString)
+            logger.debug("Invalid build settings JSON: \(data.count) bytes")
             throw XcodeProjectError.invalidConfig("Failed to decode build settings: \(error)")
         }
     }

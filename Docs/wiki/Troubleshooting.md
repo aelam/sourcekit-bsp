@@ -1,6 +1,16 @@
 # Troubleshooting
 
-Server logs: `/tmp/sourcekit-bsp.log`. To inspect the connection:
+Server logs: `/tmp/sourcekit-bsp/<PID>.log`. Each process keeps up to three files,
+rotating at 5 MiB. Older files use `<PID>.1.log` and `<PID>.2.log`.
+The previous shared `/tmp/sourcekit-bsp.log` is no longer written by new servers.
+
+Normal logs include startup summaries, requests that take at least one second,
+warnings, and errors. Add `--debug` to the server's `.bsp/*.json` arguments or set
+`BSP_DEBUG=1` in its environment to enable request summaries. `BSP_DEBUG=0` disables
+the environment flag; `--debug` takes precedence. Internal messages are limited
+to 4096 characters. Build progress, diagnostics, and raw build logs are unchanged.
+
+To inspect the connection:
 
 ```sh
 python3 Scripts/bsp_client.py --server /absolute/path/to/sourcekit-bsp \

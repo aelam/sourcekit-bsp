@@ -92,6 +92,65 @@ struct ProjectLifecycleTests {
     }
 
     @Test
+    func loadsSourcesOnDemandAndReusesThemForCompilerArguments() async throws {
+        let root = try copyProject()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = try await manager(at: root)
+        let base = try #require(await manager.projectSnapshot)
+        let app = try #require(base.xcodeTargets.first { $0.name == "Hello" }).targetIdentifier
+        let tests = try #require(base.xcodeTargets.first { $0.name == "HelloTests" }).targetIdentifier
+        let missing = XcodeTargetIdentifier(projectFilePath: app.projectFilePath, targetName: "Missing")
+        let initial = await manager.getSourcesItems(targetIdentifiers: [app, missing, app])
+        #expect(initial.count == 3)
+        #expect(initial[0] == initial[2])
+        #expect(initial[1].sources.isEmpty)
+
+        let added = root.appendingPathComponent("Hello/AddedAfterQuery.swift")
+        try "struct AddedAfterQuery {}".write(to: added, atomically: true, encoding: .utf8)
+        let cached = await manager.getSourcesItems(targetIdentifiers: [app])
+        #expect(cached.first == initial.first)
+        let options = try await manager.getCompileArguments(
+            targetIdentifier: app, sourceFileURL: root.appendingPathComponent("Hello/ContentView.swift")
+        )
+        #expect(!options.contains { $0.hasSuffix("/Hello/AddedAfterQuery.swift") })
+
+        let testSource = root.appendingPathComponent("HelloTests/AddedBeforeQuery.swift")
+        try "struct AddedBeforeQuery {}".write(to: testSource, atomically: true, encoding: .utf8)
+        let firstTestSources = await manager.getSourcesItems(targetIdentifiers: [tests])
+        #expect(firstTestSources.first?.sources
+            .contains { $0.path.resolvingSymlinksInPath() == testSource.resolvingSymlinksInPath() } == true)
+
+        await manager.invalidateSourceFileCache()
+        let refreshedOptions = try await manager.getCompileArguments(
+            targetIdentifier: app, sourceFileURL: root.appendingPathComponent("Hello/ContentView.swift")
+        )
+        #expect(refreshedOptions.contains { $0.hasSuffix("/Hello/AddedAfterQuery.swift") })
+    }
+
+    @Test
+    func cachesEmptyTargetsUntilSourcesAreInvalidated() async throws {
+        let root = try copyProject()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("HelloTests")
+        for file in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            where file.pathExtension == "swift" {
+            try FileManager.default.removeItem(at: file)
+        }
+        let manager = try await manager(at: root)
+        let base = try #require(await manager.projectSnapshot)
+        let target = try #require(base.xcodeTargets.first { $0.name == "HelloTests" }).targetIdentifier
+        let initial = await manager.getSourcesItems(targetIdentifiers: [target])
+        #expect(initial.first?.sources.isEmpty == true)
+        let added = folder.appendingPathComponent("Generated.swift")
+        try "struct Generated {}".write(to: added, atomically: true, encoding: .utf8)
+        let cached = await manager.getSourcesItems(targetIdentifiers: [target])
+        #expect(cached == initial)
+        await manager.invalidateSourceFileCache()
+        let refreshed = await manager.getSourcesItems(targetIdentifiers: [target])
+        #expect(refreshed.first?.sources.map { $0.path.resolvingSymlinksInPath() } == [added.resolvingSymlinksInPath()])
+    }
+
+    @Test
     func validatesAllTestTargetsAndUsesValidSchemesAndRunnableDestinations() async throws {
         let root = try copyProject()
         defer { try? FileManager.default.removeItem(at: root) }

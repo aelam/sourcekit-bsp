@@ -31,7 +31,6 @@ public enum ProjectManagerProviderRegistry {
 
     /// 创建配置好的ProjectManagerFactory
     public static func createFactory() async -> ProjectManagerFactory {
-        logger.debug("create factory")
         let factory = ProjectManagerFactory()
 
         for provider in getAllProviders() {

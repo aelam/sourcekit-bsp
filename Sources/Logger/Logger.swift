@@ -1,69 +1,119 @@
-//
-//  Logger.swift
-//
-//  Copyright © 2024 Wang Lun.
-//
-
 import Foundation
 import SwiftyBeaver
 
 public final class SwiftyBeaverLogger: @unchecked Sendable {
-    private let log = SwiftyBeaver.self
+    public let isDebugEnabled: Bool
+    public let logFileURL: URL
+    private let destination: RotatingFileDestination
 
-    public init() {
-        setupLogger()
+    public convenience init() {
+        let process = ProcessInfo.processInfo
+        self.init(
+            logFileURL: URL(fileURLWithPath: "/tmp/sourcekit-bsp/\(process.processIdentifier).log"),
+            debugEnabled: Self.debugEnabled(environment: process.environment, arguments: process.arguments)
+        )
     }
 
-    private func setupLogger() {
-        // 重要：不使用ConsoleDestination，因为它会输出到stdout
-        // 这会与JSON-RPC消息混合，导致client解析失败
-        // let console = ConsoleDestination()
-        // log.addDestination(console)
+    init(logFileURL: URL, debugEnabled: Bool) {
+        self.logFileURL = logFileURL
+        self.isDebugEnabled = debugEnabled
+        self.destination = RotatingFileDestination(url: logFileURL)
+    }
 
-        let file = FileDestination()
-        file.logFileURL = URL(fileURLWithPath: "/tmp/sourcekit-bsp.log")
-        file.format = "$Dyyyy-MM-dd HH:mm:ss.SSS$d $L $N.$F:$l $M"
-        log.addDestination(file)
+    static func debugEnabled(environment: [String: String], arguments: [String]) -> Bool {
+        arguments.contains("--debug") || ["1", "true", "yes", "on"]
+            .contains(environment["BSP_DEBUG"]?.lowercased() ?? "")
     }
 
     public func info(
-        _ message: String,
+        _ message: @autoclosure () -> String,
         file: String = #file,
         function: String = #function,
         line: Int = #line,
         context: Any? = nil
     ) {
-        log.info(message, file: file, function: function, line: line, context: context)
+        write(
+            .info,
+            message: message(),
+            location: Location(file: file, function: function, line: line),
+            context: context
+        )
     }
 
     public func debug(
-        _ message: String,
+        _ message: @autoclosure () -> String,
         file: String = #file,
         function: String = #function,
         line: Int = #line,
         context: Any? = nil
     ) {
-        log.debug(message, file: file, function: function, line: line, context: context)
+        guard isDebugEnabled else { return }
+        write(
+            .debug,
+            message: message(),
+            location: Location(file: file, function: function, line: line),
+            context: context
+        )
     }
 
     public func error(
-        _ message: String,
+        _ message: @autoclosure () -> String,
         file: String = #file,
         function: String = #function,
         line: Int = #line,
         context: Any? = nil
     ) {
-        log.error(message, file: file, function: function, line: line, context: context)
+        write(
+            .error,
+            message: message(),
+            location: Location(file: file, function: function, line: line),
+            context: context
+        )
     }
 
     public func warning(
-        _ message: String,
+        _ message: @autoclosure () -> String,
         file: String = #file,
         function: String = #function,
         line: Int = #line,
         context: Any? = nil
     ) {
-        log.warning(message, file: file, function: function, line: line, context: context)
+        write(
+            .warning,
+            message: message(),
+            location: Location(file: file, function: function, line: line),
+            context: context
+        )
+    }
+
+    public func flush() {
+        destination.execute(synchronously: true) {}
+    }
+
+    private struct Location {
+        let file: String
+        let function: String
+        let line: Int
+    }
+
+    private func write(
+        _ level: SwiftyBeaver.Level,
+        message: String,
+        location: Location,
+        context: Any?
+    ) {
+        let destination = self.destination
+        destination.execute(synchronously: false) {
+            _ = destination.send(
+                level,
+                msg: message,
+                thread: "",
+                file: location.file,
+                function: location.function,
+                line: location.line,
+                context: context
+            )
+        }
     }
 }
 
