@@ -64,6 +64,10 @@ public actor XcodeProjectManager {
 
     private let xcodeProjectReference: XcodeProjectReference?
     private var currentProjectReference: XcodeProjectReference?
+    var preferredSchemeName: String? {
+        currentProjectReference?.scheme
+    }
+
     public private(set) var xcodeProjectBaseInfo: XcodeProjectBaseInfo?
 
     private var xcodeProjCache: [URL: XcodeProj] = [:]

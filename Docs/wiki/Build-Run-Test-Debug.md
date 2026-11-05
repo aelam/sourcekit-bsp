@@ -152,6 +152,19 @@ Apple device platforms are not enabled for debugging.
 
 ### Debug unit tests on an iOS simulator
 
+To debug existing products, send `dataKind: "sourcekit-bsp-debug"` and
+`data: { "buildBeforeLaunch": false }` with `debugSession/start`. Xcode projects
+advertise `data.debugWithoutBuildingProvider: true` in `build/initialize`.
+Without this option, the server builds before debugging and streams the build
+output to the client. It also saves a raw log under `Logs/sourcekit-bsp` in DerivedData.
+
+The existing products must match the selected configuration, destination and
+DerivedData directory. Missing products produce an error; the server does not
+silently build them. This option does not check whether source edits are newer
+than the products. It still resolves build settings and installs the app.
+For application builds, scheme selection prefers the configured scheme when it
+matches the target and enables building for running.
+
 Request `debugSession/start` with an app-hosted unit test target such as
 `HelloTests` and a concrete iOS simulator destination. The server builds the test
 target and host app, installs the host, and launches it with XCTest's bundle

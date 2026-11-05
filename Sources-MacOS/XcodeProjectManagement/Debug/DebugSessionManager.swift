@@ -58,7 +58,8 @@ public enum DebugSessionError: Error, LocalizedError {
         case .unresolvedPlatform: "Could not resolve the target's platform (PLATFORM_NAME)"
         case let .unsupportedPlatform(p): "Debugging is not supported for platform \(p.rawValue)"
         case let .unsupportedProduct(name): "Debugging requires an application target: \(name)"
-        case let .productNotFound(path): "Build product not found: \(path)"
+        case let .productNotFound(path):
+            "Build product not found: \(path). Compile the target with the selected configuration and destination first."
         }
     }
 }

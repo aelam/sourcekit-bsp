@@ -7,15 +7,10 @@ public extension XcodeProjectManager {
     /// and delegate to the debug orchestration in `XcodeProjectManagement`.
     func startDebugSession(
         targetIdentifiers: [BSPBuildTargetIdentifier],
-        arguments: [String]?
-    ) async throws -> DebugSessionConnection {
-        try await startDebugSession(targetIdentifiers: targetIdentifiers, arguments: arguments, progressHandler: nil)
-    }
-
-    func startDebugSession(
-        targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?,
-        progressHandler: (@Sendable (String) async -> Void)?
+        buildBeforeLaunch: Bool = true,
+        logHandler: (@Sendable (String) -> Void)? = nil,
+        progressHandler: (@Sendable (String) async -> Void)? = nil
     ) async throws -> DebugSessionConnection {
         guard let bspIdentifier = targetIdentifiers.first else {
             throw DebugSessionError.buildFailed
@@ -23,6 +18,8 @@ public extension XcodeProjectManager {
         return try await startDebugSession(
             xcodeTargetIdentifier: XcodeTargetIdentifier(bspIdentifier),
             arguments: arguments,
+            buildBeforeLaunch: buildBeforeLaunch,
+            outputHandler: logHandler.map { ClosureOutputHandler(onLine: $0) },
             progressHandler: progressHandler
         )
     }
