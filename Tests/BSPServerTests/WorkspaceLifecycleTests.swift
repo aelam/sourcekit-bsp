@@ -153,16 +153,6 @@ struct WorkspaceLifecycleTests {
     }
 
     @Test
-    func fileEventsInvalidatePreparationInputs() async throws {
-        let harness = await setup()
-        let source = harness.manager.rootURL.appendingPathComponent("Edited.swift")
-        try await harness.service.filesDidChange([.init(uri: URI(source), type: .changed)])
-        #expect(await harness.manager.inputInvalidations == 1)
-        try await harness.service.filesDidChange([])
-        #expect(await harness.manager.inputInvalidations == 1)
-    }
-
-    @Test
     func fileEventsReloadTargetsAndInvalidSavesCanBeRetried() async throws {
         let harness = await setup()
         let service = harness.service
@@ -284,5 +274,19 @@ struct WorkspaceLifecycleTests {
         #expect(notifications.first??["method"] as? String == "build/taskStart")
         #expect(notifications.last??["method"] as? String == "build/taskFinish")
         #expect(notifications.contains { $0?["method"] as? String == "build/logMessage" })
+    }
+
+    @Test
+    func fileEventsInvalidatePreparationInputs() async throws {
+        let harness = await setup()
+        let source = harness.manager.rootURL.appendingPathComponent("Edited.swift")
+        let edited = WorkspaceDidChangeWatchedFilesNotification(params: .init(changes: [
+            .init(uri: URI(source), type: .changed)
+        ]))
+        try await edited.handle(contextualHandler: harness.handler)
+        #expect(await harness.manager.inputInvalidations == 1)
+        let empty = WorkspaceDidChangeWatchedFilesNotification(params: .init(changes: []))
+        try await empty.handle(contextualHandler: harness.handler)
+        #expect(await harness.manager.inputInvalidations == 1)
     }
 }

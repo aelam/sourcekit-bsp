@@ -48,7 +48,6 @@ public extension BSPServerService {
     }
 
     func filesDidChange(_ changes: [WorkspaceDidChangeWatchedFilesNotification.FileEvent]) async throws {
-        if !changes.isEmpty { await projectManager?.invalidateIndexInputs() }
         guard let info = await projectManager?.project else { return }
         let sourceExtensions: Set = ["swift", "c", "cc", "cpp", "cxx", "m", "mm", "h", "hpp", "hxx"]
         let configurationExtensions: Set = ["pbxproj", "xcworkspace", "xcconfig", "xcscheme", "xcfilelist"]
