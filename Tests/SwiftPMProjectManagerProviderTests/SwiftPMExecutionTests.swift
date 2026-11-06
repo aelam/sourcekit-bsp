@@ -273,24 +273,22 @@ struct SwiftPMExecutionTests {
     func streamsOutputBeforeTheProcessExitsAndCancels() async throws {
         let fixture = try TemporarySwiftPMPackage()
         let output = CapturedLines()
-        let executable = try swiftExecutable(root: fixture.root)
+        // Avoid interpreter compilation so readiness depends only on process output.
         let command = Task {
             try await SwiftPMProcessExecutor().execute(
-                executable: executable,
-                arguments: [
-                    "-e",
-                    "import Foundation; print(\"ready\"); fflush(stdout); Thread.sleep(forTimeInterval: 60)"
-                ],
+                executable: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "printf 'ready\\n'; exec /bin/sleep 60"],
                 workingDirectory: fixture.root,
                 environment: [:]
             ) { output.append($0) }
         }
+        defer { command.cancel() }
         for _ in 0 ..< 1000 {
             if output.lines.contains("ready\n") { break }
             try await Task.sleep(for: .milliseconds(10))
         }
-        command.cancel()
         #expect(output.lines.contains("ready\n"))
+        command.cancel()
         await #expect(throws: CancellationError.self) { try await command.value }
     }
 }
