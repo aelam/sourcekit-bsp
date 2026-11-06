@@ -19,15 +19,21 @@ public enum StreamingFileHandleReader {
                     let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
                     defer { buffer.deallocate() }
 
-                    let bytesRead = read(fileHandle.fileDescriptor, buffer, bufferSize)
-                    if bytesRead > 0 {
-                        let data = Data(bytes: buffer, count: bytesRead)
-                        continuation.yield(data)
-                    } else if bytesRead == 0 {
-                        continuation.finish()
-                    } else {
-                        continuation.finish(throwing: POSIXError(.EIO))
-                    }
+                    // A Linux hangup can include unread bytes with no later EOF event.
+                    let drainToEOF = source.data == 0
+                    repeat {
+                        let bytesRead = read(fileHandle.fileDescriptor, buffer, bufferSize)
+                        if bytesRead > 0 {
+                            let data = Data(bytes: buffer, count: bytesRead)
+                            continuation.yield(data)
+                        } else if bytesRead == 0 {
+                            continuation.finish()
+                            return
+                        } else {
+                            continuation.finish(throwing: POSIXError(.EIO))
+                            return
+                        }
+                    } while drainToEOF
                 }
 
                 source.setCancelHandler {
@@ -49,13 +55,13 @@ public enum StreamingFileHandleReader {
                     lineBuffer.removeFirst(lineData.count)
 
                     if let string = String(data: lineData, encoding: .utf8) {
-                        await lineHandler(string.trimmingCharacters(in: .whitespacesAndNewlines))
+                        await lineHandler(string.trimmingCharacters(in: .newlines))
                     }
                 }
             }
 
             if !lineBuffer.isEmpty, let string = String(data: lineBuffer, encoding: .utf8) {
-                let finalString = string.trimmingCharacters(in: .whitespacesAndNewlines)
+                let finalString = string.trimmingCharacters(in: .newlines)
                 if !finalString.isEmpty {
                     await lineHandler(finalString)
                 }

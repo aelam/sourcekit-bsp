@@ -1,6 +1,7 @@
 import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
+import Support
 import Testing
 @testable import BSPServer
 
@@ -84,19 +85,29 @@ struct BuildOutputTests {
         #expect(parser.steps == 2)
     }
 
-    @Test
-    func streamsProgressAndDiagnosticsBeforeFinishAndPreservesRawLog() async throws {
+    @Test(arguments: ["\n", "\r\n"])
+    func streamsProgressAndDiagnosticsBeforeFinishAndPreservesRawLog(lineEnding: String) async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let service = BuildNotifications()
         let manager = BSPTaskManager(notificationService: service)
         let command = "    /usr/bin/swiftc -module-name Hello"
+        let diagnosticContext = "    |   ^ unused value  "
         let context = context(root: root)
         let status = try await manager
             .executeWithProgress(originId: "compile-1", message: "Compile", context: context) { log in
-                log("SwiftCompile normal arm64 (in target 'Hello' from project 'Hello')")
-                log(command)
-                log("A file.swift:1:2: warning: unused value")
+                let pipe = Pipe()
+                defer { try? pipe.fileHandleForReading.close() }
+                let output = [
+                    "SwiftCompile normal arm64 (in target 'Hello' from project 'Hello')",
+                    command,
+                    "A file.swift:1:2: warning: unused value",
+                    diagnosticContext,
+                ].joined(separator: lineEnding)
+                try pipe.fileHandleForWriting.write(contentsOf: Data(output.utf8))
+                // Close the writer before reading to cover buffered output and EOF in one event.
+                try pipe.fileHandleForWriting.close()
+                await StreamingFileHandleReader.streamPipe(pipe.fileHandleForReading) { log($0) }
                 return .ok
             }
         #expect(status == .ok)
@@ -115,13 +126,16 @@ struct BuildOutputTests {
         let logs = messages.filter { $0["method"] as? String == "build/logMessage" }
             .compactMap { $0["params"] as? [String: Any] }
         #expect(logs.contains { $0["type"] as? Int == 2 })
-        #expect(!logs.contains { ($0["message"] as? String ?? "").contains(command) })
+        #expect(!logs.contains { ($0["message"] as? String ?? "").contains("/usr/bin/swiftc") })
+        #expect(logs.contains { ($0["message"] as? String ?? "").contains(diagnosticContext) })
         let files = try FileManager.default.contentsOfDirectory(
             at: context.logDirectory,
             includingPropertiesForKeys: nil
         )
         let raw = try String(contentsOf: #require(files.first), encoding: .utf8)
         #expect(raw.contains(command))
+        #expect(raw.contains(diagnosticContext))
+        #expect(!raw.contains("\r"))
         #expect(raw.contains("warning: unused value"))
         #expect(manager.getActiveTasks().isEmpty)
     }
