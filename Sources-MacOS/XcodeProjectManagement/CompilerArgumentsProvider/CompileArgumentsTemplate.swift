@@ -28,12 +28,13 @@ struct CompileArgumentsTemplate: Sendable {
 
     func arguments(for file: URL) -> [String] {
         let context = context(for: file)
+        let primaryPath = file.path
         return parts.flatMap { part in
             switch part {
             case let .common(arguments): arguments
             case let .file(provider): provider.arguments(for: context)
             case let .swiftSources(files, includePrimary):
-                includePrimary ? [file.path] + files.filter { $0 != file.path } : files
+                includePrimary ? [primaryPath] + files.filter { $0 != primaryPath } : files
             }
         }
     }
