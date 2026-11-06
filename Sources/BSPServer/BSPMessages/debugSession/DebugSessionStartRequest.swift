@@ -60,6 +60,9 @@ public struct DebugSessionStartResponse: ResponseType, Hashable {
             public let program: String?
             public let pid: Int?
             public let bundleId: String?
+            public let args: [String]?
+            public let env: [String: String]?
+            public let cwd: String?
         }
     }
 
@@ -73,7 +76,10 @@ public struct DebugSessionStartResponse: ResponseType, Hashable {
                 request: connection.request.rawValue,
                 program: connection.program,
                 pid: connection.pid,
-                bundleId: connection.bundleId
+                bundleId: connection.bundleId,
+                args: connection.args,
+                env: connection.env,
+                cwd: connection.cwd
             )
         )
     }

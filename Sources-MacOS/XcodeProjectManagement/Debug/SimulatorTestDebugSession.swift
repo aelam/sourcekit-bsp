@@ -134,7 +134,7 @@ extension XcodeProjectManager {
                 .invalidConfig("Debug Tests runs the entire test target; test filters and test plans are not supported")
         }
         await progressHandler?("Resolving test host and simulator")
-        let arguments = try testDebugArguments(for: target, arguments: arguments)
+        let arguments = try testArguments(for: target, arguments: arguments)
         let settings = try await resolvedBuildSettings(for: target, arguments: arguments)
         let testProduct = try SimulatorTestDebugProduct(settings: settings, arguments: arguments)
         await progressHandler?("Using existing test host: \(testProduct.hostApp.path)")
@@ -156,16 +156,5 @@ extension XcodeProjectManager {
             progressHandler: progressHandler,
             launcher: launcher
         )
-    }
-
-    func testDebugArguments(for target: XcodeTarget, arguments: [String]?) throws -> [String] {
-        var arguments = try testArguments(for: target, arguments: arguments)
-        // LLDB-DAP cannot open Swift macro sources embedded in DWARF 5.
-        // DWARF 4 makes Swift write those sources to files for test debugging.
-        // Keep an explicit caller setting as an override.
-        if !arguments.contains(where: { $0.hasPrefix("SWIFT_DEBUG_INFORMATION_VERSION=") }) {
-            arguments.append("SWIFT_DEBUG_INFORMATION_VERSION=dwarf4")
-        }
-        return arguments
     }
 }

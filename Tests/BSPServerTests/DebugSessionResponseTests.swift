@@ -1,0 +1,32 @@
+import BuildServerProtocol
+import Foundation
+import Testing
+@testable import BSPServer
+
+struct DebugSessionResponseTests {
+    @Test(arguments: [false, true])
+    func preservesOptionalLaunchConfiguration(configured: Bool) throws {
+        let connection = DebugSessionConnection(
+            uri: "tcp://127.0.0.1:12345",
+            request: .launch,
+            program: "/Applications/Toolchain/usr/bin/xctest",
+            args: configured ? ["-XCTest", "SelectedTests", "/tmp/中文 tests/Package.xctest"] : nil,
+            env: configured ? ["TEST_FILTER": "SelectedTests", "EMPTY": ""] : nil,
+            cwd: configured ? "/tmp/中文 tests" : nil
+        )
+        let response = DebugSessionStartResponse(connection: connection)
+        let encoded = try JSONEncoder().encode(response.result)
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let data = try #require(json["data"] as? [String: Any])
+        #expect(data["request"] as? String == "launch")
+        #expect(data["program"] as? String == connection.program)
+        #expect(data["args"] as? [String] == connection.args)
+        #expect(data["env"] as? [String: String] == connection.env)
+        #expect(data["cwd"] as? String == connection.cwd)
+        if !configured {
+            #expect(data["args"] == nil)
+            #expect(data["env"] == nil)
+            #expect(data["cwd"] == nil)
+        }
+    }
+}

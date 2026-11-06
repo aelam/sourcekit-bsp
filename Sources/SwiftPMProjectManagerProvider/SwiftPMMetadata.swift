@@ -13,12 +13,13 @@ struct SwiftPMPackageDescription: Decodable, Sendable {
         let type: String
         let path: String?
         let sources: [String]?
+        let c99name: String?
         let moduleType: String?
         let targetDependencies: [String]?
         let productDependencies: [String]?
 
         enum CodingKeys: String, CodingKey {
-            case name, type, path, sources
+            case name, type, path, sources, c99name
             case moduleType = "module_type"
             case targetDependencies = "target_dependencies"
             case productDependencies = "product_dependencies"
@@ -86,6 +87,8 @@ struct SwiftPMGraphSnapshot: Sendable {
     let sources: [BSPBuildTargetIdentifier: SourcesItem]
     let packageRoots: Set<URL>
     let diagnostics: [String]
+    let executableTargets: [BSPBuildTargetIdentifier: String]
+    let testModules: [BSPBuildTargetIdentifier: String]
 }
 
 struct SwiftPMResolvedDependency: Decodable, Sendable {

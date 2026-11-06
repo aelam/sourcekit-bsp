@@ -6,7 +6,9 @@ public actor SwiftPMProjectManager: ProjectManager {
     public let rootURL: URL
     public nonisolated let projectType = "swiftpm"
     public var capabilities: ProjectManagerCapabilities {
-        .init()
+        var result: ProjectManagerCapabilities = [.compile, .run, .test]
+        if debugAdapter != nil { result.insert(.debug) }
+        return result
     }
 
     public var watchedFileRoots: [URL] {
@@ -20,12 +22,35 @@ public actor SwiftPMProjectManager: ProjectManager {
     private var sources: [BSPBuildTargetIdentifier: SourcesItem] = [:]
     private var packageRoots: Set<URL>
     private var reloadTask: Task<Void, Error>?
-    private var isShutDown = false
+    var isShutDown = false
+    let commandExecutable: URL
+    let commandExecutor: any SwiftPMCommandExecuting
+    let debugAdapter: (any SwiftPMDebugAdapterServing)?
+    var executableTargets: [BSPBuildTargetIdentifier: String] = [:]
+    var testModules: [BSPBuildTargetIdentifier: String] = [:]
+    var executionTasks: [UUID: Task<SwiftPMCommandResult, Error>] = [:]
+    var debugStartupTasks: [UUID: Task<DebugSessionConnection, Error>] = [:]
+    var debugEndpoints: [UUID: SwiftPMDebugEndpoint] = [:]
 
-    init(rootURL: URL, executable: URL, executor: any SwiftPMCommandExecuting) {
+    init(
+        rootURL: URL,
+        executable: URL,
+        executor: any SwiftPMCommandExecuting,
+        debugAdapter: (any SwiftPMDebugAdapterServing)? = nil,
+        discoveryToolchain: URL? = nil
+    ) {
         self.rootURL = rootURL
+        self.commandExecutable = executable
+        self.commandExecutor = executor
+        self.debugAdapter = debugAdapter
         self.packageRoots = [rootURL]
-        self.loader = SwiftPMGraphLoader(root: rootURL, executable: executable, executor: executor)
+        self.loader = SwiftPMGraphLoader(
+            root: rootURL,
+            executable: executable,
+            executor: executor,
+            supportsDebug: debugAdapter != nil,
+            discoveryToolchain: discoveryToolchain
+        )
     }
 
     public func initialize() async throws {
@@ -51,6 +76,8 @@ public actor SwiftPMProjectManager: ProjectManager {
                     try Task.checkCancellation()
                     guard !isShutDown else { throw SwiftPMProjectError.shutDown }
                     project = snapshot.project
+                    executableTargets = snapshot.executableTargets
+                    testModules = snapshot.testModules
                     sources = snapshot.sources
                     packageRoots = snapshot.packageRoots
                     diagnostics = snapshot.diagnostics
@@ -108,8 +135,28 @@ public actor SwiftPMProjectManager: ProjectManager {
     public func shutdown() async {
         isShutDown = true
         reloadTask?.cancel()
+        let tasks = Array(executionTasks.values)
+        let debugTasks = Array(debugStartupTasks.values)
+        for task in tasks {
+            task.cancel()
+        }
+        for task in debugTasks {
+            task.cancel()
+        }
+        for task in tasks {
+            _ = await task.result
+        }
+        for task in debugTasks {
+            _ = await task.result
+        }
+        for endpoint in debugEndpoints.values {
+            endpoint.terminate()
+        }
+        debugEndpoints.removeAll()
         if let reloadTask { _ = await reloadTask.result }
         project = nil
+        executableTargets = [:]
+        testModules = [:]
         sources = [:]
         diagnostics = []
         state = ProjectState()
@@ -121,50 +168,5 @@ public actor SwiftPMProjectManager: ProjectManager {
 
     public func buildIndex(for targetIdentifiers: [BSPBuildTargetIdentifier]) throws -> [BSPBuildTargetIdentifier] {
         throw SwiftPMProjectError.unsupported("index preparation")
-    }
-
-    public func startBuild(
-        targetIdentifiers: [BSPBuildTargetIdentifier],
-        arguments: [String]?,
-        logHandler: (@Sendable (String) -> Void)?
-    ) throws -> StatusCode {
-        throw SwiftPMProjectError.unsupported("compilation")
-    }
-
-    public func run(
-        targetIdentifier: BSPBuildTargetIdentifier,
-        arguments: [String]?,
-        environmentVariables: [String: String]?,
-        workingDirectory: URI?
-    ) throws -> StatusCode {
-        throw SwiftPMProjectError.unsupported("running targets")
-    }
-
-    public func test(
-        targetIdentifiers: [BSPBuildTargetIdentifier],
-        arguments: [String]?,
-        environmentVariables: [String: String]?,
-        workingDirectory: URI?,
-        logHandler: (@Sendable (String) -> Void)?
-    ) throws -> StatusCode {
-        throw SwiftPMProjectError.unsupported("testing targets")
-    }
-
-    public func testArguments(
-        targetIdentifiers: [BSPBuildTargetIdentifier],
-        arguments: [String]?,
-        dataKind: String?,
-        data: LSPAny?
-    ) async throws -> [String]? {
-        throw SwiftPMProjectError.unsupported("test arguments")
-    }
-
-    public func startDebugSession(
-        targetIdentifiers: [BSPBuildTargetIdentifier],
-        arguments: [String]?,
-        logHandler: (@Sendable (String) -> Void)?,
-        progressHandler: (@Sendable (String) async -> Void)?
-    ) throws -> DebugSessionConnection {
-        throw SwiftPMProjectError.unsupported("debug sessions")
     }
 }

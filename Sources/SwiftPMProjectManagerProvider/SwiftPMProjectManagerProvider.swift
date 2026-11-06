@@ -5,14 +5,24 @@ public struct SwiftPMProjectManagerProvider: ProjectManagerProvider {
     public let name = "SwiftPMProjectManagerProvider"
     private let executor: any SwiftPMCommandExecuting
     private let environment: [String: String]
+    private let debugAdapter: (any SwiftPMDebugAdapterServing)?
 
-    public init() {
-        self.init(executor: SwiftPMProcessExecutor(), environment: ProcessInfo.processInfo.environment)
+    public init(debugAdapter: (any SwiftPMDebugAdapterServing)? = nil) {
+        self.init(
+            executor: SwiftPMProcessExecutor(),
+            environment: ProcessInfo.processInfo.environment,
+            debugAdapter: debugAdapter
+        )
     }
 
-    init(executor: any SwiftPMCommandExecuting, environment: [String: String]) {
+    init(
+        executor: any SwiftPMCommandExecuting,
+        environment: [String: String],
+        debugAdapter: (any SwiftPMDebugAdapterServing)? = nil
+    ) {
         self.executor = executor
         self.environment = environment
+        self.debugAdapter = debugAdapter
     }
 
     public func canHandle(projectURL: URL) async -> Bool {
@@ -29,7 +39,18 @@ public struct SwiftPMProjectManagerProvider: ProjectManagerProvider {
             environment: environment,
             root: root
         )
-        return SwiftPMProjectManager(rootURL: root, executable: executable, executor: executor)
+        let toolchain = try await SwiftPMDiscoveryToolchain.resolve(
+            executable: executable,
+            executor: executor,
+            root: root
+        )
+        return SwiftPMProjectManager(
+            rootURL: root,
+            executable: executable,
+            executor: executor,
+            debugAdapter: debugAdapter,
+            discoveryToolchain: toolchain
+        )
     }
 
     static func packageRoot(_ url: URL) throws -> URL {

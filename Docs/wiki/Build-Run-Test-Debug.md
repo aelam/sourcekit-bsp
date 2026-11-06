@@ -66,7 +66,7 @@ Logs stream during execution; structured test results arrive after each target c
 
 ### Test discovery and selection
 
-Xcode test bundles have the standard `test` tag. SourceKit-LSP uses this tag to
+Xcode test bundles and root SwiftPM test targets have the standard `test` tag. SourceKit-LSP uses this tag to
 find XCTest and Swift Testing functions through `textDocument/tests` version 2.
 `buildTarget/sources` identifies which target owns each source file.
 
@@ -82,6 +82,11 @@ Test targets advertise this optional extension in their `sourceKit` data:
   }
 }
 ```
+
+SwiftPM also supplies `testDiscovery.moduleName`, the target's exact Swift module
+name. SourceKit-LSP can return IDs with or without that prefix. Clients remove
+only the advertised prefix and preserve dots within test names. If the selected
+Swift toolchain has no SourceKit-LSP executable, SwiftPM omits this metadata.
 
 A client that supports the extension can send this `buildTarget/test` payload.
 Use the target URI from `workspace/buildTargets`:
@@ -107,14 +112,18 @@ prefix. Keep function parentheses and argument labels. Supported styles are
 `XCTest` and `swift-testing`. Clients expand suites into their selected functions;
 parameterized functions run all their arguments. IDs are scoped to a target.
 
-The server converts selections into Xcode filters using the actual target name.
+For Xcode, the server converts selections into filters using the actual target
+name. For SwiftPM, it builds anchored filters from the target's Swift module and
+the selected function IDs. It escapes IDs before use in a regular expression.
 Empty, malformed, unsupported, or conflicting selections fail. A selected
 function without a result also fails. Selection never falls back to a whole-target
 run. Do not combine this payload with `-only-testing`, `-skip-testing`, or a test
-plan. These metadata and selection fields are extensions, not standard BSP.
+plan. SwiftPM selections cannot be combined with command-line test filters.
+These metadata and selection fields are extensions, not standard BSP.
 
 Both `test-start` and `test-finish` include an optional `testId` extension field
-from the result bundle. It uses the same target-scoped identifier as discovery,
+from the execution report. Xcode reads its result bundle; SwiftPM reads XCTest
+output and Swift Testing events. The field uses the same target-scoped identifier as discovery,
 so clients can update the original test node without comparing display names.
 Other clients can ignore the field and display standard reports.
 

@@ -6,9 +6,25 @@ The server implements a subset of BSP 2.2.0. Clients should check
 ## Project providers
 
 Xcode projects support the operations listed below. SwiftPM packages currently
-support initialization, target and source discovery, and workspace reloads on
-macOS and Linux. They do not advertise build, run, test, debug, index preparation,
-compiler options, or output paths. Unsupported operations return an error.
+support initialization, target and source discovery, workspace reloads, root-target
+compilation, executable runs, and root test targets on macOS and Linux. On macOS, root executable
+and test targets also support debugging through the active Xcode toolchain's LLDB adapter.
+Run and debug require an existing build product. Compiling a test target links
+the test runner with `swift build --build-tests`, which can build other test
+targets. Test debugging lists tests with `--skip-build` before starting the debugger. Libraries do not advertise run or
+debug support. Dependency targets are built through root package dependents.
+SwiftPM runs XCTest and Swift Testing through `swift test`, with a module filter
+for the selected root test targets. Other test targets can be built but their tests
+are not selected. Clients can select functions with `sourcekit-test-selection`;
+additional command-line test filters are rejected. Case reports use XCTest output
+and Swift Testing events after each target completes. Missing selected results
+return an error. SwiftPM output is forwarded as logs; SwiftPM can buffer it.
+Tests run from the package root. Test debugging launches Xcode's `xctest` runner
+with an explicit list of tests in the selected module. XCTest and Swift Testing
+run in the same debug process. The server supplies DAP arguments, environment,
+and working directory with the debug connection.
+SwiftPM does not advertise index preparation, compiler options, or output paths.
+Unsupported operations return an error.
 
 ## Requests and notifications
 
@@ -65,9 +81,9 @@ retain explicit declarations. Do not use `@unchecked Sendable` to hide an error.
 
 ## Limitations
 
-- SwiftPM build, run, test, debug, and SourceKit compiler options are not implemented. Native Windows server support is not verified.
+- SwiftPM SourceKit compiler options are not implemented. SwiftPM debug support requires macOS and the active Xcode toolchain. Test debugging does not support test identifiers that contain commas. Native Windows server support is not verified.
 - Compiler diagnostics are parsed from text output. Diagnostics with ambiguous target ownership remain in the log.
-- Test case results are read from `.xcresult` after each target completes. Stage logs stream during execution. If the result bundle cannot be read, the server sends a warning and does not invent test counts.
+- For Xcode projects, test case results are read from `.xcresult` after each target completes. Stage logs stream during execution. If the result bundle cannot be read, the server sends a warning and does not invent test counts.
 - SourceKit-LSP provides editor diagnostics independently.
 - `inverseSources`, `dependencySources`, and `resources` have no handlers and are not advertised.
 - Complex workspaces, packages, and test plans need broader compatibility testing.

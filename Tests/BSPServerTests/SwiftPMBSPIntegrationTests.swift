@@ -32,10 +32,14 @@ struct SwiftPMBSPIntegrationTests {
         let response = try #require(await request.handle(
             contextualHandler: handler, id: .int(1)
         ) as? BuildInitializeResponse)
-        #expect(response.result.capabilities.compileProvider == nil)
-        #expect(response.result.capabilities.testProvider == nil)
-        #expect(response.result.capabilities.runProvider == nil)
+        #expect(response.result.capabilities.compileProvider != nil)
+        #expect(response.result.capabilities.testProvider != nil)
+        #expect(response.result.capabilities.runProvider != nil)
+        #if os(macOS)
+        #expect(response.result.capabilities.debugProvider != nil)
+        #else
         #expect(response.result.capabilities.debugProvider == nil)
+        #endif
         #expect(response.result.data.prepareProvider == false)
         #expect(response.result.data.sourceKitOptionsProvider == false)
         let manager = try #require(await service.getCurrentProjectManager())
@@ -47,7 +51,9 @@ struct SwiftPMBSPIntegrationTests {
         let target = try #require(targets.first)
         #expect(targets.count == 1)
         #expect(target.displayName == "Core")
-        #expect(target.capabilities.canCompile == false)
+        #expect(target.capabilities.canCompile == true)
+        #expect(target.capabilities.canRun == false)
+        #expect(target.capabilities.canDebug == false)
         let sources = try await manager.getSourceFileList(targetIdentifiers: [target.id])
         #expect(sources.flatMap(\.sources).map(\.uri) == [URI(source.resolvingSymlinksInPath())])
         await service.shutdownProject()
