@@ -1,8 +1,8 @@
 import BuildServerProtocol
 import Foundation
-import JSONRPCConnection
 import Testing
 @testable import BSPServer
+@testable import JSONRPCConnection
 
 private protocol WorkspaceProjectManagerStub: ProjectManager {}
 
@@ -201,7 +201,7 @@ private actor PendingReloadProjectManager: WorkspaceProjectManagerStub {
 }
 
 private extension BSPServerService {
-    func useTestManager(_ manager: any ProjectManager) {
+    func useTestManager(_ manager: (any ProjectManager)?) {
         projectManager = manager
     }
 }
@@ -382,6 +382,7 @@ struct WorkspaceLifecycleTests {
         let capabilities = response.result.capabilities
         #expect(capabilities.inverseSourcesProvider == false)
         #expect(capabilities.dependencySourcesProvider == false)
+        #expect(capabilities.dependencyModulesProvider == true)
         #expect(capabilities.resourcesProvider == false)
         #expect(capabilities.canReload == true)
         #expect(capabilities.debugProvider != nil)
@@ -425,6 +426,7 @@ struct WorkspaceLifecycleTests {
         #expect(capabilities.runProvider == nil)
         #expect(capabilities.debugProvider == nil)
         #expect(capabilities.outputPathsProvider == false)
+        #expect(capabilities.dependencyModulesProvider == false)
         #expect(capabilities.canReload == true)
         #expect(response.result.data.prepareProvider == false)
         #expect(response.result.data.sourceKitOptionsProvider == false)
@@ -453,5 +455,43 @@ struct WorkspaceLifecycleTests {
         let empty = WorkspaceDidChangeWatchedFilesNotification(params: .init(changes: []))
         try await empty.handle(contextualHandler: harness.handler)
         #expect(await harness.manager.inputInvalidations == 1)
+    }
+}
+
+extension WorkspaceLifecycleTests {
+    @Test
+    func dependencyModulesRequestReturnsItemsAndReportsInvalidTargets() async throws {
+        let harness = await setup()
+        let target = try #require(await harness.manager.getTargetList().first?.id)
+        let requestType = try #require(bspRegistry.requestType(for: "buildTarget/dependencyModules"))
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "jsonrpc": "2.0", "id": 7, "method": "buildTarget/dependencyModules",
+            "params": ["targets": [["uri": target.uri.stringValue]]]
+        ])
+        let request = try JSONDecoder().decode(requestType, from: payload)
+        let response = try #require(await request.handle(handler: harness.handler, id: .int(7))
+            as? BuildTargetDependencyModulesResponse)
+        #expect(response.id == .int(7))
+        #expect(response.result.items == [.init(target: target, modules: [])])
+        let encoded = try JSONEncoder().encode(response)
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(json["jsonrpc"] as? String == "2.0")
+        #expect((json["result"] as? [String: Any])?["items"] != nil)
+
+        let unknown = BSPBuildTargetIdentifier(uri: URI(URL(fileURLWithPath: "/missing")))
+        let invalid = BuildTargetDependencyModulesRequest(params: .init(targets: [target, unknown]))
+        let error = try #require(await invalid.handle(contextualHandler: harness.handler, id: .int(8))
+            as? JSONRPCErrorResponse)
+        #expect(error.error.code == -32602)
+        #expect(error.error.message.contains("/missing"))
+
+        await harness.manager.setCapabilities([])
+        let unsupported = try #require(await request.handle(handler: harness.handler, id: .int(9))
+            as? JSONRPCErrorResponse)
+        #expect(unsupported.error.code == -32601)
+        await harness.service.useTestManager(nil)
+        let uninitialized = try #require(await request.handle(handler: harness.handler, id: .int(10))
+            as? JSONRPCErrorResponse)
+        #expect(uninitialized.error.code == -32603)
     }
 }

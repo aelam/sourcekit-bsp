@@ -43,6 +43,7 @@ struct SwiftPMBSPIntegrationTests {
         #endif
         #expect(response.result.data.prepareProvider == false)
         #expect(response.result.data.sourceKitOptionsProvider == false)
+        #expect(response.result.capabilities.dependencyModulesProvider == true)
         let manager = try #require(await service.getCurrentProjectManager())
         #expect(manager.projectType == "swiftpm")
         let project = try #require(await manager.project)
@@ -64,6 +65,10 @@ struct SwiftPMBSPIntegrationTests {
         let outputURL = try #require(output.uri.fileURL)
         #expect(outputURL.path.contains("/\(root.lastPathComponent)/.build/"))
         #expect(outputURL.lastPathComponent.lowercased() == "debug")
+        let modulesRequest = BuildTargetDependencyModulesRequest(params: .init(targets: [target.id]))
+        let modulesResponse = try #require(await modulesRequest.handle(contextualHandler: handler, id: .int(2))
+            as? BuildTargetDependencyModulesResponse)
+        #expect(modulesResponse.result.items == [.init(target: target.id, modules: [])])
         await service.shutdownProject()
     }
 

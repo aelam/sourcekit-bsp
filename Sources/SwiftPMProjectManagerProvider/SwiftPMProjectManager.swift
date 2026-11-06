@@ -6,7 +6,7 @@ public actor SwiftPMProjectManager: ProjectManager {
     public let rootURL: URL
     public nonisolated let projectType = "swiftpm"
     public var capabilities: ProjectManagerCapabilities {
-        var result: ProjectManagerCapabilities = [.compile, .run, .test, .outputPaths]
+        var result: ProjectManagerCapabilities = [.compile, .run, .test, .outputPaths, .dependencyModules]
         if debugAdapter != nil { result.insert(.debug) }
         return result
     }

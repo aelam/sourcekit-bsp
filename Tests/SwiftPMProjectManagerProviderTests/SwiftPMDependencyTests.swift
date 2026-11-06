@@ -65,6 +65,13 @@ struct SwiftPMDependencyTests {
         #expect(await manager.diagnostics.isEmpty)
         #expect(await !(executor.calls.contains { $0.arguments.contains("show-dependencies") }))
         #expect(await executor.calls.count == 3)
+        let app = try #require(targets.first { $0.displayName == "App" })
+        let items = try await manager.getDependencyModules(targetIdentifiers: [app.id, core.id, library.id])
+        #expect(items[0].modules.map(\.name) == ["LibraryProduct"])
+        #expect(items[0].modules.first?.version.isEmpty == true)
+        #expect(items[0].modules == items[1].modules)
+        #expect(items[2].modules.isEmpty)
+        #expect(await executor.calls.count == 3)
     }
 
     @Test
@@ -125,12 +132,26 @@ struct SwiftPMDependencyTests {
             ),
             key: fixture.root.path + ":resolve"
         )
+        try fixture.write(
+            """
+            {"version":3,"pins":[{"identity":"remote-identity",
+            "location":"https://example.com/remote.git","state":{"version":"2.4.1","revision":"abc123"}}]}
+            """,
+            to: "Package.resolved"
+        )
         let manager = fixture.manager(executor: executor)
         try await manager.initialize()
         let targets = await manager.getTargetList()
         let core = try #require(targets.first { $0.displayName == "Core" })
         let remoteCore = try #require(targets.first { $0.displayName == "RemoteCore" })
         #expect(core.dependencies == [remoteCore.id])
+        let modules = try await manager.getDependencyModules(targetIdentifiers: [core.id])
+        #expect(modules[0].modules.map(\.name) == ["SharedProduct"])
+        #expect(modules[0].modules.first?.version == "2.4.1")
+        #expect(modules[0].modules.first?.dataKind == "swiftpm")
+        await #expect(throws: DependencyModulesError.self) {
+            try await manager.getDependencyModules(targetIdentifiers: [.init(uri: URI(fixture.directory))])
+        }
         #expect(await manager.diagnostics.isEmpty)
         let resolutionCount = await executor.calls.count { $0.arguments.contains("show-dependencies") }
         #expect(resolutionCount == 1)

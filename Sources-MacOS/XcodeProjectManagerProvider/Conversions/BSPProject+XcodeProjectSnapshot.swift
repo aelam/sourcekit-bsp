@@ -2,7 +2,10 @@ import BuildServerProtocol
 import XcodeProjectManagement
 
 extension XcodeProjectSnapshot {
-    func asBSPProject(dependencies: [XcodeTargetIdentifier: [XcodeTargetIdentifier]]) -> BSPProject {
+    func asBSPProject(
+        dependencies: [XcodeTargetIdentifier: [XcodeTargetIdentifier]],
+        dependencyModules: [XcodeTargetIdentifier: [DependencyModule]] = [:]
+    ) -> BSPProject {
         BSPProject(
             rootURL: rootURL,
             name: name,
@@ -14,14 +17,18 @@ extension XcodeProjectSnapshot {
             },
             buildRootURL: xcodeGlobalSettings.derivedDataPath,
             indexStoreURL: xcodeGlobalSettings.indexStoreURL,
-            indexDatabaseURL: xcodeGlobalSettings.indexDatabaseURL
+            indexDatabaseURL: xcodeGlobalSettings.indexDatabaseURL,
+            dependencyModules: Dictionary(uniqueKeysWithValues: dependencyModules
+                .map { ($0.key.bspIdentifier, $0.value) })
         )
     }
 }
 
 extension XcodeProjectManager {
     /// Read the snapshot and its dependency graph in one actor turn.
-    func makeBSPProject() -> BSPProject? {
-        projectSnapshot?.asBSPProject(dependencies: resolveDirectDependencies())
+    func makeBSPProject() throws -> BSPProject? {
+        try projectSnapshot?.asBSPProject(
+            dependencies: resolveDirectDependencies(), dependencyModules: resolveDependencyModules()
+        )
     }
 }

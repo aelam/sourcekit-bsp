@@ -65,6 +65,8 @@ struct SwiftPMIntegrationTests {
         let internalTarget = try #require(targets.first { $0.displayName == "Internal" })
         #expect(core.dependencies == [depCore.id])
         #expect(depCore.dependencies == [internalTarget.id])
+        #expect(try await manager.getDependencyModules(targetIdentifiers: [core.id]).first?.modules.map(\.name)
+            == ["DepProduct"])
         #expect(targets.first { $0.displayName == "App" }?.dependencies == [core.id])
         #expect(targets.first { $0.displayName == "CoreTests" }?.dependencies == [core.id])
         let sources = try await manager.getSourceFileList(targetIdentifiers: [core.id])

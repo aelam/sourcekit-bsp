@@ -38,6 +38,7 @@ Unsupported operations return an error.
 | `build/shutdown`, `build/exit` | Client request / notification | Shut down services and exit |
 | `workspace/buildTargets` | Client request | Return targets, capabilities, dependencies, and metadata |
 | `buildTarget/sources` | Client request | Return sources, including Xcode synchronized folders |
+| `buildTarget/dependencyModules` | Client request | Return external package products and linked libraries for Xcode and SwiftPM targets |
 | `textDocument/sourceKitOptions` | SourceKit extension request | Return per-file compiler arguments |
 | `buildTarget/prepare` | SourceKit extension request | Prepare build inputs and index data |
 | `buildTarget/compile` | Client request | Compile targets and stream logs |
