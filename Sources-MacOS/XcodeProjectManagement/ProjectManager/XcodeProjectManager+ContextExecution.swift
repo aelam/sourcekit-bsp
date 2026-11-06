@@ -4,7 +4,8 @@ import Foundation
 public extension XcodeProjectManager {
     func validateContext(_ context: BuildContext) throws {
         let resolved = try resolvedContext(BuildContextParams(
-            scope: BuildContextScope(targets: context.targets), operation: context.operation,
+            scope: BuildContextScope(targets: context.targets),
+            operation: context.operation,
             selection: context.selection
         ))
         guard resolved == context else { throw BuildContextError.invalid("The context changed; resolve it again") }
@@ -85,9 +86,14 @@ extension XcodeProjectManager {
             options: XcodeBuildOptions(
                 command: .build(
                     action: plan.buildsTests ? .buildForTesting : .build,
-                    sdk: nil, destination: nil, configuration: nil, derivedDataPath: nil, resultBundlePath: nil
+                    sdk: nil,
+                    destination: nil,
+                    configuration: nil,
+                    derivedDataPath: nil,
+                    resultBundlePath: nil
                 ),
-                flags: XcodeBuildFlags(), customFlags: buildFlags
+                flags: XcodeBuildFlags(),
+                customFlags: buildFlags
             )
         )
     }

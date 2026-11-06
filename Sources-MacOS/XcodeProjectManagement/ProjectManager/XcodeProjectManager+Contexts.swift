@@ -1,6 +1,12 @@
 import BuildServerProtocol
 import Foundation
 
+private struct XcodeOperationSchemeOptions {
+    let options: [BuildContextOption]
+    let plans: [String: [String: XcodeContextScheme]]
+    let modeOptions: [String: [BuildContextOption]]
+}
+
 public extension XcodeProjectManager {
     internal func operationContextOptions(_ params: BuildContextParams) throws -> BuildContextOptionsResult {
         guard let base = projectSnapshot else { throw BuildContextError.invalid("Project not initialized") }
@@ -16,43 +22,9 @@ public extension XcodeProjectManager {
             throw BuildContextError.invalid("Unknown Xcode selection key")
         }
         var dimensions: [BuildContextDimension] = []
-        var plans: [String: [String: XcodeContextScheme]] = [:]
-        var modeOptions: [String: [BuildContextOption]] = [:]
         let schemes = base.schemes.sorted { $0.path.absoluteString < $1.path.absoluteString }
-        var options = schemes.map { scheme -> BuildContextOption in
-            let id = scheme.path.resolvingSymlinksInPath().standardizedFileURL.absoluteString
-            let modes = params.operation == .debug ? ["run", "test"] : [""]
-            var supported: [String: XcodeContextScheme] = [:]
-            let choices = modes.map { mode -> BuildContextOption in
-                do {
-                    supported[mode] = try contextScheme(
-                        scheme,
-                        operation: params.operation,
-                        debugMode: mode,
-                        requested: requested
-                    )
-                    return BuildContextOption(
-                        id: mode,
-                        label: mode == "test" ? "Tests" : "Application",
-                        availability: true
-                    )
-                } catch {
-                    return BuildContextOption(
-                        id: mode,
-                        label: mode == "test" ? "Tests" : "Application",
-                        reason: error.localizedDescription,
-                        availability: false
-                    )
-                }
-            }
-            plans[id] = supported
-            modeOptions[id] = choices
-            return BuildContextOption(
-                id: id, label: scheme.name, description: scheme.path.path,
-                reason: supported.isEmpty ? choices.compactMap(\.reason).joined(separator: "; ") : nil,
-                availability: !supported.isEmpty
-            )
-        }
+        let choices = operationSchemeOptions(schemes, operation: params.operation, requested: requested)
+        var options = choices.options
         if let id = selection["xcode.scheme"], !options.contains(where: { $0.id == id }) {
             options.append(BuildContextOption(
                 id: id,
@@ -75,70 +47,169 @@ public extension XcodeProjectManager {
             options: options,
             value: selection["xcode.scheme"]
         ))
-        guard let id = selection["xcode.scheme"], let availablePlans = plans[id], !availablePlans.isEmpty else {
+        guard let id = selection["xcode.scheme"], let availablePlans = choices.plans[id], !availablePlans.isEmpty else {
             return BuildContextOptionsResult(dimensions: dimensions, selection: selection)
         }
+        let mode = try operationDebugMode(
+            params.operation,
+            availablePlans: availablePlans,
+            modeOptions: choices.modeOptions[id],
+            requested: requested,
+            selection: &selection
+        )
+        guard let plan = availablePlans[mode] else {
+            return BuildContextOptionsResult(dimensions: dimensions, selection: selection)
+        }
+        let dependent = operationTargetOptions(plan: plan, operation: params.operation, selection: &selection)
+        dimensions.append(contentsOf: dependent)
+        return BuildContextOptionsResult(dimensions: dimensions, selection: selection)
+    }
+
+    private func operationSchemeOptions(
+        _ schemes: [XcodeScheme],
+        operation: BuildContextOperation,
+        requested: [XcodeTarget]?
+    ) -> XcodeOperationSchemeOptions {
+        var plans: [String: [String: XcodeContextScheme]] = [:]
+        var modeOptions: [String: [BuildContextOption]] = [:]
+        let options = schemes.map { scheme -> BuildContextOption in
+            let id = scheme.path.resolvingSymlinksInPath().standardizedFileURL.absoluteString
+            let modes = operation == .debug ? ["run", "test"] : [""]
+            var supported: [String: XcodeContextScheme] = [:]
+            let choices = modes.map { mode -> BuildContextOption in
+                do {
+                    supported[mode] = try contextScheme(
+                        scheme,
+                        operation: operation,
+                        debugMode: mode,
+                        requested: requested
+                    )
+                    return BuildContextOption(
+                        id: mode,
+                        label: mode == "test" ? "Tests" : "Application",
+                        availability: true
+                    )
+                } catch {
+                    return BuildContextOption(
+                        id: mode,
+                        label: mode == "test" ? "Tests" : "Application",
+                        reason: error.localizedDescription,
+                        availability: false
+                    )
+                }
+            }
+            plans[id] = supported
+            modeOptions[id] = choices
+            return BuildContextOption(
+                id: id,
+                label: scheme.name,
+                description: scheme.path.path,
+                reason: supported.isEmpty ? choices.compactMap(\.reason).joined(separator: "; ") : nil,
+                availability: !supported.isEmpty
+            )
+        }
+        return XcodeOperationSchemeOptions(options: options, plans: plans, modeOptions: modeOptions)
+    }
+
+    private func operationDebugMode(
+        _ operation: BuildContextOperation,
+        availablePlans: [String: XcodeContextScheme],
+        modeOptions: [BuildContextOption]?,
+        requested: [XcodeTarget]?,
+        selection: inout [String: String]
+    ) throws -> String {
         var mode = ""
-        if params.operation == .debug {
+        if operation == .debug {
             if selection["xcode.debugMode"] == nil, let scheme = availablePlans.values.first?.scheme {
                 selection["xcode.debugMode"] = try contextDefaultDebugMode(scheme: scheme, requested: requested)
             }
             guard let selected = selection["xcode.debugMode"], availablePlans[selected] != nil else {
-                let reason = modeOptions[id]?.first { $0.id == selection["xcode.debugMode"] }?.reason
+                let reason = modeOptions?.first { $0.id == selection["xcode.debugMode"] }?.reason
                 throw BuildContextError.invalid(reason ?? "The selected debug mode is not supported by this scheme")
             }
             mode = selected
         }
-        guard let plan = availablePlans[mode] else { return BuildContextOptionsResult(
-            dimensions: dimensions,
-            selection: selection
-        ) }
-        let configurations = plan.targets.dropFirst().reduce(Set(plan.targets[0].buildConfigurations)) {
+        return mode
+    }
+
+    private func operationTargetOptions(
+        plan: XcodeContextScheme,
+        operation: BuildContextOperation,
+        selection: inout [String: String]
+    ) -> [BuildContextDimension] {
+        var dimensions: [BuildContextDimension] = []
+        let remainingTargets = plan.targets.dropFirst()
+        let commonConfigurations = remainingTargets.reduce(Set(plan.targets[0].buildConfigurations)) {
             $0.intersection($1.buildConfigurations)
-        }.sorted()
+        }
+        let configurations = commonConfigurations.sorted()
         let configuration = selection["xcode.configuration"] ?? plan.configuration
         selection["xcode.configuration"] = configuration
         var configurationOptions = configurations.map { BuildContextOption(id: $0, label: $0, availability: true) }
         if !configurations.contains(configuration) {
             configurationOptions.append(BuildContextOption(
-                id: configuration, label: configuration,
-                reason: "This configuration is not available for all selected targets", availability: false
+                id: configuration,
+                label: configuration,
+                reason: "This configuration is not available for all selected targets",
+                availability: false
             ))
         }
         dimensions.append(BuildContextDimension(
-            id: "xcode.configuration", label: "Configuration",
-            options: configurationOptions, value: configuration
+            id: "xcode.configuration",
+            label: "Configuration",
+            options: configurationOptions,
+            value: configuration
         ))
         guard configurations.contains(configuration) else {
-            return BuildContextOptionsResult(dimensions: dimensions, selection: selection)
+            return dimensions
         }
         let destinations: [XcodeDestination]
         do {
             destinations = try contextDestinations(
                 plan: plan,
-                operation: params.operation,
+                operation: operation,
                 configuration: configuration
             )
         } catch {
             let invalid = selection["xcode.destination"] ?? "unavailable"
             dimensions.append(BuildContextDimension(
-                id: "xcode.destination", label: "Destination",
-                options: [.init(
-                    id: invalid,
-                    label: "Unavailable",
-                    reason: error.localizedDescription,
-                    availability: false
-                )],
+                id: "xcode.destination",
+                label: "Destination",
+                options: [
+                    .init(
+                        id: invalid,
+                        label: "Unavailable",
+                        reason: error.localizedDescription,
+                        availability: false
+                    )
+                ],
                 value: selection["xcode.destination"]
             ))
-            return BuildContextOptionsResult(dimensions: dimensions, selection: selection)
+            return dimensions
         }
+        let destinationDimension = operationDestinationOptions(
+            destinations,
+            plan: plan,
+            operation: operation,
+            selection: &selection
+        )
+        return dimensions + [destinationDimension]
+    }
+
+    private func operationDestinationOptions(
+        _ destinations: [XcodeDestination],
+        plan: XcodeContextScheme,
+        operation: BuildContextOperation,
+        selection: inout [String: String]
+    ) -> BuildContextDimension {
         var destinationOptions = destinations.map { destination in
-            let reason = contextDestinationReason(destination, plan: plan, operation: params.operation)
+            let reason = contextDestinationReason(destination, plan: plan, operation: operation)
             return BuildContextOption(
-                id: destination.id, label: destination.fullDescription,
+                id: destination.id,
+                label: destination.fullDescription,
                 description: "Device inventory; compatibility is inferred from build settings",
-                reason: reason, availability: reason == nil,
+                reason: reason,
+                availability: reason == nil,
                 dataKind: BuildContextDestination.dataKind,
                 data: destination.buildContextMetadata.encodeToLSPAny()
             )
@@ -146,24 +217,27 @@ public extension XcodeProjectManager {
         if let id = selection["xcode.destination"] {
             if !destinationOptions.contains(where: { $0.id == id }) {
                 destinationOptions.append(BuildContextOption(
-                    id: id, label: id, reason: "This destination is not compatible with the selected configuration",
+                    id: id,
+                    label: id,
+                    reason: "This destination is not compatible with the selected configuration",
                     availability: false
                 ))
             }
         } else {
             let available = destinations
-                .filter { contextDestinationReason($0, plan: plan, operation: params.operation) == nil }
+                .filter { contextDestinationReason($0, plan: plan, operation: operation) == nil }
             let preferred = available.first { destination in
                 destination.platform == .macOS ||
-                    (destination.type == .simulator && (params.operation != .compile || !destination.isRunnable))
+                    (destination.type == .simulator && (operation != .compile || !destination.isRunnable))
             }
             if let selected = preferred ?? available.first { selection["xcode.destination"] = selected.id }
         }
-        dimensions.append(BuildContextDimension(
-            id: "xcode.destination", label: "Destination", options: destinationOptions,
+        return BuildContextDimension(
+            id: "xcode.destination",
+            label: "Destination",
+            options: destinationOptions,
             value: selection["xcode.destination"]
-        ))
-        return BuildContextOptionsResult(dimensions: dimensions, selection: selection)
+        )
     }
 
     func resolveContext(_ params: BuildContextParams) async throws -> BuildContext {
@@ -177,7 +251,7 @@ public extension XcodeProjectManager {
             guard let value = dimension.value,
                   let option = dimension.options.first(where: { $0.id == value }), option.availability != false else {
                 throw BuildContextError
-                    .invalid(dimension.options.first(where: { $0.id == dimension.value })?
+                    .invalid(dimension.options.first { $0.id == dimension.value }?
                         .reason ?? "Select an available \(dimension.label.lowercased())")
             }
         }
@@ -187,7 +261,9 @@ public extension XcodeProjectManager {
         guard result.selection["xcode.destination"] != nil
         else { throw BuildContextError.invalid("No usable destination is available") }
         let plan = try contextScheme(
-            scheme, operation: params.operation, debugMode: result.selection["xcode.debugMode"],
+            scheme,
+            operation: params.operation,
+            debugMode: result.selection["xcode.debugMode"],
             requested: contextRequestedTargets(params.scope)
         )
         return try BuildContext(
@@ -220,7 +296,9 @@ extension XcodeProjectManager {
     }
 
     func contextDestinations(
-        plan: XcodeContextScheme, operation: BuildContextOperation, configuration: String
+        plan: XcodeContextScheme,
+        operation: BuildContextOperation,
+        configuration: String
     ) throws -> [XcodeDestination] {
         guard let base = projectSnapshot else { throw BuildContextError.invalid("Project not initialized") }
         let settings = try plan.targets.map { target -> [String: String] in
@@ -228,8 +306,12 @@ extension XcodeProjectManager {
                 throw BuildContextError.invalid("Cannot load \(target.projectURL.path)")
             }
             return try BuildSettingResolver(
-                xcodeInstallation: base.xcodeInstallation, xcodeGlobalSettings: base.xcodeGlobalSettings,
-                xcodeProj: project, target: target.name, configuration: configuration, forceSimulator: false
+                xcodeInstallation: base.xcodeInstallation,
+                xcodeGlobalSettings: base.xcodeGlobalSettings,
+                xcodeProj: project,
+                target: target.name,
+                configuration: configuration,
+                forceSimulator: false
             ).resolvedBuildSettings
         }
         if operation == .debug, plan.buildsTests {
@@ -239,9 +321,12 @@ extension XcodeProjectManager {
         }
         let inventory = destinationLoader.allDestinations
         var seen = Set<String>()
-        return inventory.filter { destination in
+        let compatible = inventory.filter { destination in
             seen.insert(destination.id).inserted && settings.allSatisfy { contextDestination(destination, matches: $0) }
-        }.sorted { $0.fullDescription == $1.fullDescription ? $0.id < $1.id : $0.fullDescription < $1.fullDescription }
+        }
+        return compatible.sorted {
+            $0.fullDescription == $1.fullDescription ? $0.id < $1.id : $0.fullDescription < $1.fullDescription
+        }
     }
 
     private func contextDestination(_ destination: XcodeDestination, matches settings: [String: String]) -> Bool {
@@ -256,18 +341,22 @@ extension XcodeProjectManager {
         guard destination.platform == family else { return false }
         if let supported = settings["SUPPORTED_PLATFORMS"], !supported.isEmpty {
             let supportedPlatforms = supported.split(whereSeparator: \.isWhitespace).map(String.init)
-            let devicePlatform: Platform = switch family {
-            case .macOS: .macOS
-            case .iOS: .iOS
-            case .watchOS: .watchOS
-            case .tvOS: .tvOS
-            case .visionOS: .visionOS
-            }
+            let devicePlatform = contextDevicePlatform(family)
             let expected = destination.type == .simulator ? devicePlatform.simulatorVariant.rawValue : devicePlatform
                 .rawValue
             return supportedPlatforms.contains(expected)
         }
         return true
+    }
+
+    private func contextDevicePlatform(_ family: XcodeDestinationPlatform) -> Platform {
+        switch family {
+        case .macOS: .macOS
+        case .iOS: .iOS
+        case .watchOS: .watchOS
+        case .tvOS: .tvOS
+        case .visionOS: .visionOS
+        }
     }
 
     private func contextDestinationReason(

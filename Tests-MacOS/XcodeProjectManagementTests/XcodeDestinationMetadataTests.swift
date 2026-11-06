@@ -7,7 +7,7 @@ struct XcodeDestinationMetadataTests {
     @Test
     func concurrentReadersObserveCompletePublishedInventories() async throws {
         let source = DestinationInventorySource()
-        let loader = XcodeDestinationLoader(discover: { await source.discover() })
+        let loader = XcodeDestinationLoader { await source.discover() }
         try await loader.loadDestinations()
         let initialSnapshot = loader.allDestinations
         let initialDevices = initialSnapshot.filter { $0.state == "connected" }
@@ -35,7 +35,7 @@ struct XcodeDestinationMetadataTests {
                             loader.watchosDestinations,
                             loader.visionosDestinations
                         ] {
-                            #expect(platform.count(where: { $0.state == "connected" }) == 1)
+                            #expect(platform.count { $0.state == "connected" } == 1)
                         }
                         await Task.yield()
                     }
@@ -51,7 +51,7 @@ struct XcodeDestinationMetadataTests {
     @Test
     func cancelledDiscoveryCannotPublishAResultAfterItReturns() async throws {
         let gate = DestinationDiscoveryGate()
-        let loader = XcodeDestinationLoader(discover: { await gate.discover() })
+        let loader = XcodeDestinationLoader { await gate.discover() }
         let discovery = Task { try await loader.loadDestinations(reload: true) }
         await gate.waitUntilStarted()
         discovery.cancel()

@@ -32,7 +32,9 @@ struct XcodeBuildContextTests {
         }
         #expect(await inventory.calls == 6)
     }
+}
 
+extension XcodeBuildContextTests {
     @Test
     func sharedDiscoveryDoesNotChooseActionDefaults() async throws {
         let fixture = try await ContextFixture.make { scheme, _ in
@@ -117,7 +119,7 @@ struct XcodeBuildContextTests {
         #expect(context.selection["xcode.configuration"] == "Release")
         #expect(context.selection["xcode.destination"] == "generic/platform=iOS Simulator")
         let command = try await fixture.manager.contextBuildCommand(context, arguments: nil)
-        #expect(command.count(where: { $0 == "-scheme" }) == 1)
+        #expect(command.count { $0 == "-scheme" } == 1)
         #expect(command.contains("Hello"))
         #expect(command.contains("Release"))
         #expect(command.contains("build"))
@@ -177,7 +179,7 @@ struct XcodeBuildContextTests {
             arguments: ["-scheme", "Hello", "-configuration", "Debug", "-destination", "id=TEST-SIMULATOR"]
         )
         #expect(commands.count == 1)
-        #expect(commands[0].count(where: { $0 == "-scheme" }) == 1)
+        #expect(commands[0].count { $0 == "-scheme" } == 1)
         #expect(commands[0].contains("-only-testing:HelloTests"))
         #expect(!commands[0].contains("-only-testing:HelloUITests"))
         let generic = try await fixture.manager.contextOptions(.init(
@@ -266,7 +268,9 @@ struct XcodeBuildContextTests {
     @Test
     func duplicateSchemeNamesRemainVisibleAndCannotResolve() async throws {
         let fixture = try await ContextFixture.make { _, directory in
-            let duplicate = directory.deletingLastPathComponent().deletingLastPathComponent()
+            let duplicate = directory
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
                 .appendingPathComponent("xcuserdata/other.xcuserdatad/xcschemes")
             try FileManager.default.createDirectory(at: duplicate, withIntermediateDirectories: true)
             try FileManager.default.copyItem(
@@ -351,13 +355,14 @@ private struct ContextFixture {
             try scheme.write(path: .init(schemeURL.path), override: true)
             let toolchain = XcodeToolchain(workingDirectory: root)
             let manager = XcodeProjectManager(
-                rootURL: root, toolchain: toolchain, projectLocator: XcodeProjectLocator(),
-                settingsLoader: XcodeSettingsLoader(commandBuilder: XcodeBuildCommandBuilder(), toolchain: toolchain),
-                destinationDiscovery: {
-                    if let inventory { return try await inventory.discover() }
-                    return ContextInventory.connected
-                }
-            )
+                rootURL: root,
+                toolchain: toolchain,
+                projectLocator: XcodeProjectLocator(),
+                settingsLoader: XcodeSettingsLoader(commandBuilder: XcodeBuildCommandBuilder(), toolchain: toolchain)
+            ) {
+                if let inventory { return try await inventory.discover() }
+                return ContextInventory.connected
+            }
             try await manager.initialize()
             return Self(root: root, manager: manager)
         } catch {

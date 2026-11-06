@@ -36,73 +36,13 @@ extension XcodeProjectManager {
         let candidates: [XcodeTarget]
         let configuration: String
         if buildsTests {
-            guard let action = parsed.testAction else {
-                throw BuildContextError.invalid("Scheme '\(scheme.name)' has no test action")
-            }
-            guard action.testPlans?.isEmpty != false else {
-                throw BuildContextError.invalid("Test plans are not supported by execution contexts yet")
-            }
-            candidates = try uniqueContextTargets(action.testables.filter { !$0.skipped }.map {
-                try contextTarget(for: $0.buildableReference, scheme: scheme)
-            })
-            guard candidates.allSatisfy(\.xcodeProductType.isTestBundle),
-                  Set(candidates.map(\.name)).count == candidates.count else {
-                throw BuildContextError.invalid("The test action must contain test bundles with distinct target names")
-            }
-            configuration = action.buildConfiguration
-            if operation == .debug {
-                guard action.preActions.isEmpty, action.postActions.isEmpty,
-                      action.commandlineArguments?.arguments.contains(where: \.enabled) != true,
-                      action.environmentVariables?.contains(where: \.enabled) != true,
-                      !action.enableAddressSanitizer, !action.enableThreadSanitizer, !action.enableUBSanitizer,
-                      action.language == nil, action.region == nil, action.customLLDBInitFile == nil,
-                      action.additionalOptions.isEmpty,
-                      action.testables.allSatisfy({ $0.selectedTests.isEmpty && $0.skippedTests.isEmpty }) else {
-                    throw BuildContextError.invalid("Test debugging cannot apply this scheme's test action settings")
-                }
-                if action.shouldUseLaunchSchemeArgsEnv, let launch = parsed.launchAction {
-                    try validateContextLaunchSettings(launch)
-                }
-            } else if operation == .test, (requested?.count ?? candidates.count) > 1,
-                      !action.preActions.isEmpty || !action.postActions.isEmpty ||
-                      parsed.buildAction?.preActions.isEmpty == false || parsed.buildAction?.postActions
-                      .isEmpty == false {
-                throw BuildContextError.invalid("Tests with action scripts require a single test target")
-            }
+            (candidates, configuration) = try contextTestAction(
+                parsed, scheme: scheme, operation: operation, requested: requested
+            )
         } else if operation == .run || operation == .debug {
-            guard let action = parsed.launchAction,
-                  action.runnable is XCScheme.BuildableProductRunnable,
-                  let reference = action.runnable?.buildableReference,
-                  action.runnable?.runnableDebuggingMode == "0",
-                  action.launchStyle == .auto, action.askForAppToLaunch != true else {
-                throw BuildContextError.invalid("This scheme does not launch a buildable application")
-            }
-            try validateContextLaunchSettings(action)
-            let target = try contextTarget(for: reference, scheme: scheme)
-            guard target.xcodeProductType.isApplication else {
-                throw BuildContextError.invalid("Running and debugging require an application target")
-            }
-            guard try parsed.buildAction?.buildActionEntries.contains(where: {
-                guard $0.buildFor.contains(.running) else { return false }
-                return try contextTarget(for: $0.buildableReference, scheme: scheme).targetIdentifier == target
-                    .targetIdentifier
-            }) == true else {
-                throw BuildContextError.invalid("The scheme does not build its application for running")
-            }
-            candidates = [target]
-            configuration = action.buildConfiguration
+            (candidates, configuration) = try contextLaunchAction(parsed, scheme: scheme)
         } else {
-            let entries = parsed.buildAction?.buildActionEntries.filter { $0.buildFor.contains(.running) } ?? []
-            let targets = try uniqueContextTargets(entries.map { try contextTarget(
-                for: $0.buildableReference,
-                scheme: scheme
-            ) })
-            candidates = targets.filter { candidate in
-                !targets.contains { other in
-                    other.targetIdentifier != candidate.targetIdentifier &&
-                        contextDependencies(of: other).contains(candidate.targetIdentifier)
-                }
-            }
+            candidates = try contextBuildTargets(parsed, scheme: scheme)
             configuration = parsed.launchAction?.buildConfiguration ?? base.configuration
         }
         guard !candidates.isEmpty else {
@@ -135,6 +75,87 @@ extension XcodeProjectManager {
             configuration: configuration,
             buildsTests: buildsTests
         )
+    }
+
+    private func contextTestAction(
+        _ parsed: XCScheme,
+        scheme: XcodeScheme,
+        operation: BuildContextOperation,
+        requested: [XcodeTarget]?
+    ) throws -> ([XcodeTarget], String) {
+        guard let action = parsed.testAction else {
+            throw BuildContextError.invalid("Scheme '\(scheme.name)' has no test action")
+        }
+        guard action.testPlans?.isEmpty != false else {
+            throw BuildContextError.invalid("Test plans are not supported by execution contexts yet")
+        }
+        let candidates = try uniqueContextTargets(action.testables.filter { !$0.skipped }.map {
+            try contextTarget(for: $0.buildableReference, scheme: scheme)
+        })
+        guard candidates.allSatisfy(\.xcodeProductType.isTestBundle),
+              Set(candidates.map(\.name)).count == candidates.count else {
+            throw BuildContextError.invalid("The test action must contain test bundles with distinct target names")
+        }
+        if operation == .debug {
+            guard action.preActions.isEmpty, action.postActions.isEmpty,
+                  action.commandlineArguments?.arguments.contains(where: \.enabled) != true,
+                  action.environmentVariables?.contains(where: \.enabled) != true,
+                  !action.enableAddressSanitizer, !action.enableThreadSanitizer, !action.enableUBSanitizer,
+                  action.language == nil, action.region == nil, action.customLLDBInitFile == nil,
+                  action.additionalOptions.isEmpty,
+                  action.testables.allSatisfy({ $0.selectedTests.isEmpty && $0.skippedTests.isEmpty }) else {
+                throw BuildContextError.invalid("Test debugging cannot apply this scheme's test action settings")
+            }
+            if action.shouldUseLaunchSchemeArgsEnv, let launch = parsed.launchAction {
+                try validateContextLaunchSettings(launch)
+            }
+        } else if operation == .test, (requested?.count ?? candidates.count) > 1,
+                  !action.preActions.isEmpty || !action.postActions.isEmpty ||
+                  parsed.buildAction?.preActions.isEmpty == false || parsed.buildAction?.postActions
+                  .isEmpty == false {
+            throw BuildContextError.invalid("Tests with action scripts require a single test target")
+        }
+        return (candidates, action.buildConfiguration)
+    }
+
+    private func contextLaunchAction(
+        _ parsed: XCScheme,
+        scheme: XcodeScheme
+    ) throws -> ([XcodeTarget], String) {
+        guard let action = parsed.launchAction,
+              action.runnable is XCScheme.BuildableProductRunnable,
+              let reference = action.runnable?.buildableReference,
+              action.runnable?.runnableDebuggingMode == "0",
+              action.launchStyle == .auto, action.askForAppToLaunch != true else {
+            throw BuildContextError.invalid("This scheme does not launch a buildable application")
+        }
+        try validateContextLaunchSettings(action)
+        let target = try contextTarget(for: reference, scheme: scheme)
+        guard target.xcodeProductType.isApplication else {
+            throw BuildContextError.invalid("Running and debugging require an application target")
+        }
+        guard try parsed.buildAction?.buildActionEntries.contains(where: {
+            guard $0.buildFor.contains(.running) else { return false }
+            return try contextTarget(for: $0.buildableReference, scheme: scheme).targetIdentifier == target
+                .targetIdentifier
+        }) == true else {
+            throw BuildContextError.invalid("The scheme does not build its application for running")
+        }
+        return ([target], action.buildConfiguration)
+    }
+
+    private func contextBuildTargets(_ parsed: XCScheme, scheme: XcodeScheme) throws -> [XcodeTarget] {
+        let entries = parsed.buildAction?.buildActionEntries.filter { $0.buildFor.contains(.running) } ?? []
+        let targets = try uniqueContextTargets(entries.map { try contextTarget(
+            for: $0.buildableReference,
+            scheme: scheme
+        ) })
+        return targets.filter { candidate in
+            !targets.contains { other in
+                other.targetIdentifier != candidate.targetIdentifier &&
+                    contextDependencies(of: other).contains(candidate.targetIdentifier)
+            }
+        }
     }
 
     func contextTarget(for reference: XCScheme.BuildableReference, scheme: XcodeScheme) throws -> XcodeTarget {
@@ -189,11 +210,13 @@ extension XcodeProjectManager {
             }
         }
         func targetProjectPath(_ dependency: PBXTarget) -> String {
-            projectSnapshot?.xcodeTargets.first(where: { item in
-                loadXcodeProjCache(projectURL: item.projectURL)?.pbxproj.nativeTargets.contains(where: {
-                    $0 === dependency
-                }) == true
-            })?.projectURL.path ?? target.projectURL.path
+            projectSnapshot?.xcodeTargets.first { item in
+                let containsDependency = loadXcodeProjCache(projectURL: item.projectURL)?.pbxproj.nativeTargets
+                    .contains {
+                        $0 === dependency
+                    }
+                return containsDependency == true
+            }?.projectURL.path ?? target.projectURL.path
         }
         visit(native)
         return result

@@ -45,41 +45,67 @@ public extension XcodeProjectManager {
             let matchingTarget = requested?.count == 1 ? available.first { $0.label == requested?.first?.name } : nil
             if let selected = preferred ?? matchingTarget ?? available.first { selection["xcode.scheme"] = selected.id }
         }
-        var dimensions = [BuildContextDimension(
+        let schemeDimension = BuildContextDimension(
             id: "xcode.scheme",
             label: "Scheme",
             options: choices,
             value: selection["xcode.scheme"]
-        )]
+        )
+        var dimensions = [schemeDimension]
         guard let id = selection["xcode.scheme"], let targets = related[id],
               let scheme = schemes
               .first(where: { $0.path.resolvingSymlinksInPath().standardizedFileURL.absoluteString == id }) else {
             dimensions += [
                 BuildContextDimension(
-                    id: "xcode.configuration", label: "Configuration", required: false,
-                    options: [], value: selection["xcode.configuration"], enabled: false,
+                    id: "xcode.configuration",
+                    label: "Configuration",
+                    required: false,
+                    options: [],
+                    value: selection["xcode.configuration"],
+                    enabled: false,
                     reason: "Select a scheme first"
                 ),
                 BuildContextDimension(
-                    id: "xcode.destination", label: "Destination", required: false,
-                    options: [], value: selection["xcode.destination"], enabled: false,
+                    id: "xcode.destination",
+                    label: "Destination",
+                    required: false,
+                    options: [],
+                    value: selection["xcode.destination"],
+                    enabled: false,
                     reason: "Select a scheme first"
                 )
             ]
             return BuildContextOptionsResult(dimensions: dimensions, selection: selection, operations: [])
         }
+        dimensions += contextDiscoveryTargetDimensions(targets, scheme: scheme, selection: selection)
+        let operations = contextDiscoveryOperations(scope: params.scope, selection: selection)
+        return BuildContextOptionsResult(dimensions: dimensions, selection: selection, operations: operations)
+    }
+}
+
+extension XcodeProjectManager {
+    private func contextDiscoveryTargetDimensions(
+        _ targets: [XcodeTarget],
+        scheme: XcodeScheme,
+        selection: [String: String]
+    ) -> [BuildContextDimension] {
+        var dimensions: [BuildContextDimension] = []
         let configurations = Set(targets.flatMap(\.buildConfigurations)).sorted()
         var configurationOptions = configurations.map { BuildContextOption(id: $0, label: $0, availability: true) }
         if let configuration = selection["xcode.configuration"], !configurations.contains(configuration) {
             configurationOptions.append(BuildContextOption(
-                id: configuration, label: configuration,
+                id: configuration,
+                label: configuration,
                 reason: "This configuration is not available in the selected scheme",
                 availability: false
             ))
         }
         dimensions.append(BuildContextDimension(
-            id: "xcode.configuration", label: "Configuration", required: false,
-            options: configurationOptions, value: selection["xcode.configuration"]
+            id: "xcode.configuration",
+            label: "Configuration",
+            required: false,
+            options: configurationOptions,
+            value: selection["xcode.configuration"]
         ))
         var inventory: [String: XcodeDestination] = [:]
         var destinationError: String?
@@ -105,11 +131,13 @@ public extension XcodeProjectManager {
                 }
             }
         }
-        var destinationOptions = inventory.values.sorted {
+        let sortedDestinations = inventory.values.sorted {
             $0.fullDescription == $1.fullDescription ? $0.id < $1.id : $0.fullDescription < $1.fullDescription
-        }.map { destination in
+        }
+        var destinationOptions = sortedDestinations.map { destination in
             BuildContextOption(
-                id: destination.id, label: destination.fullDescription,
+                id: destination.id,
+                label: destination.fullDescription,
                 description: (destination.isRunnable ? "" : "Build only. ") +
                     "Device inventory; compatibility is inferred from build settings",
                 reason: destination.isAvailable ? nil : "This destination is offline or unavailable",
@@ -120,21 +148,22 @@ public extension XcodeProjectManager {
         }
         if let selected = selection["xcode.destination"], inventory[selected] == nil {
             destinationOptions.append(BuildContextOption(
-                id: selected, label: selected,
+                id: selected,
+                label: selected,
                 reason: destinationError ?? "This destination is not compatible with the selected configuration",
                 availability: false
             ))
         }
         dimensions.append(BuildContextDimension(
-            id: "xcode.destination", label: "Destination", required: false,
-            options: destinationOptions, value: selection["xcode.destination"]
+            id: "xcode.destination",
+            label: "Destination",
+            required: false,
+            options: destinationOptions,
+            value: selection["xcode.destination"]
         ))
-        let operations = contextDiscoveryOperations(scope: params.scope, selection: selection)
-        return BuildContextOptionsResult(dimensions: dimensions, selection: selection, operations: operations)
+        return dimensions
     }
-}
 
-extension XcodeProjectManager {
     private func contextDiscoveryTargets(scheme: XcodeScheme, requested: [XcodeTarget]?) throws -> [XcodeTarget] {
         let parsed = try XCScheme(pathString: scheme.path.path)
         let references = (parsed.buildAction?.buildActionEntries.map(\.buildableReference) ?? []) +
