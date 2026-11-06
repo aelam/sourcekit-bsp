@@ -35,6 +35,7 @@ struct SwiftPMBSPIntegrationTests {
         #expect(response.result.capabilities.compileProvider != nil)
         #expect(response.result.capabilities.testProvider != nil)
         #expect(response.result.capabilities.runProvider != nil)
+        #expect(response.result.capabilities.outputPathsProvider == true)
         #if os(macOS)
         #expect(response.result.capabilities.debugProvider != nil)
         #else
@@ -56,6 +57,13 @@ struct SwiftPMBSPIntegrationTests {
         #expect(target.capabilities.canDebug == false)
         let sources = try await manager.getSourceFileList(targetIdentifiers: [target.id])
         #expect(sources.flatMap(\.sources).map(\.uri) == [URI(source.resolvingSymlinksInPath())])
+        let outputs = try await service.outputPaths(for: [target.id])
+        let output = try #require(outputs.first?.outputPaths.first)
+        #expect(outputs.first?.target == target.id)
+        #expect(output.kind == .directory)
+        let outputURL = try #require(output.uri.fileURL)
+        #expect(outputURL.path.contains("/\(root.lastPathComponent)/.build/"))
+        #expect(outputURL.lastPathComponent.lowercased() == "debug")
         await service.shutdownProject()
     }
 

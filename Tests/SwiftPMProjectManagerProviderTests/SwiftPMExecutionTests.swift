@@ -5,6 +5,56 @@ import Testing
 
 struct SwiftPMExecutionTests {
     @Test
+    func outputPathsUseBuildOptionsWithoutBuilding() async throws {
+        let fixture = try TemporarySwiftPMPackage()
+        let executor = try ActionRecorder(fixture: fixture)
+        let manager = fixture.manager(executor: executor)
+        try await manager.initialize()
+        let targets = await manager.getTargetList()
+        let app = try #require(targets.first { $0.displayName == "App" })
+        let core = try #require(targets.first { $0.displayName == "Core" })
+        let provider: any ProjectManager = manager
+        #expect(await provider.capabilities.contains(.outputPaths))
+        let outputs = try await provider.outputPaths(for: [app.id, core.id])
+        #expect(outputs.map(\.target) == [app.id, core.id])
+        #expect(outputs.allSatisfy {
+            $0.outputPaths == [.init(uri: URI(fixture.root.appendingPathComponent("bin")), kind: .directory)]
+        })
+        var calls = await executor.calls.filter { $0.arguments.first == "build" }
+        #expect(calls.count == 1)
+        #expect(calls[0].arguments == ["build", "--package-path", fixture.root.path, "--show-bin-path"])
+
+        #expect(try await manager.startBuild(
+            targetIdentifiers: [app.id],
+            arguments: ["--configuration=release", "--scratch-path", "custom build", "-Xswiftc", "-c"],
+            logHandler: nil
+        ) == .ok)
+        _ = try await provider.outputPaths(for: [app.id, core.id])
+        calls = await executor.calls.filter { $0.arguments.contains("--show-bin-path") }
+        #expect(calls.count == 2)
+        #expect(calls.last?.arguments == [
+            "build", "--package-path", fixture.root.path, "--configuration=release",
+            "--scratch-path", "custom build", "--show-bin-path"
+        ])
+
+        await executor.setExitCode(1)
+        #expect(try await manager.startBuild(targetIdentifiers: [app.id], arguments: ["-c", "debug"], logHandler: nil)
+            == .error)
+        _ = try await provider.outputPaths(for: [app.id])
+        #expect(await executor.calls.last?.arguments.contains("--configuration=release") == true)
+        let count = await executor.calls.count
+        #expect(try await provider.outputPaths(for: []).isEmpty)
+        await #expect(throws: SwiftPMProjectError.self) {
+            try await provider.outputPaths(for: [BSPBuildTargetIdentifier(uri: URI(fixture.directory))])
+        }
+        #expect(await executor.calls.count == count)
+        await manager.shutdown()
+        await #expect(throws: SwiftPMProjectError.self) {
+            try await provider.outputPaths(for: [app.id])
+        }
+    }
+
+    @Test
     func buildsTheSelectedProductAndRejectsTargetOverrides() async throws {
         let fixture = try TemporarySwiftPMPackage()
         let executor = try ActionRecorder(fixture: fixture)
@@ -141,6 +191,15 @@ struct SwiftPMExecutionTests {
             arguments: buildArguments
         ) { buildLogs.append($0) } == .ok)
         #expect(!buildLogs.lines.isEmpty)
+        let outputs = try await manager.outputPaths(for: [app.id])
+        let outputPath = try #require(outputs.first?.outputPaths.first)
+        #expect(outputPath.kind == .directory)
+        let directory = try #require(outputPath.uri.fileURL)
+        #expect(FileManager.default.isExecutableFile(atPath: directory.appendingPathComponent("probe-tool").path))
+        if !buildArguments.isEmpty {
+            #expect(directory.path.contains("custom build"))
+            #expect(directory.lastPathComponent.lowercased() == "release")
+        }
         let runLogs = CapturedLines()
         #expect(try await manager.run(
             targetIdentifier: app.id,
@@ -294,7 +353,7 @@ private actor ActionRecorder: SwiftPMCommandExecuting {
 
     init(fixture: TemporarySwiftPMPackage) throws {
         metadata = try fixture.describe(
-            targets: [describedTarget("Core"), describedTarget("App", type: "executable")],
+            targets: [describedTarget("Core"), describedTarget("App", type: "executable", dependencies: ["Core"])],
             products: [["name": "app-tool", "targets": ["App"]]]
         )
         binDirectory = fixture.root.appendingPathComponent("bin")

@@ -53,25 +53,7 @@ extension BSPServerService {
         guard await projectManager.capabilities.contains(.outputPaths) else {
             throw BuildServerError.invalidConfiguration("Output paths are not supported by this project provider")
         }
-        guard let projectInfo = await projectManager.project else {
-            throw BuildServerError.invalidConfiguration("Project info not initialized")
-        }
-
-        let productsDirectory = projectInfo.buildRootURL.appendingPathComponent(
-            "Build/Products",
-            isDirectory: true
-        )
-        let outputPath = BuildTargetOutputPathsResult.OutputPathsItem.OutputPathItem(
-            uri: URI(productsDirectory),
-            kind: .directory
-        )
-
-        return targets.map { target in
-            BuildTargetOutputPathsResult.OutputPathsItem(
-                target: target,
-                outputPaths: [outputPath]
-            )
-        }
+        return try await projectManager.outputPaths(for: targets)
     }
 
     func cleanBuildTargetCaches(

@@ -66,6 +66,10 @@ public extension SwiftPMProjectManager {
                     output.append($0)
                     logHandler?($0)
                 }
+                if result.exitCode == 0 {
+                    let outputTargets = options.contains("--skip-build") ? [target] : project?.targets.map(\.id) ?? []
+                    recordOutputArguments(options, for: outputTargets)
+                }
                 let completedOutput = swiftPMOutputText(result.standardOutput) + "\n"
                     + swiftPMOutputText(result.standardError)
                 let targetStatus = await finishTest(
