@@ -51,14 +51,12 @@ struct CompilerArgsGeneratorTests {
             fileURL: swiftFile,
             sourceItems: sourceItems
         )
-        print("=============================")
         let flags = generator.compileArguments()
         let swiftVersionFlag = try #require(flags.firstIndex(of: "-swift-version"))
         #expect(flags[swiftVersionFlag + 1] == "5")
         for flag in flags {
             print(flag)
         }
-        print("=============================")
     }
 
     @Test
@@ -103,11 +101,9 @@ struct CompilerArgsGeneratorTests {
             fileURL: clangFile,
             sourceItems: sourceItems
         )
-        print("=============================")
         let flags = generator.compileArguments()
         for flag in flags {
             print(flag)
         }
-        print("=============================")
     }
 }

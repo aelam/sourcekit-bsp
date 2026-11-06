@@ -52,11 +52,9 @@ struct FlashSpaceTests {
             fileURL: file,
             sourceItems: sourceItems
         )
-        print("=============================")
         let flags = generator.compileArguments()
         for flag in flags {
             print(flag)
         }
-        print("=============================")
     }
 }

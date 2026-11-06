@@ -52,10 +52,8 @@ func processFileCompileArguments(_ fileInfo: SourceFileInfo) async throws {
         fileURL: file,
         sourceItems: sourceItems
     )
-    print("=============================")
     let flags = generator.compileArguments()
     for flag in flags {
         print(flag)
     }
-    print("=============================")
 }

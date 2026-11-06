@@ -57,12 +57,10 @@ struct CompileArgumentsCommand: AsyncParsableCommand {
             fileURL: fileInfo.fileFullPath,
             sourceItems: sourceItems
         )
-        print("=============================")
         let flags = generator.compileArguments()
         for flag in flags {
             print(flag)
         }
-        print("=============================")
     }
 }
 #endif
