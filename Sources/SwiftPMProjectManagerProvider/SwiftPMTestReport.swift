@@ -79,7 +79,8 @@ struct SwiftPMTestReport {
     }
 
     mutating func readXCTest(_ output: String) {
-        let pattern = #"^Test Case '(.+)' (started|passed|failed|skipped)(?:\.| \([0-9.]+ seconds\)\.)$"#
+        let pattern = #"^Test Case '(.+)' (started|passed|failed|skipped)"#
+            + #"(?:\.| at \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}| \([0-9.]+ seconds\)\.?)$"#
         guard let expression = try? NSRegularExpression(pattern: pattern, options: .anchorsMatchLines) else { return }
         for match in expression.matches(in: output, range: NSRange(output.startIndex..., in: output)) {
             guard let nameRange = Range(match.range(at: 1), in: output),
