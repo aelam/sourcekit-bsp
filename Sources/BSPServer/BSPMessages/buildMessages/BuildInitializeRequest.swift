@@ -115,7 +115,6 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
                     indexDatabasePath: project.indexDatabaseURL.path,
                     prepareProvider: projectCapabilities.contains(.prepare),
                     sourceKitOptionsProvider: projectCapabilities.contains(.sourceKitOptions),
-                    debugWithoutBuildingProvider: projectCapabilities.contains(.debugWithoutBuilding),
                     watchers: fileWatchers
                 ),
                 rootUri: self.params.rootUri,
@@ -176,7 +175,6 @@ struct BuildInitializeResponse: ResponseType {
             let indexDatabasePath: String
             let prepareProvider: Bool?
             let sourceKitOptionsProvider: Bool?
-            let debugWithoutBuildingProvider: Bool?
             let watchers: [FileSystemWatcher]
         }
 

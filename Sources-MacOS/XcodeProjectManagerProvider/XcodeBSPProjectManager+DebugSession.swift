@@ -8,7 +8,6 @@ public extension XcodeBSPProjectManager {
     func startDebugSession(
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?,
-        buildBeforeLaunch: Bool = true,
         logHandler: (@Sendable (String) -> Void)? = nil,
         progressHandler: (@Sendable (String) async -> Void)? = nil
     ) async throws -> DebugSessionConnection {
@@ -18,7 +17,6 @@ public extension XcodeBSPProjectManager {
         return try await backend.startDebugSession(
             xcodeTargetIdentifier: XcodeTargetIdentifier(bspIdentifier),
             arguments: arguments,
-            buildBeforeLaunch: buildBeforeLaunch,
             outputHandler: logHandler.map { ClosureOutputHandler(onLine: $0) },
             progressHandler: progressHandler
         )

@@ -15,20 +15,6 @@ public struct DebugSessionStartRequest: ContextualRequestType, Sendable {
         public let targets: [BSPBuildTargetIdentifier]
         public let originId: String?
         public let arguments: [String]?
-        public let dataKind: String?
-        public let data: LSPAny?
-
-        func buildBeforeLaunch() throws -> Bool {
-            guard dataKind != nil || data != nil else { return true }
-            guard dataKind == "sourcekit-bsp-debug", case let .dictionary(options) = data else {
-                throw BuildServerError.invalidConfiguration("Unsupported debug session options")
-            }
-            guard let value = options["buildBeforeLaunch"] else { return true }
-            guard case let .bool(build) = value else {
-                throw BuildServerError.invalidConfiguration("buildBeforeLaunch must be a boolean")
-            }
-            return build
-        }
     }
 
     public let params: Params
@@ -42,8 +28,7 @@ public struct DebugSessionStartRequest: ContextualRequestType, Sendable {
                 let connection = try await context.startDebugSession(
                     targets: params.targets,
                     originId: params.originId,
-                    arguments: params.arguments,
-                    buildBeforeLaunch: params.buildBeforeLaunch()
+                    arguments: params.arguments
                 )
                 return DebugSessionStartResponse(id: id, connection: connection)
             } catch {
