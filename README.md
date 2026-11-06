@@ -3,6 +3,7 @@
 [![Swift](https://img.shields.io/badge/swift-6.1+-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](https://www.swift.org/install/)
 [![Build Status](https://github.com/aelam/sourcekit-bsp/actions/workflows/ci.yml/badge.svg)](https://github.com/aelam/sourcekit-bsp/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/aelam/sourcekit-bsp/branch/main/graph/badge.svg)](https://app.codecov.io/gh/aelam/sourcekit-bsp)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A Build Server Protocol (BSP) server for Xcode projects and SwiftPM packages.

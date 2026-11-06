@@ -1,8 +1,5 @@
-coverage:
-  ignore:
-    - "DemoProjects/"
-    - "DemoProjects/**/*"
-    - "Tests/"
-    - "Tests/**/*"
-    - "Tests-MacOS/"
-    - "Tests-MacOS/**/*"
+ignore:
+  - ".build/**"
+  - "**/DemoProjects/**"
+  - "Tests/**"
+  - "Tests-MacOS/**"

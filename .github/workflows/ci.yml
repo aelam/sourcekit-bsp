@@ -64,44 +64,58 @@ jobs:
         CI: true
         MACOS_CI: true
 
+    - name: Generate coverage report
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        COVERAGE_JSON="$(swift test --show-codecov-path)"
+        PROFILE_DATA="$(dirname "$COVERAGE_JSON")/default.profdata"
+        BUILD_DIR="$(swift build --show-bin-path)"
+        COVERAGE_OBJECTS=()
+        for TEST_BINARY in "$BUILD_DIR"/*.xctest/Contents/MacOS/*; do
+          if [[ -f "$TEST_BINARY" && -x "$TEST_BINARY" ]]; then
+            COVERAGE_OBJECTS+=(-object "$TEST_BINARY")
+          fi
+        done
+
+        if [[ ! -s "$COVERAGE_JSON" || ! -s "$PROFILE_DATA" || ${#COVERAGE_OBJECTS[@]} -eq 0 ]]; then
+          echo "::error::Expected a SwiftPM coverage report, merged profile, and test executables."
+          exit 1
+        fi
+
+        xcrun llvm-cov export "${COVERAGE_OBJECTS[@]}" \
+          -instr-profile="$PROFILE_DATA" \
+          -format=lcov \
+          -ignore-filename-regex='(^|/)(\.build|Tests|Tests-MacOS)/' \
+          > coverage.info
+
+        awk -F: '
+          /^SF:/ { files++ }
+          /^LF:/ { lines += $2 }
+          /^LH:/ { hits += $2 }
+          END {
+            if (files == 0 || lines == 0) {
+              print "::error::Coverage report contains no source lines."
+              exit 1
+            }
+            printf "Coverage: %d files, %d/%d lines (%.2f%%)\n", files, hits, lines, 100 * hits / lines
+          }
+        ' coverage.info
+
     - name: Test DAP relay and project loading with one cooperative thread
       run: swift test --skip-build --filter 'DeviceDAPRelayTests|LLDBDAPServerTests|XcodeProjectManagerTests|SwiftPM'
       env:
         LIBDISPATCH_COOPERATIVE_POOL_STRICT: "1"
-
-    - name: Install LLVM
-      run: brew install llvm
-
-    - name: Generate coverage report
-      run: |
-        # Use Homebrew LLVM tools for better version compatibility
-        LLVM_COV="/opt/homebrew/opt/llvm/bin/llvm-cov"
-        LLVM_PROFDATA="/opt/homebrew/opt/llvm/bin/llvm-profdata"
-
-        TEST_BINARY=$(find .build -path "*/Contents/MacOS/*PackageTests" -type f -perm +111 | head -1)
-
-        # Try merging profraw files with newer LLVM tools
-        if find .build -name "*.profraw" | head -1 >/dev/null 2>&1; then
-          echo "Merging profraw files with Homebrew LLVM..."
-          if $LLVM_PROFDATA merge -sparse .build/*/debug/codecov/*.profraw -o coverage.profdata 2>/dev/null; then
-            $LLVM_COV export "$TEST_BINARY" -instr-profile=coverage.profdata -format=lcov > coverage.info
-            echo "✅ Generated coverage using Homebrew LLVM tools"
-          else
-            echo "⚠️ Failed to merge profraw files"
-            echo "# No coverage data available" > coverage.info
-          fi
-        else
-          echo "⚠️ No profraw files found"
-          echo "# No coverage data available" > coverage.info
-        fi
 
     - name: Upload to Codecov
       uses: codecov/codecov-action@v4
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: coverage.info
+        disable_search: true
         name: codecov-umbrella
-        fail_ci_if_error: false
+        fail_ci_if_error: true
         verbose: true
 
   lint:
