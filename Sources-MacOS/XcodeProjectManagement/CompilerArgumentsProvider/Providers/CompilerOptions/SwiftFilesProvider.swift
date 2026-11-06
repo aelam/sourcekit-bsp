@@ -21,7 +21,7 @@ struct SwiftFilesProvider: CompileArgProvider {
         for item in sourceItems {
             if item.itemKind == .file, item.path.pathExtension == "swift" {
                 fileList.append(item.path.path)
-            } else {
+            } else if item.itemKind == .directory {
                 let filePaths = (try? FileManager.default.contentsOfDirectory(
                     at: item.path,
                     includingPropertiesForKeys: nil,
