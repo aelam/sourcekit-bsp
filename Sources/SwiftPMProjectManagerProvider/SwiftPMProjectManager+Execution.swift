@@ -13,9 +13,16 @@ public extension SwiftPMProjectManager {
         }
         let targets = try targetIdentifiers.map { try executionTarget($0) }
         var built = Set<BSPBuildTargetIdentifier>()
+        var builtTests = false
         for target in targets where built.insert(target.id).inserted {
+            if testModules[target.id] != nil {
+                if builtTests { continue }
+                builtTests = true
+            }
             let selection: [String] = if let product = executableTargets[target.id] {
                 ["--product", product]
+            } else if testModules[target.id] != nil {
+                ["--build-tests"]
             } else {
                 ["--target", target.displayName!]
             }
@@ -91,14 +98,17 @@ public extension SwiftPMProjectManager {
         progressHandler: (@Sendable (String) async -> Void)?
     ) async throws -> DebugSessionConnection {
         guard targetIdentifiers.count == 1, let target = targetIdentifiers.first else {
-            throw SwiftPMProjectError.invalidArguments("Select one executable target to debug.")
-        }
-        if testModules[target] != nil {
-            throw SwiftPMProjectError.unsupported("debugging SwiftPM test targets; use buildTarget/test to run tests")
+            throw SwiftPMProjectError.invalidArguments("Select one executable or root test target to debug.")
         }
         guard let debugAdapter else { throw SwiftPMProjectError.unsupported("debug sessions on this host") }
-        let program = try await builtExecutable(for: target, arguments: arguments)
-        await progressHandler?("Starting the debug adapter for \(program.lastPathComponent)")
+        let launch: SwiftPMDebugLaunch
+        if testModules[target] != nil {
+            await progressHandler?("Finding the built test bundle")
+            launch = try await testDebugLaunch(for: target, arguments: arguments, logHandler: logHandler)
+        } else {
+            launch = try await SwiftPMDebugLaunch(program: builtExecutable(for: target, arguments: arguments))
+        }
+        await progressHandler?("Starting the debug adapter for \(launch.program.lastPathComponent)")
         try Task.checkCancellation()
         guard !isShutDown else { throw SwiftPMProjectError.shutDown }
         let id = UUID()
@@ -108,7 +118,14 @@ public extension SwiftPMProjectManager {
                 try Task.checkCancellation()
                 guard !isShutDown else { throw SwiftPMProjectError.shutDown }
                 debugEndpoints[id] = endpoint
-                return DebugSessionConnection(uri: endpoint.uri, request: .launch, program: program.path)
+                return DebugSessionConnection(
+                    uri: endpoint.uri,
+                    request: .launch,
+                    program: launch.program.path,
+                    args: launch.arguments,
+                    env: launch.environment,
+                    cwd: launch.workingDirectory
+                )
             } catch {
                 endpoint.terminate()
                 throw error
@@ -148,6 +165,20 @@ public extension SwiftPMProjectManager {
         guard let product = executableTargets[identifier] else {
             throw SwiftPMProjectError.invalidArguments("Select a target with one executable product.")
         }
+        let directory = try await binaryDirectory(arguments: arguments)
+        #if os(Windows)
+        let file = product + ".exe"
+        #else
+        let file = product
+        #endif
+        let program = directory.appendingPathComponent(file)
+        guard FileManager.default.isExecutableFile(atPath: program.path) else {
+            throw SwiftPMProjectError.productNotBuilt(program.path)
+        }
+        return program
+    }
+
+    internal func binaryDirectory(arguments: [String]?) async throws -> URL {
         let options = try buildOptions(arguments)
         let command = ["build", "--package-path", rootURL.path] + options + ["--show-bin-path"]
         let result = try await executeCommand(executable: commandExecutable, arguments: command)
@@ -166,22 +197,14 @@ public extension SwiftPMProjectManager {
                 details: "SwiftPM returned no binary path."
             )
         }
-        #if os(Windows)
-        let file = product + ".exe"
-        #else
-        let file = product
-        #endif
-        let program = URL(fileURLWithPath: path, isDirectory: true).appendingPathComponent(file)
-        guard FileManager.default.isExecutableFile(atPath: program.path) else {
-            throw SwiftPMProjectError.productNotBuilt(program.path)
-        }
-        return program
+        return URL(fileURLWithPath: path, isDirectory: true)
     }
 
-    private func buildOptions(_ arguments: [String]?) throws -> [String] {
+    internal func buildOptions(_ arguments: [String]?) throws -> [String] {
         let arguments = arguments ?? []
         let controlled: Set = [
-            "--package-path", "--target", "--product", "--build-tests", "--show-bin-path", "--help", "-h", "--version",
+            "--package-path", "--target", "--product", "--build-tests", "--show-bin-path", "--help", "-help", "-h",
+            "--version",
             "--"
         ]
         let values: Set = [

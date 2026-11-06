@@ -6,6 +6,7 @@ struct SwiftPMGraphLoader: Sendable {
     let executable: URL
     let executor: any SwiftPMCommandExecuting
     var supportsDebug = false
+    var discoveryToolchain: URL?
 
     func load() async throws -> SwiftPMGraphSnapshot {
         var packages: [SwiftPMLoadedPackage] = []
@@ -140,6 +141,7 @@ struct SwiftPMGraphLoader: Sendable {
                 testModules[id] = try testModule(for: target, in: package)
                 var languages = Set(sourceURLs.compactMap(Self.language))
                 if target.moduleType == "SwiftTarget" { languages.insert(.swift) }
+                let discovery = discoveryData(module: testModules[id])
                 targets.append(
                     BSPBuildTarget(
                         id: id,
@@ -152,8 +154,10 @@ struct SwiftPMGraphLoader: Sendable {
                             canCompile: isRoot,
                             canTest: testModules[id] != nil,
                             canRun: executableTargets[id] != nil,
-                            canDebug: executableTargets[id] != nil && supportsDebug
-                        )
+                            canDebug: (executableTargets[id] != nil || testModules[id] != nil) && supportsDebug
+                        ),
+                        dataKind: discovery == nil ? nil : .sourceKit,
+                        data: discovery
                     )
                 )
                 sources[id] = SourcesItem(
@@ -181,6 +185,19 @@ struct SwiftPMGraphLoader: Sendable {
             executableTargets: executableTargets,
             testModules: testModules
         )
+    }
+
+    private func discoveryData(module: String?) -> LSPAny? {
+        guard let discoveryToolchain, let module else { return nil }
+        return .dictionary([
+            "toolchain": .string(discoveryToolchain.absoluteString),
+            "testDiscovery": .dictionary([
+                "provider": .string("sourcekit-lsp"),
+                "version": .int(1),
+                "selectionDataKind": .string("sourcekit-test-selection"),
+                "moduleName": .string(module)
+            ])
+        ])
     }
 
     private func testModule(

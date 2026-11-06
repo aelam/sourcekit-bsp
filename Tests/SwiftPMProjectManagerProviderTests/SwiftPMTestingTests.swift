@@ -26,13 +26,14 @@ struct SwiftPMTestingTests {
             workingDirectory: URI(fixture.root)
         ) { logs.append($0) } == .ok)
         let call = try #require(await executor.calls.last)
-        #expect(call.arguments == [
+        #expect(Array(call.arguments.prefix(11)) == [
             "test", "--package-path", fixture.root.path,
-            "-c", "release", "--scratch-path", "custom build", "--parallel", "--filter", "^(Selected_Tests)\\."
+            "-c", "release", "--scratch-path", "custom build", "--parallel", "--verbose",
+            "--filter", "^Selected_Tests\\."
         ])
         #expect(call.environment == ["PROBE": "value"])
         #expect(call.directory == fixture.root)
-        #expect(logs.text == "test output\n")
+        #expect(logs.text.contains("test output\n"))
         await executor.setExitCode(1)
         #expect(try await manager.test(
             targetIdentifiers: [sibling.id, selected.id],
@@ -41,7 +42,8 @@ struct SwiftPMTestingTests {
             workingDirectory: nil,
             logHandler: nil
         ) == .error)
-        #expect(await executor.calls.last?.arguments.suffix(2) == ["--filter", "^(Selected_Tests|SiblingTests)\\."])
+        #expect(await executor.calls.count == 3)
+        #expect(await executor.calls.last?.arguments.contains("^SiblingTests\\.") == true)
         await manager.shutdown()
     }
 
@@ -88,8 +90,16 @@ struct SwiftPMTestingTests {
             try await manager.testArguments(
                 targetIdentifiers: [selected.id],
                 arguments: nil,
-                dataKind: "sourcekit-test-selection",
+                dataKind: "unsupported-selection",
                 data: .dictionary([:])
+            )
+        }
+        await #expect(throws: SwiftPMProjectError.self) {
+            try await manager.testArguments(
+                targetIdentifiers: [selected.id],
+                arguments: [SwiftPMTestSelection.argumentPrefix + "invalid"],
+                dataKind: nil,
+                data: nil
             )
         }
         #expect(try await manager.testArguments(
@@ -117,9 +127,9 @@ struct SwiftPMTestingTests {
                 logHandler: nil,
                 progressHandler: nil
             )
-            Issue.record("Expected unsupported test debugging")
+            Issue.record("Expected unsupported debugging without an adapter")
         } catch {
-            #expect(error.localizedDescription.contains("debugging SwiftPM test targets"))
+            #expect(error.localizedDescription.contains("debug sessions on this host"))
         }
         #expect(await executor.calls.isEmpty)
         await manager.shutdown()
@@ -225,16 +235,121 @@ struct SwiftPMTestingTests {
         #endif
         await manager.shutdown()
     }
+}
 
-    private func writeMixedTests(_ fixture: TemporarySwiftPMPackage) throws {
-        try fixture.write("""
+struct SwiftPMSingleTestTests {
+    @Test(
+        .timeLimit(.minutes(3)),
+        arguments: [false, true]
+    )
+    func runsIndividualCasesAndReportsTheirActualResults(parallel: Bool) async throws {
+        let fixture = try TemporarySwiftPMPackage()
+        try writeMixedTests(fixture)
+        let manager = try await SwiftPMProjectManagerProvider().createProjectManager(rootURL: fixture.root, config: nil)
+        try await manager.initialize()
+        let selected = try #require(await manager.getTargetList().first { $0.displayName == "Selected-Tests" })
+        let options = parallel ? ["--parallel", "--quiet"] : ["--quiet"]
+        let output = TestOutput()
+        let events = TestEvents()
+        for (index, specification) in [
+            ("selectedSwift()", "swift-testing", TestStatus.passed),
+            ("SelectedCase/testSelected()", "XCTest", .passed),
+            ("Nested/parameterized(value:)", "swift-testing", .passed),
+            ("Nested/knownIssue()", "swift-testing", .passed),
+            ("skippedSwift()", "swift-testing", .skipped),
+            ("SelectedCase/testSkipped()", "XCTest", .skipped),
+        ].enumerated() {
+            let arguments = try await selectionArguments(
+                manager,
+                target: selected.id,
+                id: specification.0,
+                style: specification.1,
+                options: options + (index == 0 ? [] : ["--skip-build"])
+            )
+            #expect(try await manager.test(
+                targetIdentifiers: [selected.id],
+                arguments: arguments,
+                environmentVariables: nil,
+                workingDirectory: nil,
+                logHandler: { output.append($0) },
+                testEventHandler: { await events.append($0) }
+            ) == .ok)
+            let report = try #require(await events.lastReport)
+            #expect(report.tests.count == 1)
+            #expect(report.tests.first?.testId == specification.0)
+            #expect(report.tests.first?.status == specification.2)
+        }
+        #expect(!output.text.contains("UNEXPECTED_SIBLING_EXECUTION"))
+        for (id, style, failure) in [
+            ("selectedSwift()", "swift-testing", "swift"),
+            ("SelectedCase/testSelected()", "XCTest", "xctest")
+        ] {
+            let arguments = try await selectionArguments(
+                manager,
+                target: selected.id,
+                id: id,
+                style: style,
+                options: options + ["--skip-build"]
+            )
+            #expect(try await manager.test(
+                targetIdentifiers: [selected.id],
+                arguments: arguments,
+                environmentVariables: ["FAIL_STYLE": failure],
+                workingDirectory: nil,
+                logHandler: nil
+            ) { await events.append($0) } == .error)
+            #expect(await events.lastReport?.tests.first?.status == .failed)
+        }
+        let missing = try await selectionArguments(
+            manager,
+            target: selected.id,
+            id: "missing()",
+            style: "swift-testing",
+            options: ["--skip-build"]
+        )
+        #expect(try await manager.test(
+            targetIdentifiers: [selected.id],
+            arguments: missing,
+            environmentVariables: nil,
+            workingDirectory: nil,
+            logHandler: nil
+        ) { await events.append($0) } == .error)
+        #expect(await events.lastReport?.tests.isEmpty == true)
+        #expect(await events.warnings.contains { $0.contains("No result was reported for selected test 'missing()'") })
+        await manager.shutdown()
+    }
+
+    private func selectionArguments(
+        _ manager: any ProjectManager,
+        target: BSPBuildTargetIdentifier,
+        id: String,
+        style: String,
+        options: [String]
+    ) async throws -> [String]? {
+        let selection = SwiftPMTestSelection(tests: [.init(target: target, id: id, style: style)])
+        let data = try JSONDecoder().decode(LSPAny.self, from: JSONEncoder().encode(selection))
+        return try await manager.testArguments(
+            targetIdentifiers: [target],
+            arguments: options,
+            dataKind: SwiftPMTestSelection.dataKind,
+            data: data
+        )
+    }
+}
+
+private func writeMixedTests(_ fixture: TemporarySwiftPMPackage) throws {
+    try fixture.write(
+        """
         // swift-tools-version: 6.1
         import PackageDescription
         let package = Package(name: "TestProbe", targets: [
             .testTarget(name: "Selected-Tests"), .testTarget(name: "Selected-TestsExtra")
         ])
-        """, to: "Package.swift")
-        try fixture.write("""
+        """,
+        to: "Package.swift"
+    )
+    try fixture.write(
+        """
         import Foundation
         import Testing
         import XCTest
@@ -244,17 +359,30 @@ struct SwiftPMTestingTests {
             FileHandle.standardOutput.write(Data((marker + (environment["PROBE"] ?? "") + "\\n").utf8))
             if let marker = environment["WAIT_MARKER"], let finish = environment["WAIT_FINISH"] {
                 FileManager.default.createFile(
-                    atPath: marker, contents: Data(String(ProcessInfo.processInfo.processIdentifier).utf8)
+                    atPath: marker,
+                    contents: Data(String(ProcessInfo.processInfo.processIdentifier).utf8)
                 )
                 Thread.sleep(forTimeInterval: 60)
-                FileManager.default.createFile(atPath: finish, contents: Data())
+                FileManager.default.createFile(atPath: finish,
+                contents: Data())
             }
             return environment["FAIL_STYLE"] != style
         }
         @Test func selectedSwift() { #expect(probe("swift")) }
-        final class SelectedCase: XCTestCase { func testSelected() { XCTAssertTrue(probe("xctest")) } }
-        """, to: "Tests/Selected-Tests/Tests.swift")
-        try fixture.write("""
+        @Test(.disabled("skip probe")) func skippedSwift() {}
+        @Suite struct Nested {
+            @Test(arguments: [1, 2]) func parameterized(value: Int) { #expect(value > 0) }
+            @Test func knownIssue() { withKnownIssue { #expect(Bool(false)) } }
+        }
+        final class SelectedCase: XCTestCase {
+            func testSelected() { XCTAssertTrue(probe("xctest")) }
+            func testSkipped() throws { throw XCTSkip("skip probe") }
+        }
+        """,
+        to: "Tests/Selected-Tests/Tests.swift"
+    )
+    try fixture.write(
+        """
         import Foundation
         import Testing
         import XCTest
@@ -264,8 +392,9 @@ struct SwiftPMTestingTests {
         }
         @Test func siblingSwift() { #expect(unexpectedExecution()) }
         final class SiblingCase: XCTestCase { func testSibling() { XCTAssertTrue(unexpectedExecution()) } }
-        """, to: "Tests/Selected-TestsExtra/Tests.swift")
-    }
+        """,
+        to: "Tests/Selected-TestsExtra/Tests.swift"
+    )
 }
 
 private final class TestOutput: @unchecked Sendable {
@@ -324,7 +453,23 @@ private actor TestCommandRecorder: SwiftPMCommandExecuting {
     ) async throws -> SwiftPMCommandResult {
         calls.append(Call(arguments: arguments, directory: workingDirectory, environment: environment))
         outputHandler?("test output\n")
+        let module = arguments.contains { $0.hasPrefix("^SiblingTests") } ? "SiblingTests" : "Selected_Tests"
+        let output = "Test Case '-[\(module).SelectedCase testSelected]' passed (0.001 seconds).\n"
+        outputHandler?(output)
         if waits { try await Task.sleep(for: .seconds(60)) }
-        return .init(standardOutput: Data(), standardError: Data(), exitCode: exitCode)
+        return .init(standardOutput: Data(output.utf8), standardError: Data(), exitCode: exitCode)
+    }
+}
+
+private actor TestEvents {
+    var lastReport: TestExecutionReport?
+    var warnings: [String] = []
+
+    func append(_ event: TestExecutionEvent) {
+        switch event {
+        case let .finished(_, _, report): lastReport = report
+        case let .warning(warning): warnings.append(warning)
+        case .started: break
+        }
     }
 }

@@ -119,7 +119,7 @@ def verify_debug(result, breakpoint, verbose):
                     "linesStartAt1": True, "columnsStartAt1": True
                 })
                 data = result["data"]
-                arguments = {k: v for k, v in data.items() if k in ("program", "pid")}
+                arguments = {k: v for k, v in data.items() if k in ("program", "pid", "args", "env", "cwd")}
                 arguments["stopOnEntry"] = True
                 dap.dap(data["request"], arguments)
                 if breakpoint:

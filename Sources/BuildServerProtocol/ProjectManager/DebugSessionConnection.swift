@@ -21,12 +21,27 @@ public struct DebugSessionConnection: Sendable, Equatable {
     public let program: String? // macOS launch: built binary path
     public let pid: Int? // attach: PID on the platform configured by the server
     public let bundleId: String?
+    public let args: [String]?
+    public let env: [String: String]?
+    public let cwd: String?
 
-    public init(uri: String, request: Request, program: String? = nil, pid: Int? = nil, bundleId: String? = nil) {
+    public init(
+        uri: String,
+        request: Request,
+        program: String? = nil,
+        pid: Int? = nil,
+        bundleId: String? = nil,
+        args: [String]? = nil,
+        env: [String: String]? = nil,
+        cwd: String? = nil
+    ) {
         self.uri = uri
         self.request = request
         self.program = program
         self.pid = pid
         self.bundleId = bundleId
+        self.args = args
+        self.env = env
+        self.cwd = cwd
     }
 }

@@ -36,7 +36,8 @@ public actor SwiftPMProjectManager: ProjectManager {
         rootURL: URL,
         executable: URL,
         executor: any SwiftPMCommandExecuting,
-        debugAdapter: (any SwiftPMDebugAdapterServing)? = nil
+        debugAdapter: (any SwiftPMDebugAdapterServing)? = nil,
+        discoveryToolchain: URL? = nil
     ) {
         self.rootURL = rootURL
         self.commandExecutable = executable
@@ -47,7 +48,8 @@ public actor SwiftPMProjectManager: ProjectManager {
             root: rootURL,
             executable: executable,
             executor: executor,
-            supportsDebug: debugAdapter != nil
+            supportsDebug: debugAdapter != nil,
+            discoveryToolchain: discoveryToolchain
         )
     }
 

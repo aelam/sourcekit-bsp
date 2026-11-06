@@ -9,7 +9,7 @@ A Build Server Protocol (BSP) server for Xcode projects and SwiftPM packages.
 For Xcode projects, it supplies compiler arguments to SourceKit-LSP and runs build,
 run, test, and debug operations. For SwiftPM packages, it loads targets, dependencies,
 and source lists on macOS and Linux. It builds root package targets, runs executable
-products, runs root test targets, and supports executable debugging on macOS.
+products, runs root test targets, and supports executable and test debugging on macOS.
 
 - Discover projects, workspaces, sources, and target dependencies.
 - Prepare compiler inputs and index data for SourceKit-LSP.
@@ -145,11 +145,14 @@ compiler, the provider uses the `swift` executable in the same directory.
 
 Root package targets support `buildTarget/compile`. Executable targets with one
 product support `buildTarget/run` and, on macOS, `debugSession/start` through the
-active Xcode toolchain's LLDB adapter. Library and dependency targets do not
+active Xcode toolchain's LLDB adapter. Root test targets also support debugging.
+Library and dependency targets do not
 advertise run or debug support. Dependency targets are built through their root
 package dependents.
 
-Compile builds the selected target or executable product. Run and debug use the
+Compile builds the selected target or executable product. For a test target, it
+uses `swift build --build-tests` to link the test runner; this can build other test
+targets in the package. Run and debug use the
 existing product without building it. Compile first, with the same SwiftPM build
 arguments, such as `--configuration release` or `--scratch-path /path/to/build`.
 The target controls product selection; package-path and target-selection overrides
@@ -159,9 +162,29 @@ Root test targets support `buildTarget/test`. The server uses `swift test` and a
 module filter to run only the selected targets, including XCTest and Swift Testing.
 SwiftPM can build other test targets as part of this command. Test arguments accept
 build configuration options, `--skip-build`, parallel execution, and code coverage.
-The server rejects test filters, case selection data, and commands that do not run
-tests. Tests run from the package root and support environment variables. The server forwards SwiftPM output as it arrives. SwiftPM can buffer test output.
-Test failures and cancellation return the corresponding BSP status. Individual test case reports and test debugging are not supported.
+Clients can select individual functions with the optional
+`sourcekit-test-selection` payload. Parameterized functions run all their arguments.
+The server rejects extra test filters and commands that do not run tests. Tests
+run from the package root and support environment variables. SwiftPM can buffer
+output; the server forwards it as it arrives. After each target completes, the
+server reports case results from XCTest output and Swift Testing events. Missing
+selected results and test failures return an error. Cancellation stops the runner.
+See [test discovery and selection](Docs/wiki/Build-Run-Test-Debug.md#test-discovery-and-selection).
+The server locates SourceKit-LSP through the selected Swift executable's runtime
+metadata, so a toolchain shim does not become the language-server path. When the
+toolchain includes SourceKit-LSP, root test targets advertise discovery metadata
+for source navigation and editor test actions. Without it, target testing remains
+available.
+
+Test debugging uses the existing test bundle and lists its tests without building
+or running them. Compile the test target first with the same build arguments. The debugger launches Xcode's `xctest` runner with
+the selected module's test identifiers. XCTest and Swift Testing run in the same
+process, so source breakpoints work for both frameworks. The server supports
+SwiftPM's separate test bundles and native build system's combined test bundle.
+Test targets do not support ordinary Run. Test identifiers that contain commas
+cannot be passed to the XCTest selector and return an error. The client must
+forward the debug response's `args`, `env`, and `cwd` fields to DAP. This requires
+an updated client, such as [vscode-bsp PR #14](https://github.com/aelam/vscode-bsp/pull/14).
 
 This provider does not yet supply compiler arguments or prepare indexes.
 It advertises these capabilities as unsupported. SourceKit-LSP's native SwiftPM

@@ -101,6 +101,12 @@ public extension XcodeProjectManager {
         arguments: [String]?
     ) -> [String] {
         var result = arguments ?? []
+        // LLDB-DAP needs macro expansion sources on disk. Apply DWARF 4 during
+        // test builds, because debugging reuses the existing product.
+        if target.xcodeProductType.isTestBundle,
+           !result.contains(where: { $0.hasPrefix("SWIFT_DEBUG_INFORMATION_VERSION=") }) {
+            result.append("SWIFT_DEBUG_INFORMATION_VERSION=dwarf4")
+        }
         if !result.contains("-configuration") {
             result += ["-configuration", configuration ?? projectSnapshot?.configuration ?? "Debug"]
         }

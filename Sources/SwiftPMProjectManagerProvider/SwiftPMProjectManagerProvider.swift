@@ -39,11 +39,17 @@ public struct SwiftPMProjectManagerProvider: ProjectManagerProvider {
             environment: environment,
             root: root
         )
+        let toolchain = try await SwiftPMDiscoveryToolchain.resolve(
+            executable: executable,
+            executor: executor,
+            root: root
+        )
         return SwiftPMProjectManager(
             rootURL: root,
             executable: executable,
             executor: executor,
-            debugAdapter: debugAdapter
+            debugAdapter: debugAdapter,
+            discoveryToolchain: toolchain
         )
     }
 

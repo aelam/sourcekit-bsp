@@ -100,17 +100,23 @@ struct CompileTests {
             "OTHER_SWIFT_FLAGS=$(inherited) -DTEST_DEBUG", "DEBUG_INFORMATION_FORMAT=dwarf-with-dsym"
         ]
         let testArguments = try await manager.testArguments(for: testTarget, arguments: testDebugInput)
-        let debugArguments = try await manager.testDebugArguments(for: testTarget, arguments: testDebugInput)
-        #expect(debugArguments == testArguments + ["SWIFT_DEBUG_INFORMATION_VERSION=dwarf4"])
+        let buildArguments = await manager.buildArguments(
+            for: testTarget, configuration: nil, arguments: testDebugInput
+        )
+        #expect(buildArguments == testDebugInput + ["SWIFT_DEBUG_INFORMATION_VERSION=dwarf4"])
+        #expect(testArguments.contains("SWIFT_DEBUG_INFORMATION_VERSION=dwarf4"))
         #expect(!defaults.contains { $0.hasPrefix("SWIFT_DEBUG_INFORMATION_VERSION=") })
         for version in ["dwarf4", "dwarf5", "compiler-default"] {
-            let input = testDebugInput + ["SWIFT_DEBUG_INFORMATION_VERSION=\(version)"]
+            let setting = "SWIFT_DEBUG_INFORMATION_VERSION=\(version)"
+            let input = testDebugInput + [setting]
             let normal = try await manager.testArguments(for: testTarget, arguments: input)
-            let debug = try await manager.testDebugArguments(for: testTarget, arguments: input)
-            #expect(debug == normal)
+            let build = await manager.buildArguments(for: testTarget, configuration: nil, arguments: input)
+            #expect(build == input)
+            #expect(normal.filter { $0.hasPrefix("SWIFT_DEBUG_INFORMATION_VERSION=") } == [setting])
         }
 
         let testSettings = try await manager.resolvedBuildSettings(for: testTarget, arguments: defaults)
+        #expect(testSettings["SWIFT_DEBUG_INFORMATION_VERSION"] == "dwarf4")
         #expect(testSettings["FULL_PRODUCT_NAME"] == "HelloTests.xctest")
         #expect(testSettings["TEST_HOST"]?.contains("Hello.app/") == true)
         #expect(testSettings["PLATFORM_NAME"] == "iphonesimulator")

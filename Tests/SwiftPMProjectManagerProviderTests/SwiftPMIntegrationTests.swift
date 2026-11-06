@@ -81,7 +81,11 @@ struct SwiftPMIntegrationTests {
         #expect(await manager.getTargetList().map(\.id) == targets.map(\.id))
         #expect(try await manager.getSourceFileList(targetIdentifiers: [core.id])[0].sources.count == 2)
         let calls = await recorder.calls
-        #expect(calls.allSatisfy { $0.contains("describe") || $0.contains("dump-package") })
+        #expect(calls.allSatisfy {
+            $0.contains("describe") || $0.contains("dump-package") || $0 == ["-print-target-info"]
+        })
+        let discoveryCalls = calls.count { $0 == ["-print-target-info"] }
+        #expect(discoveryCalls == 1)
         #expect(!calls.contains { $0.contains("build") || $0.contains("show-dependencies") })
         await manager.shutdown()
     }
