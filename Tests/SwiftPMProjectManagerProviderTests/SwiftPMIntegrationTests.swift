@@ -161,26 +161,35 @@ struct SwiftPMIntegrationTests {
             try fixture.write(body, to: "wait.swift")
             arguments = [fixture.root.appendingPathComponent("wait.swift").path]
         }
-        let task = Task {
-            try await SwiftPMProcessExecutor().execute(
-                executable: executable,
-                arguments: arguments,
-                workingDirectory: fixture.root
-            )
+        let processID = try await withThrowingTaskGroup(of: Int32?.self) { group in
+            defer { group.cancelAll() }
+            group.addTask {
+                let result = try await SwiftPMProcessExecutor().execute(
+                    executable: executable,
+                    arguments: arguments,
+                    workingDirectory: fixture.root
+                )
+                let stderr = String(bytes: result.standardError, encoding: .utf8) ?? "Non-UTF-8 stderr"
+                Issue.record("Expected cancellation, received exit \(result.exitCode): \(stderr)")
+                return nil
+            }
+            group.addTask {
+                while true {
+                    if let contents = try? String(contentsOf: ready, encoding: .utf8), let pid = Int32(contents) {
+                        return pid
+                    }
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+            }
+            let result = try #require(try await group.next())
+            let pid = try #require(result)
+            group.cancelAll()
+            do {
+                _ = try await group.next()
+                Issue.record("Expected cancellation after the process became ready")
+            } catch is CancellationError {}
+            return pid
         }
-        let deadline = ContinuousClock.now.advanced(by: .seconds(45))
-        while ContinuousClock.now < deadline {
-            if FileManager.default.fileExists(atPath: ready.path) { break }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        let pid = (try? String(contentsOf: ready, encoding: .utf8)).flatMap(Int32.init)
-        task.cancel()
-        do {
-            let result = try await task.value
-            let stderr = String(bytes: result.standardError, encoding: .utf8) ?? "Non-UTF-8 stderr"
-            Issue.record("Expected cancellation, received exit \(result.exitCode): \(stderr)")
-        } catch is CancellationError {}
-        let processID = try #require(pid)
         #expect(!FileManager.default.fileExists(atPath: naturalExit.path))
         #if !os(Windows)
         // Allow the system reaper to collect a terminated manifest process.
