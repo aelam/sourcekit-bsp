@@ -105,7 +105,7 @@ extension XcodeProjectManager {
         }
         let flags = try selected.map { try testArguments(for: $0, arguments: arguments) }
         return try zip(selected, flags).map { target, flags in
-            let options = XcodeBuildOptions(
+            let options = try XcodeBuildOptions(
                 command: .build(
                     action: .test,
                     sdk: nil,
@@ -115,10 +115,10 @@ extension XcodeProjectManager {
                     resultBundlePath: nil
                 ),
                 flags: XcodeBuildFlags(),
-                customFlags: flags
+                customFlags: argumentsWithoutScheme(flags)
             )
             return try (target.targetIdentifier, XcodeBuildCommandBuilder().buildCommand(
-                project: buildConfiguration(for: target),
+                project: buildConfiguration(for: target, arguments: arguments),
                 options: options
             ))
         }

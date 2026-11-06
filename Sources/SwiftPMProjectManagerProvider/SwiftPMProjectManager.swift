@@ -23,6 +23,7 @@ public actor SwiftPMProjectManager: ProjectManager {
     private var packageRoots: Set<URL>
     private var reloadTask: Task<Void, Error>?
     var isShutDown = false
+    var buildContextHost: BuildContextOption?
     let commandExecutable: URL
     let commandExecutor: any SwiftPMCommandExecuting
     let debugAdapter: (any SwiftPMDebugAdapterServing)?
@@ -76,6 +77,7 @@ public actor SwiftPMProjectManager: ProjectManager {
                     let snapshot = try await loader.load()
                     try Task.checkCancellation()
                     guard !isShutDown else { throw SwiftPMProjectError.shutDown }
+                    buildContextHost = nil
                     project = snapshot.project
                     executableTargets = snapshot.executableTargets
                     testModules = snapshot.testModules

@@ -11,6 +11,7 @@ import JSONRPCConnection
 
 public extension BSPServerService {
     func shutdownProject() async {
+        invalidateBuildContexts()
         graphUpdateTask?.cancel()
         await projectManager?.shutdown()
         _ = await graphUpdateTask?.result
@@ -30,6 +31,7 @@ public extension BSPServerService {
     }
 
     func reloadProject() async throws {
+        invalidateBuildContexts()
         let previous = graphUpdateTask
         let task = Task {
             _ = await previous?.result
@@ -79,6 +81,7 @@ public extension BSPServerService {
         let before = await Set(projectManager.getTargetList()
             .map(\.id))
         try await projectManager.updateBuildGraph()
+        invalidateBuildContexts()
         let after = await Set(projectManager.getTargetList()
             .map(\.id))
         let changes = before.union(after).sorted { $0.uri.stringValue < $1.uri.stringValue }.map { target in

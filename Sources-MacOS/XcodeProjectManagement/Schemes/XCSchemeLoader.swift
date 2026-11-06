@@ -108,12 +108,10 @@ public struct XCSchemeLoader {
     }
 
     private func deduplicateAndSortSchemes(_ schemes: [XcodeScheme]) -> [XcodeScheme] {
-        // 去重（同名 scheme 可能在多处出现，保留优先：workspace > project）
+        // Keep names from different containers so callers can detect ambiguous schemes.
         var seen = Set<String>()
         let deduped = schemes.filter { info in
-            if seen.contains(info.name) { return false }
-            seen.insert(info.name)
-            return true
+            seen.insert(info.path.resolvingSymlinksInPath().standardizedFileURL.path).inserted
         }
 
         return deduped.sorted { lhs, rhs in

@@ -49,6 +49,7 @@ public actor XcodeBSPProjectManager: ProjectManager {
     public func shutdown() async {
         reloadTask?.cancel()
         if let reloadTask { _ = await reloadTask.result }
+        await backend.stopContextDestinationDiscovery()
         await backend.shutdownBuilds()
         await backend.stopIndexPreparation()
         await backend.stopDebugSessions()

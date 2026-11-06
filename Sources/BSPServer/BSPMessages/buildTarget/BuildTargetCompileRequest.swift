@@ -22,6 +22,7 @@ public struct BuildTargetCompileRequest: ContextualRequestType, Sendable {
         public let targets: [BSPBuildTargetIdentifier]
         public let originId: String?
         public let arguments: [String]?
+        public var executionContext: BuildContextReference?
 
         public init(targets: [BSPBuildTargetIdentifier], originId: String? = nil, arguments: [String]? = nil) {
             self.targets = targets
@@ -46,7 +47,8 @@ public struct BuildTargetCompileRequest: ContextualRequestType, Sendable {
                 let status = try await context.compileTargets(
                     params.targets,
                     originId: params.originId,
-                    arguments: params.arguments
+                    arguments: params.arguments,
+                    executionContext: params.executionContext
                 )
 
                 return BuildTargetCompileResponse(
@@ -55,6 +57,11 @@ public struct BuildTargetCompileRequest: ContextualRequestType, Sendable {
                     result: BuildTargetCompileResult(originId: params.originId, statusCode: status)
                 )
 
+            } catch let error as BuildContextError {
+                return JSONRPCErrorResponse(
+                    id: id,
+                    error: JSONRPCError(code: -32602, message: error.localizedDescription)
+                )
             } catch {
                 logger.error("Failed to compile targets: \(error)")
                 return BuildTargetCompileResponse(

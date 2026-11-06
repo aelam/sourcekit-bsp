@@ -18,6 +18,10 @@ public actor BSPServerService: ProjectStateObserver, BSPNotificationService {
 
     var projectManager: (any ProjectManager)?
     var graphUpdateTask: Task<Void, Error>?
+    var buildContextExtension: BuildContextExtension?
+    var buildContexts: [String: BuildContext] = [:]
+    var buildContextOrder: [String] = []
+    var buildContextRevision = 0
 
     /// Service state tracking
     public enum ServiceState {

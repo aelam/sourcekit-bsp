@@ -15,6 +15,7 @@ public struct DebugSessionStartRequest: ContextualRequestType, Sendable {
         public let targets: [BSPBuildTargetIdentifier]
         public let originId: String?
         public let arguments: [String]?
+        public var executionContext: BuildContextReference?
     }
 
     public let params: Params
@@ -28,9 +29,15 @@ public struct DebugSessionStartRequest: ContextualRequestType, Sendable {
                 let connection = try await context.startDebugSession(
                     targets: params.targets,
                     originId: params.originId,
-                    arguments: params.arguments
+                    arguments: params.arguments,
+                    executionContext: params.executionContext
                 )
                 return DebugSessionStartResponse(id: id, connection: connection)
+            } catch let error as BuildContextError {
+                return JSONRPCErrorResponse(
+                    id: id,
+                    error: JSONRPCError(code: -32602, message: error.localizedDescription)
+                )
             } catch {
                 logger.error("debugSession/start failed: \(String(describing: error))")
                 return JSONRPCErrorResponse(

@@ -1,4 +1,5 @@
 import Foundation
+import XcodeProj
 
 public enum BuildError: Error, Sendable {
     case buildFailed(exitCode: Int32, output: String)
@@ -22,8 +23,12 @@ public extension XcodeProjectManager {
             return 1
         }
 
-        let projectBuildConfiguration = try buildConfiguration(for: xcodeTarget)
-        let arguments = buildArguments(for: xcodeTarget, configuration: configuration, arguments: arguments)
+        let projectBuildConfiguration = try buildConfiguration(for: xcodeTarget, arguments: arguments)
+        let arguments = try argumentsWithoutScheme(buildArguments(
+            for: xcodeTarget,
+            configuration: configuration,
+            arguments: arguments
+        ))
 
         let buildAction: XcodeBuildCommand.BuildAction = xcodeTarget.xcodeProductType.isTestBundle ?
             .buildForTesting : .build
@@ -65,10 +70,10 @@ public extension XcodeProjectManager {
         }
         let settings = try await settingsLoader.loadBuildSettings(
             rootURL: rootURL,
-            project: buildConfiguration(for: target),
+            project: buildConfiguration(for: target, arguments: arguments),
             sdk: nil,
             configuration: nil,
-            customFlags: settingsArguments
+            customFlags: argumentsWithoutScheme(settingsArguments)
         )
         guard let buildSettings = settings.first(where: { $0.target == target.name })?.buildSettings else {
             throw XcodeProjectError.buildSettingsNotFound
@@ -76,11 +81,39 @@ public extension XcodeProjectManager {
         return buildSettings
     }
 
-    internal func buildConfiguration(for target: XcodeTarget) throws -> XcodeProjectConfiguration {
+    internal func buildConfiguration(
+        for target: XcodeTarget,
+        arguments: [String]? = nil
+    ) throws -> XcodeProjectConfiguration {
         guard let base = projectSnapshot else {
             throw XcodeProjectError.invalidConfig("Project not initialized")
         }
-        let scheme = try findOrCreateScheme(for: target, in: base.schemes)
+        let scheme: XcodeScheme
+        if let index = arguments?.firstIndex(of: "-scheme"), let arguments {
+            guard index + 1 < arguments.count, !arguments[index + 1].hasPrefix("-"),
+                  arguments.count(where: { $0 == "-scheme" }) == 1 else {
+                throw XcodeProjectError.invalidConfig("Specify exactly one scheme name")
+            }
+            let matches = base.schemes.filter { $0.name == arguments[index + 1] }
+            guard matches.count == 1, let selected = matches.first else {
+                throw XcodeProjectError.invalidConfig("Unknown or ambiguous scheme: \(arguments[index + 1])")
+            }
+            let parsed = try XCScheme(pathString: selected.path.path)
+            let references = (parsed.buildAction?.buildActionEntries.map(\.buildableReference) ?? []) +
+                (parsed.testAction?.testables.filter { !$0.skipped }.map(\.buildableReference) ?? []) +
+                [parsed.launchAction?.runnable?.buildableReference].compactMap(\.self)
+            guard references.contains(where: {
+                (try? contextTarget(for: $0, scheme: selected).targetIdentifier) == target.targetIdentifier
+            }) else { throw XcodeProjectError.invalidConfig("The selected scheme does not include \(target.name)") }
+            scheme = selected
+        } else {
+            scheme = try findOrCreateScheme(for: target, in: base.schemes)
+        }
+        return try projectConfiguration(scheme: scheme)
+    }
+
+    internal func projectConfiguration(scheme: XcodeScheme) throws -> XcodeProjectConfiguration {
+        guard let base = projectSnapshot else { throw XcodeProjectError.invalidConfig("Project not initialized") }
         return switch base.projectLocation {
         case let .explicitWorkspace(url):
             .workspace(
@@ -93,6 +126,17 @@ public extension XcodeProjectManager {
                 buildMode: .scheme(scheme.name)
             )
         }
+    }
+
+    internal func argumentsWithoutScheme(_ arguments: [String]) throws -> [String] {
+        guard let index = arguments.firstIndex(of: "-scheme") else { return arguments }
+        guard index + 1 < arguments.count, !arguments[index + 1].hasPrefix("-"),
+              arguments.count(where: { $0 == "-scheme" }) == 1 else {
+            throw XcodeProjectError.invalidConfig("Specify exactly one scheme name")
+        }
+        var result = arguments
+        result.removeSubrange(index ... index + 1)
+        return result
     }
 
     internal func buildArguments(

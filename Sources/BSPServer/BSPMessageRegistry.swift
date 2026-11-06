@@ -32,6 +32,8 @@ private let requestTypes: [any RequestType.Type] = [
 
     // workspace
     WorkspaceBuildTargetsRequest.self,
+    WorkspaceContextOptionsRequest.self,
+    WorkspaceResolveContextRequest.self,
     WorkspaceWaitForBuildSystemUpdatesRequest.self,
     WorkspaceReloadRequest.self,
 ]
