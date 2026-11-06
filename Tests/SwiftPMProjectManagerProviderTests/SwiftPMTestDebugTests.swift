@@ -140,6 +140,62 @@ struct SwiftPMTestDebugTests {
     }
 }
 
+extension SwiftPMTestDebugTests {
+    @Test(arguments: [false, true])
+    func reuseContextDebugsOnlyExistingTestProducts(missing: Bool) async throws {
+        let fixture = try TemporarySwiftPMPackage()
+        let executor = try TestDebugExecutor(fixture: fixture, merged: false)
+        if missing { try FileManager.default.removeItem(at: executor.bundle) }
+        let lifecycle = DebugLifecycle()
+        let manager = SwiftPMProjectManager(
+            rootURL: fixture.root,
+            executable: fixture.root.appendingPathComponent("swift"),
+            executor: executor,
+            debugAdapter: TestDebugAdapter(lifecycle: lifecycle)
+        )
+        try await manager.initialize()
+        let target = try #require(await manager.getTargetList().first { $0.displayName == "Selected-Tests" })
+        let context = try await manager.resolveContext(.init(
+            scope: .init(targets: [target.id]),
+            operation: .debug,
+            selection: ["swiftpm.configuration": "release"],
+            buildPolicy: .reuse
+        ))
+        if missing {
+            await #expect(throws: SwiftPMProjectError.self) {
+                try await manager.startDebugSession(
+                    targetIdentifiers: [target.id],
+                    arguments: nil,
+                    logHandler: nil,
+                    progressHandler: nil,
+                    context: context
+                )
+            }
+            #expect(lifecycle.events.isEmpty)
+        } else {
+            let session = try await manager.startDebugSession(
+                targetIdentifiers: [target.id],
+                arguments: nil,
+                logHandler: nil,
+                progressHandler: nil,
+                context: context
+            )
+            #expect(session.program == "/Xcode/Contents/Developer/usr/bin/xctest")
+            #expect(session.args == [
+                "-XCTest", "Selected_Tests.Case/testExample,Selected_Tests.swiftTest()", executor.bundle.path
+            ])
+            #expect(await executor.calls.contains([
+                "test", "list", "--package-path", fixture.root.path,
+                "--configuration", "release", "--skip-build"
+            ]))
+            #expect(lifecycle.events == ["started"])
+        }
+        #expect(await executor.calls.filter { $0.first == "build" }.allSatisfy { $0.contains("--show-bin-path") })
+        #expect(await executor.calls.allSatisfy { !$0.contains("--build-tests") })
+        await manager.shutdown()
+    }
+}
+
 private final class DebugLifecycle: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [String] = []
@@ -197,7 +253,9 @@ private actor TestDebugExecutor: SwiftPMCommandExecuting {
         calls.append(arguments)
         if arguments.contains("describe") { return .init(standardOutput: metadata, standardError: Data(), exitCode: 0) }
         if waits, arguments.contains("list") { try await Task.sleep(for: .seconds(60)) }
-        let output: String = if arguments.contains("--show-bin-path") {
+        let output: String = if arguments == ["-print-target-info"] {
+            #"{"target":{"triple":"arm64-apple-macosx26.0"}}"#
+        } else if arguments.contains("--show-bin-path") {
             directory.path
         } else if arguments.contains("list") {
             "Selected_Tests.Case/testExample\nSelected_Tests.swiftTest()\nSelected_TestsExtra.unexpected()\n"

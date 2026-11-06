@@ -4,6 +4,16 @@ public enum BuildContextOperation: String, Codable, Hashable, Sendable, CaseIter
     case compile, run, test, debug
 }
 
+public enum BuildContextBuildPolicy: String, Codable, Hashable, Sendable, CaseIterable {
+    case build, reuse
+
+    public func validate(for operation: BuildContextOperation) throws {
+        guard operation != .compile || self == .build else {
+            throw BuildContextError.invalid("Compile requires the build policy.")
+        }
+    }
+}
+
 public struct BuildContextScope: Codable, Hashable, Sendable {
     public let workspaceUri: URI?
     public let targets: [BSPBuildTargetIdentifier]?
@@ -29,10 +39,30 @@ public struct BuildContextParams: Codable, Hashable, Sendable {
     public let operation: BuildContextOperation
     public let selection: [String: String]?
 
-    public init(scope: BuildContextScope? = nil, operation: BuildContextOperation, selection: [String: String]? = nil) {
+    public let buildPolicy: BuildContextBuildPolicy
+
+    public init(
+        scope: BuildContextScope? = nil,
+        operation: BuildContextOperation,
+        selection: [String: String]? = nil,
+        buildPolicy: BuildContextBuildPolicy = .build
+    ) {
         self.scope = scope
         self.operation = operation
         self.selection = selection
+        self.buildPolicy = buildPolicy
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case scope, operation, selection, buildPolicy
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        scope = try container.decodeIfPresent(BuildContextScope.self, forKey: .scope)
+        operation = try container.decode(BuildContextOperation.self, forKey: .operation)
+        selection = try container.decodeIfPresent([String: String].self, forKey: .selection)
+        buildPolicy = try container.decodeIfPresent(BuildContextBuildPolicy.self, forKey: .buildPolicy) ?? .build
     }
 }
 
@@ -74,6 +104,16 @@ public struct BuildContextPlatform: Codable, Hashable, Sendable {
     }
 }
 
+public struct BuildContextDestinationIdentifier: Codable, Hashable, Sendable {
+    public let label: String
+    public let value: String
+
+    public init(label: String, value: String) {
+        self.label = label
+        self.value = value
+    }
+}
+
 public struct BuildContextDestination: Codable, Hashable, Sendable {
     public static let dataKind = "execution-destination"
     public let kind: String
@@ -81,19 +121,22 @@ public struct BuildContextDestination: Codable, Hashable, Sendable {
     public let osVersion: String?
     public let architecture: String?
     public let state: String?
+    public let identifier: BuildContextDestinationIdentifier?
 
     public init(
         kind: String,
         platform: BuildContextPlatform,
         osVersion: String? = nil,
         architecture: String? = nil,
-        state: String? = nil
+        state: String? = nil,
+        identifier: BuildContextDestinationIdentifier? = nil
     ) {
         self.kind = kind
         self.platform = platform
         self.osVersion = osVersion
         self.architecture = architecture
         self.state = state
+        self.identifier = identifier
     }
 
     public func encodeToLSPAny() -> LSPAny {
@@ -104,6 +147,12 @@ public struct BuildContextDestination: Codable, Hashable, Sendable {
         if let osVersion { data["osVersion"] = .string(osVersion) }
         if let architecture { data["architecture"] = .string(architecture) }
         if let state { data["state"] = .string(state) }
+        if let identifier {
+            data["identifier"] = .dictionary([
+                "label": .string(identifier.label),
+                "value": .string(identifier.value)
+            ])
+        }
         return .dictionary(data)
     }
 }
@@ -161,10 +210,18 @@ public struct BuildContext: Codable, Hashable, Sendable {
     public let targets: [BSPBuildTargetIdentifier]
     public let selection: [String: String]
 
-    public init(operation: BuildContextOperation, targets: [BSPBuildTargetIdentifier], selection: [String: String]) {
+    public let buildPolicy: BuildContextBuildPolicy
+
+    public init(
+        operation: BuildContextOperation,
+        targets: [BSPBuildTargetIdentifier],
+        selection: [String: String],
+        buildPolicy: BuildContextBuildPolicy = .build
+    ) {
         self.operation = operation
         self.targets = targets
         self.selection = selection
+        self.buildPolicy = buildPolicy
     }
 }
 
@@ -182,11 +239,14 @@ public struct BuildContextResolution: Codable, Hashable, Sendable {
     public let targets: [BSPBuildTargetIdentifier]
     public let selection: [String: String]
 
+    public let buildPolicy: BuildContextBuildPolicy
+
     public init(id: String, context: BuildContext) {
         self.id = id
         self.operation = context.operation
         self.targets = context.targets
         self.selection = context.selection
+        self.buildPolicy = context.buildPolicy
     }
 }
 
@@ -196,10 +256,16 @@ public struct BuildContextExtension: Codable, Hashable, Sendable {
     public let required: Bool
     public let operations: [BuildContextOperation]
 
-    public init(operations: [BuildContextOperation]) {
+    public let buildPolicies: [BuildContextBuildPolicy]
+
+    public init(
+        operations: [BuildContextOperation],
+        buildPolicies: [BuildContextBuildPolicy] = [.build]
+    ) {
         self.version = "0.1"
         self.required = true
         self.operations = operations
+        self.buildPolicies = buildPolicies
     }
 }
 

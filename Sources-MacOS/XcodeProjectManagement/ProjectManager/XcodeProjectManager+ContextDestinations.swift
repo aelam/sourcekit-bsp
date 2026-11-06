@@ -5,32 +5,59 @@ public extension XcodeProjectManager {
         try Task.checkCancellation()
         guard !destinationDiscoveryStopped else { throw CancellationError() }
         let now = contextDiscoveryClock()
-        if let task = destinationRefreshTask {
-            try await task.value
-            try Task.checkCancellation()
-            guard !destinationDiscoveryStopped else { throw CancellationError() }
+        if allowCached, let refreshed = destinationRefreshInstant {
+            if refreshed.duration(to: now) >= .seconds(2) {
+                _ = startContextDestinationRefresh()
+            }
             return
         }
-        if allowCached, let refreshed = destinationRefreshInstant,
-           refreshed.duration(to: now) < .seconds(2) {
-            return
-        }
-        destinationRefreshInstant = nil
-        let loader = destinationLoader
-        let task = Task { try await loader.loadDestinations(reload: true) }
-        destinationRefreshTask = task
-        defer { destinationRefreshTask = nil }
+        let task = startContextDestinationRefresh()
         try await task.value
         try Task.checkCancellation()
         guard !destinationDiscoveryStopped else { throw CancellationError() }
-        destinationRefreshInstant = contextDiscoveryClock()
     }
 
     func stopContextDestinationDiscovery() async {
         destinationDiscoveryStopped = true
+        let task = destinationRefreshTask
+        invalidateContextDestinationDiscovery()
+        if let task { _ = await task.result }
+    }
+}
+
+extension XcodeProjectManager {
+    func invalidateContextDestinationDiscovery() {
+        destinationRefreshID = nil
         destinationRefreshInstant = nil
         destinationRefreshTask?.cancel()
-        if let task = destinationRefreshTask { _ = await task.result }
         destinationRefreshTask = nil
+    }
+
+    private func startContextDestinationRefresh() -> Task<Void, Error> {
+        if let task = destinationRefreshTask { return task }
+        let id = UUID()
+        destinationRefreshID = id
+        let task = Task { try await performContextDestinationRefresh(id: id) }
+        destinationRefreshTask = task
+        return task
+    }
+
+    private func performContextDestinationRefresh(id: UUID) async throws {
+        do {
+            let snapshot = try await destinationLoader.discoverDestinations()
+            try Task.checkCancellation()
+            guard destinationRefreshID == id, !destinationDiscoveryStopped else { throw CancellationError() }
+            destinationLoader.publishDestinations(snapshot)
+            destinationRefreshInstant = contextDiscoveryClock()
+            destinationRefreshTask = nil
+            destinationRefreshID = nil
+        } catch {
+            if destinationRefreshID == id {
+                destinationRefreshInstant = nil
+                destinationRefreshTask = nil
+                destinationRefreshID = nil
+            }
+            throw error
+        }
     }
 }

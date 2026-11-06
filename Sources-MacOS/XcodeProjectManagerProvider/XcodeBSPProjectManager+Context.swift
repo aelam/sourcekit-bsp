@@ -7,6 +7,10 @@ public extension XcodeBSPProjectManager {
         true
     }
 
+    var supportedBuildPolicies: [BuildContextBuildPolicy] {
+        BuildContextBuildPolicy.allCases
+    }
+
     func contextOptions(_ params: BuildContextOptionsParams) async throws -> BuildContextOptionsResult {
         try await backend.contextOptions(params)
     }
@@ -44,8 +48,10 @@ public extension XcodeBSPProjectManager {
             workingDirectory: workingDirectory
         )
         let flags = try await backend.contextArguments(context, arguments: nil)
-        await progressHandler?("Building the selected scheme before launch")
-        guard try await backend.compileContext(context, arguments: nil) == 0 else { return .error }
+        if context.buildPolicy == .build {
+            await progressHandler?("Building the selected scheme before launch")
+            guard try await backend.compileContext(context, arguments: nil) == 0 else { return .error }
+        }
         return try await run(
             targetIdentifier: targetIdentifier,
             arguments: flags,
@@ -67,14 +73,16 @@ public extension XcodeBSPProjectManager {
     ) async throws -> StatusCode {
         try checkContextScope(context, operation: .test, targets: targetIdentifiers)
         let flags = try await backend.contextArguments(context, arguments: arguments)
-        return try await test(
-            targetIdentifiers: targetIdentifiers,
+        let result = try await backend.test(
+            xcodeTargetIdentifiers: targetIdentifiers.map { XcodeTargetIdentifier($0) },
             arguments: flags,
             environmentVariables: environmentVariables,
-            workingDirectory: workingDirectory,
-            logHandler: logHandler,
-            testEventHandler: testEventHandler
+            workingDirectory: workingDirectory?.fileURL,
+            outputHandler: logHandler.map { ClosureOutputHandler(onLine: $0) },
+            testEventHandler: testEventHandler,
+            skipBuild: context.buildPolicy == .reuse
         )
+        return result.statusCode == .success ? .ok : .error
     }
 
     func startDebugSession(
@@ -87,10 +95,12 @@ public extension XcodeBSPProjectManager {
         try checkContextScope(context, operation: .debug, targets: targetIdentifiers)
         try checkContextRuntimeArguments(arguments, environmentVariables: nil, workingDirectory: nil)
         let flags = try await backend.contextArguments(context, arguments: nil)
-        await progressHandler?("Building the selected scheme before debugging")
-        guard try await backend.compileContext(
-            context, arguments: nil, outputHandler: logHandler.map { ClosureOutputHandler(onLine: $0) }
-        ) == 0 else { throw DebugSessionError.buildFailed }
+        if context.buildPolicy == .build {
+            await progressHandler?("Building the selected scheme before debugging")
+            guard try await backend.compileContext(
+                context, arguments: nil, outputHandler: logHandler.map { ClosureOutputHandler(onLine: $0) }
+            ) == 0 else { throw DebugSessionError.buildFailed }
+        }
         return try await startDebugSession(
             targetIdentifiers: targetIdentifiers,
             arguments: flags,

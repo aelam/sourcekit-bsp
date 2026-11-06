@@ -12,7 +12,10 @@ extension BSPServerService {
         let operations = BuildContextOperation.allCases.filter { operation in
             ProjectManagerCapability(rawValue: operation.rawValue).map(capabilities.contains) ?? false
         }
-        let negotiated = BuildContextExtension(operations: operations)
+        let negotiated = await BuildContextExtension(
+            operations: operations,
+            buildPolicies: projectManager.supportedBuildPolicies
+        )
         buildContextExtension = negotiated
         return negotiated
     }
@@ -24,14 +27,19 @@ extension BSPServerService {
 
     func resolveContext(_ params: BuildContextParams) async throws -> BuildContextResolution {
         let manager = try await contextManager(scope: params.scope, operation: params.operation)
+        try params.buildPolicy.validate(for: params.operation)
+        guard buildContextExtension?.buildPolicies.contains(params.buildPolicy) == true else {
+            throw BuildContextError.invalid("The build policy was not negotiated.")
+        }
         let revision = buildContextRevision
         let context = try await manager.resolveContext(params)
         guard revision == buildContextRevision else {
             throw BuildContextError.invalid("The project changed while resolving. Resolve a new context.")
         }
-        guard context.operation == params.operation, !context.targets.isEmpty,
+        guard context.buildPolicy == params.buildPolicy, context.operation == params.operation,
+              !context.targets.isEmpty,
               Set(context.targets).count == context.targets.count else {
-            throw BuildContextError.invalid("The provider returned an invalid operation or no targets.")
+            throw BuildContextError.invalid("The provider returned an invalid operation, build policy, or target set.")
         }
         if let targets = params.scope?.targets, !targets.isEmpty, Set(targets) != Set(context.targets) {
             throw BuildContextError.invalid("The resolved targets differ from the requested targets.")
@@ -72,14 +80,15 @@ extension BSPServerService {
         let params = BuildContextParams(
             scope: .init(targets: targets),
             operation: operation,
-            selection: context.selection
+            selection: context.selection,
+            buildPolicy: context.buildPolicy
         )
         let manager = try await contextManager(scope: params.scope, operation: params.operation)
         let revision = buildContextRevision
         let current = try await manager.resolveContext(params)
         guard revision == buildContextRevision, buildContexts[reference.id] != nil,
               current.operation == operation, Set(current.targets) == Set(targets),
-              current.selection == context.selection else {
+              current.selection == context.selection, current.buildPolicy == context.buildPolicy else {
             throw BuildContextError.invalid("The resolved selection is stale. Resolve a new context.")
         }
         return context

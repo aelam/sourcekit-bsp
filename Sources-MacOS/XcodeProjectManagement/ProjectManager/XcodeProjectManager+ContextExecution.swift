@@ -6,7 +6,8 @@ public extension XcodeProjectManager {
         let resolved = try resolvedContext(BuildContextParams(
             scope: BuildContextScope(targets: context.targets),
             operation: context.operation,
-            selection: context.selection
+            selection: context.selection,
+            buildPolicy: context.buildPolicy
         ))
         guard resolved == context else { throw BuildContextError.invalid("The context changed; resolve it again") }
     }
@@ -66,6 +67,9 @@ public extension XcodeProjectManager {
 
 extension XcodeProjectManager {
     func contextBuildCommand(_ context: BuildContext, arguments: [String]?) throws -> [String] {
+        guard context.buildPolicy == .build else {
+            throw BuildContextError.invalid("The reuse policy cannot build products")
+        }
         let flags = try contextArguments(context, arguments: arguments)
         let targets = try contextRequestedTargets(BuildContextScope(targets: context.targets)) ?? []
         guard let scheme = projectSnapshot?.schemes.first(where: { $0.name == flags[1] }) else {

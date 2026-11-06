@@ -207,7 +207,7 @@ public extension XcodeProjectManager {
             return BuildContextOption(
                 id: destination.id,
                 label: destination.name,
-                description: "Device inventory; compatibility is inferred from build settings",
+                description: destination.isRunnable ? nil : "Build only",
                 reason: reason,
                 availability: reason == nil,
                 dataKind: BuildContextDestination.dataKind,
@@ -246,6 +246,7 @@ public extension XcodeProjectManager {
     }
 
     internal func resolvedContext(_ params: BuildContextParams) throws -> BuildContext {
+        try params.buildPolicy.validate(for: params.operation)
         let result = try operationContextOptions(params)
         for dimension in result.dimensions {
             guard let value = dimension.value,
@@ -269,7 +270,8 @@ public extension XcodeProjectManager {
         return try BuildContext(
             operation: params.operation,
             targets: plan.targets.map { try BSPBuildTargetIdentifier(uri: URI(string: $0.targetIdentifier.rawValue)) },
-            selection: result.selection
+            selection: result.selection,
+            buildPolicy: params.buildPolicy
         )
     }
 }

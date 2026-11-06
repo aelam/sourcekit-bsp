@@ -1,6 +1,5 @@
 import BuildServerProtocol
 import Foundation
-import Support
 import Testing
 import XcodeProj
 @testable import XcodeProjectManagement
@@ -8,41 +7,64 @@ import XcodeProj
 @Suite(.serialized)
 struct XcodeBuildContextTests {
     @Test
-    func reusesDiscoveryInventoryUntilExpiryAndAlwaysRefreshesResolution() async throws {
+    func expiredDiscoveryReturnsBeforeRefreshAndSharesItsFlightWithResolution() async throws {
         let inventory = ContextInventory()
         let clock = ContextClock()
         let fixture = try await ContextFixture.make(inventory: inventory, clock: clock)
         defer { fixture.remove() }
         let selection = ["xcode.scheme": fixture.schemeID, "xcode.destination": "BSP-DEVICE"]
-        let connected = try await fixture.manager.contextOptions(.init(selection: selection))
-        #expect(connected.dimensions.last?.options.first { $0.id == "BSP-DEVICE" }?.availability == true)
+        clock.advance(by: .milliseconds(1999))
+        _ = try await fixture.manager.contextOptions(.init(selection: selection))
         #expect(await inventory.calls == 1)
 
-        await inventory.disconnect()
-        clock.advance(by: .milliseconds(1999))
+        clock.advance(by: .milliseconds(1))
+        await inventory.pause()
         let cached = try await fixture.manager.contextOptions(.init(selection: selection))
         #expect(cached.dimensions.last?.options.first { $0.id == "BSP-DEVICE" }?.availability == true)
-        #expect(await inventory.calls == 1)
-        clock.advance(by: .milliseconds(1))
-        let disconnected = try await fixture.manager.contextOptions(.init(selection: selection))
-        #expect(disconnected.dimensions.last?.options.first { $0.id == "BSP-DEVICE" }?.availability == false)
+        await inventory.waitUntilPaused()
+        let repeated = try await fixture.manager.contextOptions(.init(selection: selection))
+        #expect(repeated == cached)
         #expect(await inventory.calls == 2)
 
+        let initialReads = clock.reads
+        let resolution = Task {
+            try await fixture.manager.resolveContext(.init(operation: .run, selection: selection))
+        }
+        await clock.waitForReads(initialReads + 1)
+        await inventory.disconnect()
+        await inventory.resume()
+        await #expect(throws: BuildContextError.self) { try await resolution.value }
+        #expect(await inventory.calls == 2)
+        let refreshed = try await fixture.manager.contextOptions(.init(selection: selection))
+        #expect(refreshed.dimensions.last?.options.first { $0.id == "BSP-DEVICE" }?.availability == false)
         await #expect(throws: BuildContextError.self) {
             try await fixture.manager.resolveContext(.init(operation: .run, selection: selection))
         }
         #expect(await inventory.calls == 3)
+    }
+
+    @Test
+    func failedBackgroundRefreshInvalidatesTheReusableSnapshot() async throws {
+        let inventory = ContextInventory()
+        let clock = ContextClock()
+        let fixture = try await ContextFixture.make(inventory: inventory, clock: clock)
+        defer { fixture.remove() }
+        let selection = ["xcode.scheme": fixture.schemeID]
+        clock.advance(by: .seconds(2))
+        await inventory.pause()
         await inventory.fail()
-        await #expect(throws: ContextInventory.Failure.self) {
-            try await fixture.manager.resolveContext(.init(
-                operation: .compile,
-                selection: ["xcode.scheme": fixture.schemeID]
-            ))
-        }
+        _ = try await fixture.manager.contextOptions(.init(selection: selection))
+        await inventory.waitUntilPaused()
+        let refresh = try #require(await fixture.manager.destinationRefreshTask)
+        await inventory.resume()
+        await #expect(throws: ContextInventory.Failure.self) { try await refresh.value }
         await #expect(throws: ContextInventory.Failure.self) {
             try await fixture.manager.contextOptions(.init(selection: selection))
         }
-        #expect(await inventory.calls == 5)
+        await #expect(throws: ContextInventory.Failure.self) {
+            try await fixture.manager.resolveContext(.init(operation: .compile, selection: selection))
+        }
+        #expect(await inventory.calls == 4)
     }
 
     @Test
@@ -59,14 +81,18 @@ struct XcodeBuildContextTests {
             #expect(options.dimensions.dropFirst().allSatisfy { $0.enabled == false })
         }
         #expect(await inventory.calls == 1)
+        let selection = ["xcode.scheme": fixture.schemeID]
         await #expect(throws: ContextInventory.Failure.self) {
-            try await fixture.manager.contextOptions(.init(selection: ["xcode.scheme": fixture.schemeID]))
+            try await fixture.manager.resolveContext(.init(operation: .compile, selection: selection))
         }
-        #expect(await inventory.calls == 2)
+        await #expect(throws: ContextInventory.Failure.self) {
+            try await fixture.manager.contextOptions(.init(selection: selection))
+        }
+        #expect(await inventory.calls == 3)
     }
 
     @Test
-    func sharesAnInFlightRefreshBetweenDiscoveryAndResolution() async throws {
+    func reloadPreventsAnOldRefreshFromPublishingOrClearingTheNewRefresh() async throws {
         let inventory = ContextInventory()
         let clock = ContextClock()
         let fixture = try await ContextFixture.make(inventory: inventory, clock: clock)
@@ -74,38 +100,52 @@ struct XcodeBuildContextTests {
         let selection = ["xcode.scheme": fixture.schemeID]
         clock.advance(by: .seconds(2))
         await inventory.pause()
-        let initialReads = clock.reads
-        let discovery = Task { try await fixture.manager.contextOptions(.init(selection: selection)) }
+        _ = try await fixture.manager.contextOptions(.init(selection: selection))
         await inventory.waitUntilPaused()
-        let resolution = Task {
-            try await fixture.manager.resolveContext(.init(operation: .compile, selection: selection))
-        }
-        await clock.waitForReads(initialReads + 2)
-        #expect(await inventory.calls == 2)
+        let previous = try #require(await fixture.manager.destinationRefreshTask)
+        let reload = Task { try await fixture.manager.reloadProject() }
+        await inventory.waitUntilPaused(call: 3)
+        let currentID = try #require(await fixture.manager.destinationRefreshID)
+        await inventory.resume(call: 2)
+        await #expect(throws: CancellationError.self) { try await previous.value }
+        #expect(await fixture.manager.destinationRefreshID == currentID)
+        #expect(await fixture.manager.destinationRefreshInstant == nil)
+        await inventory.disconnect()
         await inventory.resume()
-        _ = try await discovery.value
-        _ = try await resolution.value
-        #expect(await inventory.calls == 2)
+        try await reload.value
+        let refreshed = try await fixture.manager.contextOptions(.init(selection: selection))
+        #expect(refreshed.dimensions.last?.options.first { $0.id == "BSP-DEVICE" }?.availability == false)
+        #expect(await inventory.calls == 3)
     }
 
     @Test
-    func reloadAndShutdownInvalidateDiscoveryAndCancellationPrecedesCacheUse() async throws {
+    func shutdownRejectsCancelledQueriesAndLateBackgroundResults() async throws {
         let inventory = ContextInventory()
         let clock = ContextClock()
         let fixture = try await ContextFixture.make(inventory: inventory, clock: clock)
         defer { fixture.remove() }
         let selection = ["xcode.scheme": fixture.schemeID]
-        try await fixture.manager.reloadProject()
-        #expect(await inventory.calls == 2)
-        _ = try await fixture.manager.contextOptions(.init(selection: selection))
-        #expect(await inventory.calls == 2)
         let cancelled = Task {
             withUnsafeCurrentTask { $0?.cancel() }
             return try await fixture.manager.contextOptions(.init(selection: selection))
         }
         await #expect(throws: CancellationError.self) { try await cancelled.value }
-        #expect(await inventory.calls == 2)
-        await fixture.manager.stopContextDestinationDiscovery()
+        #expect(await inventory.calls == 1)
+
+        clock.advance(by: .seconds(2))
+        await inventory.pause()
+        _ = try await fixture.manager.contextOptions(.init(selection: selection))
+        await inventory.waitUntilPaused()
+        let refresh = try #require(await fixture.manager.destinationRefreshTask)
+        let stopping = Task { await fixture.manager.stopContextDestinationDiscovery() }
+        await inventory.waitUntilCancelled(call: 2)
+        await inventory.disconnect()
+        await inventory.resume()
+        await stopping.value
+        await #expect(throws: CancellationError.self) { try await refresh.value }
+        #expect(await fixture.manager.destinationRefreshInstant == nil)
+        let loader = await fixture.manager.destinationLoader
+        #expect(loader.allDestinations.first { $0.id == "BSP-DEVICE" }?.isAvailable == true)
         await #expect(throws: CancellationError.self) { try await fixture.manager.contextOptions(.init()) }
         await #expect(throws: CancellationError.self) {
             try await fixture.manager.resolveContext(.init(operation: .compile, selection: selection))
@@ -401,165 +441,5 @@ extension XcodeBuildContextTests {
             try await fixture.manager.resolveContext(.init(scope: .init(targets: [id]), operation: .compile))
         }
         #expect(try fixture.schemeFiles().isEmpty)
-    }
-}
-
-private struct ContextFixture {
-    let root: URL
-    let manager: XcodeProjectManager
-
-    var schemeURL: URL {
-        root.appendingPathComponent("Hello.xcodeproj/xcshareddata/xcschemes/Hello.xcscheme")
-    }
-
-    var schemeID: String {
-        schemeURL.resolvingSymlinksInPath().standardizedFileURL.absoluteString
-    }
-
-    static func make(
-        inventory: ContextInventory? = nil,
-        clock: ContextClock = ContextClock(),
-        edit: (XCScheme, URL) throws -> Void = { _, _ in }
-    ) async throws -> Self {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ContextTests-\(UUID().uuidString)")
-        let source = try #require(Bundle.module.resourceURL?.appendingPathComponent("DemoProjects/HelloProject"))
-        try FileManager.default.copyItem(at: source, to: root)
-        do {
-            let schemeURL = root.appendingPathComponent("Hello.xcodeproj/xcshareddata/xcschemes/Hello.xcscheme")
-            let directory = schemeURL.deletingLastPathComponent()
-            for file in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-                where file.pathExtension == "xcscheme" && file.lastPathComponent != "Hello.xcscheme" {
-                try FileManager.default.removeItem(at: file)
-            }
-            let scheme = try XCScheme(pathString: schemeURL.path)
-            try edit(scheme, schemeURL.deletingLastPathComponent())
-            try scheme.write(path: .init(schemeURL.path), override: true)
-            let toolchain = XcodeToolchain(workingDirectory: root)
-            let manager = XcodeProjectManager(
-                rootURL: root,
-                toolchain: toolchain,
-                projectLocator: XcodeProjectLocator(),
-                settingsLoader: XcodeSettingsLoader(commandBuilder: XcodeBuildCommandBuilder(), toolchain: toolchain),
-                contextDiscoveryClock: { clock.now },
-                destinationDiscovery: {
-                    if let inventory { return try await inventory.discover() }
-                    return ContextInventory.connected
-                }
-            )
-            try await manager.initialize()
-            return Self(root: root, manager: manager)
-        } catch {
-            try? FileManager.default.removeItem(at: root)
-            throw error
-        }
-    }
-
-    func remove() {
-        try? FileManager.default.removeItem(at: root)
-    }
-
-    func schemeFiles() throws -> [String] {
-        try FileManager.default.contentsOfDirectory(atPath: schemeURL.deletingLastPathComponent().path).sorted()
-    }
-}
-
-private actor ContextInventory {
-    enum Failure: Error { case unavailable }
-    static let connected = """
-    == Devices ==
-    iPhone 16 Pro (18.5) (BSP-DEVICE)
-    == Simulators ==
-    iPhone 16 Simulator (18.5) (BSP-SIMULATOR)
-    """
-
-    private var output = connected
-    private var failed = false
-    private(set) var calls = 0
-    private var shouldPause = false
-    private var paused: CheckedContinuation<Void, Never>?
-    private var pauseWaiters: [CheckedContinuation<Void, Never>] = []
-
-    func discover() async throws -> String {
-        calls += 1
-        if shouldPause {
-            await withCheckedContinuation { continuation in
-                paused = continuation
-                for waiter in pauseWaiters {
-                    waiter.resume()
-                }
-                pauseWaiters.removeAll()
-            }
-        }
-        if failed { throw Failure.unavailable }
-        return output
-    }
-
-    func pause() {
-        shouldPause = true
-    }
-
-    func waitUntilPaused() async {
-        if paused != nil { return }
-        await withCheckedContinuation { pauseWaiters.append($0) }
-    }
-
-    func resume() {
-        shouldPause = false
-        paused?.resume()
-        paused = nil
-    }
-
-    func disconnect() {
-        output = """
-        == Devices Offline ==
-        iPhone 16 Pro (18.5) (BSP-DEVICE)
-        """
-    }
-
-    func fail() {
-        failed = true
-    }
-}
-
-private final class ContextClock: Sendable {
-    private struct State: Sendable {
-        var instant = ContinuousClock.now
-        var reads = 0
-        var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
-    }
-
-    private let state = CrossPlatformLock(initialState: State())
-
-    var now: ContinuousClock.Instant {
-        state.withLock { state in
-            state.reads += 1
-            let reads = state.reads
-            state.waiters.removeAll { count, waiter in
-                guard reads >= count else { return false }
-                waiter.resume()
-                return true
-            }
-            return state.instant
-        }
-    }
-
-    var reads: Int {
-        state.withLock { $0.reads }
-    }
-
-    func advance(by duration: Duration) {
-        state.withLock { $0.instant = $0.instant.advanced(by: duration) }
-    }
-
-    func waitForReads(_ count: Int) async {
-        await withCheckedContinuation { continuation in
-            state.withLock { state in
-                if state.reads >= count {
-                    continuation.resume()
-                } else {
-                    state.waiters.append((count, continuation))
-                }
-            }
-        }
     }
 }

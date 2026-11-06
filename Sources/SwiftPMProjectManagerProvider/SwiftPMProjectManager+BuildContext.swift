@@ -6,11 +6,16 @@ public extension SwiftPMProjectManager {
         true
     }
 
+    var supportedBuildPolicies: [BuildContextBuildPolicy] {
+        BuildContextBuildPolicy.allCases
+    }
+
     func contextOptions(_ params: BuildContextOptionsParams) async throws -> BuildContextOptionsResult {
         try await contextOptionsForQuery(.init(scope: params.scope, operation: nil, selection: params.selection))
     }
 
     func resolveContext(_ params: BuildContextParams) async throws -> BuildContext {
+        try params.buildPolicy.validate(for: params.operation)
         let options = try await contextOptionsForQuery(.init(
             scope: params.scope,
             operation: params.operation,
@@ -24,7 +29,9 @@ public extension SwiftPMProjectManager {
         } else {
             throw BuildContextError.invalid("Select a target.")
         }
-        return .init(operation: params.operation, targets: targets, selection: options.selection)
+        return .init(
+            operation: params.operation, targets: targets, selection: options.selection, buildPolicy: params.buildPolicy
+        )
     }
 
     func startBuild(
@@ -52,9 +59,15 @@ public extension SwiftPMProjectManager {
     ) async throws -> StatusCode {
         try await validateContext(context, operation: .run, targets: [targetIdentifier])
         let options = try contextBuildArguments(nil, context: context)
-        await progressHandler?("Building the selected configuration")
-        let status = try await startBuild(targetIdentifiers: [targetIdentifier], arguments: options, logHandler: nil)
-        guard status == .ok else { return status }
+        if context.buildPolicy == .build {
+            await progressHandler?("Building the selected configuration")
+            let status = try await startBuild(
+                targetIdentifiers: [targetIdentifier],
+                arguments: options,
+                logHandler: nil
+            )
+            guard status == .ok else { return status }
+        }
         let program = try await builtExecutable(for: targetIdentifier, arguments: options)
         return try await runExecutable(
             program,
@@ -76,9 +89,11 @@ public extension SwiftPMProjectManager {
         context: BuildContext
     ) async throws -> StatusCode {
         try await validateContext(context, operation: .test, targets: targetIdentifiers)
+        let options = try contextBuildArguments(arguments, context: context)
+        let policyArguments = context.buildPolicy == .reuse ? ["--skip-build"] : []
         return try await test(
             targetIdentifiers: targetIdentifiers,
-            arguments: contextBuildArguments(arguments, context: context),
+            arguments: policyArguments + options,
             environmentVariables: environmentVariables,
             workingDirectory: workingDirectory,
             logHandler: logHandler,
@@ -101,12 +116,14 @@ public extension SwiftPMProjectManager {
         if testModules[target] != nil, !(arguments ?? []).isEmpty {
             throw BuildContextError.invalid("Test debugging does not support additional runtime arguments.")
         }
-        let status = try await startBuild(
-            targetIdentifiers: targetIdentifiers,
-            arguments: options,
-            logHandler: logHandler
-        )
-        guard status == .ok else { throw BuildContextError.invalid("The selected configuration failed to build.") }
+        if context.buildPolicy == .build {
+            let status = try await startBuild(
+                targetIdentifiers: targetIdentifiers,
+                arguments: options,
+                logHandler: logHandler
+            )
+            guard status == .ok else { throw BuildContextError.invalid("The selected configuration failed to build.") }
+        }
         let launch: SwiftPMDebugLaunch = if testModules[target] != nil {
             try await testDebugLaunch(for: target, arguments: options, logHandler: logHandler)
         } else {
@@ -315,11 +332,22 @@ extension SwiftPMProjectManager {
         let current = try await resolveContext(.init(
             scope: .init(targets: targets),
             operation: operation,
-            selection: context.selection
+            selection: context.selection,
+            buildPolicy: context.buildPolicy
         ))
-        guard current.selection == context.selection else {
+        guard current.selection == context.selection, current.buildPolicy == context.buildPolicy else {
             throw BuildContextError.invalid("The selection is no longer available.")
         }
+    }
+
+    private func isContextTestPolicyArgument(
+        _ option: String, hasValue: Bool, context: BuildContext
+    ) throws -> Bool {
+        guard context.operation == .test, option == "--skip-build" else { return false }
+        guard context.buildPolicy == .reuse, !hasValue else {
+            throw BuildContextError.invalid("The test arguments conflict with the resolved build policy.")
+        }
+        return true
     }
 
     func contextBuildArguments(_ arguments: [String]?, context: BuildContext) throws -> [String] {
@@ -348,6 +376,10 @@ extension SwiftPMProjectManager {
             let token = arguments[index]
             let parts = token.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
             let option = String(parts[0])
+            if try isContextTestPolicyArgument(option, hasValue: parts.count > 1, context: context) {
+                index += 1
+                continue
+            }
             guard !destination.contains(option) else {
                 throw BuildContextError.invalid("The resolved destination controls \(option).")
             }

@@ -144,8 +144,7 @@ extension XcodeProjectManager {
             BuildContextOption(
                 id: destination.id,
                 label: destination.name,
-                description: (destination.isRunnable ? "" : "Build only. ") +
-                    "Device inventory; compatibility is inferred from build settings",
+                description: destination.isRunnable ? nil : "Build only",
                 reason: destination.isAvailable ? nil : "This destination is offline or unavailable",
                 availability: destination.isAvailable,
                 dataKind: BuildContextDestination.dataKind,

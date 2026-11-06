@@ -248,7 +248,8 @@ SourceKit initialization fields. The supported operation list can vary by provid
   "vscode-bsp.build-context": {
     "version": "0.1",
     "required": true,
-    "operations": ["compile", "run", "test", "debug"]
+    "operations": ["compile", "run", "test", "debug"],
+    "buildPolicies": ["build", "reuse"]
   }
 }
 ```
@@ -333,7 +334,8 @@ The custom `execution-destination` data kind describes a destination:
   "data": {
     "kind": "simulator",
     "platform": { "id": "ios", "label": "iOS" },
-    "osVersion": "18.5"
+    "osVersion": "18.5",
+    "identifier": { "label": "UDID", "value": "F76DD514-D57D-475E-9C1A-EB230A2FF86B" }
   }
 }
 ```
@@ -346,6 +348,21 @@ unknown values. Clients use these fields for display only; they must not infer
 execution capabilities from a destination kind or state. Unknown data kinds or
 destination kinds fall back to the option's label and description.
 
+| Metadata field | Meaning |
+| --- | --- |
+| `kind` | Destination type; unknown kinds remain valid. |
+| `platform` | Platform ID and display label. |
+| `osVersion` | Optional known OS version. |
+| `architecture` | Optional known architecture. |
+| `state` | Optional observed state, such as connected or booted. |
+| `identifier` | Optional display identifier with `label` and `value`, such as an actual device or simulator UDID. |
+
+The display identifier is separate from the option's opaque `id`, which remains
+the selection key. Clients must not parse an option ID to invent a display
+identifier. Xcode supplies `identifier` only for devices and simulators with an
+actual UDID. Generic destinations and host entries with synthetic platform IDs
+omit it. SwiftPM host destinations also omit it.
+
 Xcode supplies platform, destination type, and known OS versions from its device
 inventory. Its current simulator inventory does not report boot state, so that
 field is omitted. SwiftPM reports its host platform and architecture from the
@@ -353,10 +370,20 @@ selected toolchain's target information; a deployment version is not a host OS
 version. `availability` and execution validation remain independent of metadata.
 
 Dimensions are ordered from earlier choices to dependent choices. When the user
-changes a dimension, the client clears explicit choices for later dimensions and
-queries options again. Server defaults returned by discovery do not become saved
-user preferences. Version `0.1` uses this ordered model rather than a dependency
-graph; servers must supply a suitable order.
+changes a dimension, the client queries options in that order and keeps later
+explicit choices that remain enabled and available. It removes only choices that
+are no longer valid, including removed or disabled dimensions. Selecting the
+current value does not clear later choices. Server defaults returned by discovery
+do not become saved user preferences. Version `0.1` uses this ordered model;
+servers must supply a suitable order.
+
+Within one server connection, a dimension ID has the same meaning and value
+namespace across workspace and target scopes. Use different IDs when the meaning
+is different. Clients can inherit explicit workspace choices for dimensions with
+matching IDs in a target scope; workspace-only choices do not enter that target
+selection. The server validates the resulting selection against the exact target
+scope during resolution. Incompatible choices fail instead of selecting a
+different scheme, configuration, or destination silently.
 
 Xcode workspace discovery always orders its fields as Scheme, Configuration,
 and Destination. The provider enables dependent fields after their prerequisites
@@ -375,9 +402,13 @@ Xcode destinations come from the local device inventory and platform build
 settings. These checks do not replace `xcodebuild -showdestinations` validation
 for a scheme. Generic destinations can be used for builds; run, test, and debug
 require a concrete destination. Refresh options after changing a scheme or
-configuration, and before using a saved selection. Xcode option discovery reuses
-an inventory snapshot for up to two seconds. Queries without a valid scheme do
-not scan devices. Context resolution and execution always refresh the inventory;
+configuration, and before using a saved selection. Xcode option discovery returns
+an existing inventory snapshot immediately. Once that snapshot is two seconds
+old, discovery starts a shared background refresh; the displayed list can remain
+briefly out of date while that refresh runs. Queries without a valid scheme do
+not scan devices. A background refresh failure invalidates the reusable snapshot,
+so the next discovery query waits for a new scan and reports any failure. Context
+resolution and execution always wait for a fresh scan or an in-flight refresh;
 a refresh failure prevents execution instead of using an older snapshot.
 
 The first Xcode implementation rejects test plans and ambiguous scheme names.
@@ -387,7 +418,7 @@ Test debugging supports one app-hosted unit test target on an iOS simulator.
 Unavailable options include a reason. These restrictions apply to the new
 context path; they do not add support to the legacy execution path.
 
-The resolve response contains `id`, `operation`, `targets`, and the effective
+The resolve response contains `id`, `operation`, `targets`, `buildPolicy`, and the effective
 `selection`. IDs belong to the current connection. They can be reused while valid;
 they are not task IDs or persistent settings. The server keeps at most 128 resolved
 contexts. Reconnection, project reload, cache eviction, or a changed selection can
@@ -417,9 +448,29 @@ reports, cancellation, and DAP connections keep their existing formats.
 
 Execution settings stay separate from application arguments, test selection data,
 environment variables, and the working directory. Conflicting build flags fail
-instead of overriding the selected configuration. Context execution prepares
-required products using that same configuration. It does not require the client
-to compile under a separately resolved configuration first.
+instead of overriding the selected configuration. By default, context execution
+builds the required products with that same configuration.
+
+`workspace/resolveContext` also accepts an optional `buildPolicy`: `"build"`
+(the default) or `"reuse"`. For example, Run Without Building resolves a `run`
+context with `"buildPolicy": "reuse"`. The response echoes the policy, and the
+context ID freezes it along with the scheme, configuration, destination, and
+targets. The execute request still sends only `executionContext: {"id": "..."}`.
+
+A client can offer Without Building only when the negotiated `buildPolicies`
+contains `"reuse"`. If the field is absent, only `"build"` is supported. When
+present, the list must contain `"build"` and can also contain `"reuse"`. The client
+must check that resolution returned the requested policy; an omitted response
+policy means `"build"` for compatibility. Compile rejects `"reuse"`. Unsupported
+policies and policy mismatches fail instead of falling back to a build. Test
+arguments cannot override the frozen policy; `"build"` rejects `--skip-build`.
+
+With `"reuse"`, run and debug require existing products. Test uses
+`xcodebuild test-without-building` or `swift test --skip-build`, retaining the
+selected tests and execution settings. Missing products fail without a fallback
+build. Product lookup, build-setting queries, installation, and launch can still
+run; they do not compile products. Both application and test debugging follow
+this policy. Revalidation preserves and checks the frozen policy.
 
 This version does not provide a configuration-change notification or a general
 UI schema. Query options when configuring an operation and resolve before starting

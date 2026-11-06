@@ -59,6 +59,7 @@ public actor XcodeProjectManager {
     let schemeLoader: XCSchemeLoader
     let destinationLoader: XcodeDestinationLoader
     var destinationRefreshTask: Task<Void, Error>?
+    var destinationRefreshID: UUID?
     var destinationRefreshInstant: ContinuousClock.Instant?
     let contextDiscoveryClock: @Sendable () -> ContinuousClock.Instant
     var destinationDiscoveryStopped = false
@@ -115,7 +116,7 @@ public actor XcodeProjectManager {
     }
 
     public func initialize() async throws {
-        destinationRefreshInstant = nil
+        invalidateContextDestinationDiscovery()
         let configURL = rootURL.appendingPathComponent(".sourcekit-bsp/project.json")
         let reference = if FileManager.default.fileExists(atPath: configURL.path) {
             try JSONDecoder().decode(XcodeProjectReference.self, from: Data(contentsOf: configURL))

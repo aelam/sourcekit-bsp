@@ -195,20 +195,22 @@ struct SwiftPMBuildContextTests {
         #expect(call.arguments.count { $0 == "-c" } == 1)
     }
 
-    @Test
-    func selectionIsIndependentOfTheBuildConfiguration() async throws {
+    @Test(arguments: BuildContextBuildPolicy.allCases)
+    func selectionIsIndependentOfTheBuildConfiguration(policy: BuildContextBuildPolicy) async throws {
         let fixture = try TemporarySwiftPMPackage()
         let recorder = try ContextCommandRecorder(fixture: fixture)
         let manager = fixture.manager(executor: recorder)
         try await manager.initialize()
-        let context = try await manager.resolveContext(.init(operation: .test, selection: [
-            "swiftpm.configuration": "release"
-        ]))
+        let context = try await manager.resolveContext(.init(
+            operation: .test,
+            selection: ["swiftpm.configuration": "release"],
+            buildPolicy: policy
+        ))
         let target = try #require(context.targets.first)
         let selection = SwiftPMTestSelection(tests: [.init(target: target, id: "Example/testValue()", style: "XCTest")])
         let arguments = try await manager.testArguments(
             targetIdentifiers: [target],
-            arguments: nil,
+            arguments: policy == .reuse ? ["--skip-build", "--skip-build"] : nil,
             dataKind: SwiftPMTestSelection.dataKind,
             data: JSONDecoder().decode(
                 LSPAny.self,
@@ -224,8 +226,22 @@ struct SwiftPMBuildContextTests {
             testEventHandler: nil,
             context: context
         )
+        if policy == .build {
+            await #expect(throws: BuildContextError.self) {
+                try await manager.test(
+                    targetIdentifiers: [target],
+                    arguments: ["--skip-build"],
+                    environmentVariables: nil,
+                    workingDirectory: nil,
+                    logHandler: nil,
+                    testEventHandler: nil,
+                    context: context
+                )
+            }
+        }
         let call = try #require(await recorder.calls.last { $0.arguments.first == "test" })
         #expect(call.arguments.contains("release"))
+        #expect(call.arguments.count { $0 == "--skip-build" } == (policy == .reuse ? 1 : 0))
         let filterIndex = try #require(call.arguments.firstIndex(of: "--filter"))
         let filter = try NSRegularExpression(pattern: call.arguments[filterIndex + 1])
         func matches(_ candidate: String) -> Bool {
@@ -270,9 +286,11 @@ struct SwiftPMBuildContextTests {
         let updated = try await manager.resolveContext(.init(operation: .run))
         #expect(updated.selection["swiftpm.destination"] == "x86_64-apple-macosx26.0")
     }
+}
 
-    @Test
-    func debugBuildsAndLocatesTheSelectedConfiguration() async throws {
+extension SwiftPMBuildContextTests {
+    @Test(arguments: BuildContextBuildPolicy.allCases)
+    func debugBuildsAndLocatesTheSelectedConfiguration(policy: BuildContextBuildPolicy) async throws {
         let fixture = try TemporarySwiftPMPackage()
         let recorder = try ContextCommandRecorder(fixture: fixture)
         let manager = SwiftPMProjectManager(
@@ -282,9 +300,12 @@ struct SwiftPMBuildContextTests {
             debugAdapter: ContextDebugAdapter()
         )
         try await manager.initialize()
-        let context = try await manager.resolveContext(.init(operation: .debug, selection: [
-            "swiftpm.configuration": "release"
-        ]))
+        let context = try await manager.resolveContext(.init(
+            operation: .debug,
+            selection: ["swiftpm.configuration": "release"],
+            buildPolicy: policy
+        ))
+        if policy == .reuse { await recorder.failBuild() }
         let session = try await manager.startDebugSession(
             targetIdentifiers: context.targets,
             arguments: ["hello"],
@@ -295,8 +316,109 @@ struct SwiftPMBuildContextTests {
         #expect(session.program == fixture.root.appendingPathComponent("bin/release/app-tool").path)
         #expect(session.args == ["hello"])
         #expect(await recorder.calls
-            .contains { $0.arguments.contains("--product") && $0.arguments.contains("release") })
+            .contains { $0.arguments.contains("--product") && $0.arguments.contains("release") } == (policy == .build))
+        if policy == .reuse {
+            #expect(await recorder.calls.filter { $0.arguments.first == "build" }.allSatisfy {
+                $0.arguments.contains("--show-bin-path")
+            })
+        }
         await manager.shutdown()
+    }
+}
+
+extension SwiftPMBuildContextTests {
+    @Test
+    func compilerOperandsDoNotReplaceTheReuseTestPolicy() async throws {
+        let fixture = try TemporarySwiftPMPackage()
+        let recorder = try ContextCommandRecorder(fixture: fixture)
+        let manager = fixture.manager(executor: recorder)
+        try await manager.initialize()
+        let context = try await manager.resolveContext(.init(operation: .test, buildPolicy: .reuse))
+        _ = try await manager.test(
+            targetIdentifiers: context.targets,
+            arguments: ["-Xswiftc", "--skip-build"],
+            environmentVariables: nil,
+            workingDirectory: nil,
+            logHandler: nil,
+            testEventHandler: nil,
+            context: context
+        )
+        let command = try #require(await recorder.calls.last { $0.arguments.first == "test" }).arguments
+        #expect(command.count { $0 == "--skip-build" } == 2)
+        let operand = try #require(command.firstIndex(of: "-Xswiftc"))
+        #expect(command[operand + 1] == "--skip-build")
+        #expect(command.prefix(operand).contains("--skip-build"))
+    }
+
+    @Test
+    func reuseRunSkipsCompilationAndRetainsRuntimeArguments() async throws {
+        let fixture = try TemporarySwiftPMPackage()
+        let recorder = try ContextCommandRecorder(fixture: fixture)
+        let manager = fixture.manager(executor: recorder)
+        try await manager.initialize()
+        await recorder.failBuild()
+        let context = try await manager.resolveContext(.init(
+            operation: .run, selection: ["swiftpm.configuration": "release"], buildPolicy: .reuse
+        ))
+        #expect(context.buildPolicy == .reuse)
+        let target = try #require(context.targets.first)
+        #expect(try await manager.run(
+            targetIdentifier: target,
+            arguments: ["--configuration", "application-value"],
+            environmentVariables: ["PROBE": "yes"],
+            workingDirectory: URI(fixture.directory),
+            progressHandler: nil,
+            context: context
+        ) == .ok)
+        let launch = try #require(await recorder.calls.last)
+        #expect(launch.executable == fixture.root.appendingPathComponent("bin/release/app-tool"))
+        #expect(launch.arguments == ["--configuration", "application-value"])
+        #expect(launch.environment == ["PROBE": "yes"])
+        #expect(launch.directory == fixture.directory)
+        #expect(await recorder.calls.filter { $0.arguments.first == "build" }.allSatisfy {
+            $0.arguments.contains("--show-bin-path")
+        })
+        await #expect(throws: BuildContextError.self) {
+            try await manager.resolveContext(.init(operation: .compile, buildPolicy: .reuse))
+        }
+    }
+
+    @Test(arguments: [BuildContextOperation.run, .debug])
+    func reuseFailsForMissingProductsWithoutBuilding(operation: BuildContextOperation) async throws {
+        let fixture = try TemporarySwiftPMPackage()
+        let recorder = try ContextCommandRecorder(fixture: fixture)
+        try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("bin/release/app-tool"))
+        let manager = SwiftPMProjectManager(
+            rootURL: fixture.root,
+            executable: fixture.root.appendingPathComponent("swift"),
+            executor: recorder,
+            debugAdapter: ContextDebugAdapter()
+        )
+        try await manager.initialize()
+        let context = try await manager.resolveContext(.init(
+            operation: operation, selection: ["swiftpm.configuration": "release"], buildPolicy: .reuse
+        ))
+        let target = try #require(context.targets.first)
+        await #expect(throws: SwiftPMProjectError.self) {
+            if operation == .run {
+                _ = try await manager.run(
+                    targetIdentifier: target,
+                    arguments: nil,
+                    environmentVariables: nil,
+                    workingDirectory: nil,
+                    progressHandler: nil,
+                    context: context
+                )
+            } else {
+                _ = try await manager.startDebugSession(
+                    targetIdentifiers: [target], arguments: nil, logHandler: nil, progressHandler: nil, context: context
+                )
+            }
+        }
+        #expect(await recorder.calls.filter { $0.arguments.first == "build" }.allSatisfy {
+            $0.arguments.contains("--show-bin-path")
+        })
+        #expect(await recorder.calls.allSatisfy { $0.executable.lastPathComponent != "app-tool" })
     }
 }
 

@@ -21,6 +21,7 @@ public protocol ProjectManager: AnyObject, Sendable {
     var watchedFileRoots: [URL] { get async }
 
     var supportsBuildContexts: Bool { get async }
+    var supportedBuildPolicies: [BuildContextBuildPolicy] { get async }
     func contextOptions(_ params: BuildContextOptionsParams) async throws -> BuildContextOptionsResult
     func resolveContext(_ params: BuildContextParams) async throws -> BuildContext
     func startBuild(

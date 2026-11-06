@@ -12,8 +12,10 @@ struct BuildContextTests {
         let initialization: BuildInitializeResponse
     }
 
-    private func setup(version: String? = "0.1", supported: Bool = true) async throws -> Harness {
-        let manager = ContextTestManager(supported: supported)
+    private func setup(
+        version: String? = "0.1", supported: Bool = true, reuse: Bool = true
+    ) async throws -> Harness {
+        let manager = ContextTestManager(supported: supported, reuse: reuse)
         let handler = BSPMessageHandler()
         let connection = JSONRPCConnection(
             transport: MemoryTransport(),
@@ -48,7 +50,8 @@ struct BuildContextTests {
             platform: .init(id: "ios", label: "iOS"),
             osVersion: "26.0",
             architecture: "arm64",
-            state: "booted"
+            state: "booted",
+            identifier: .init(label: "UDID", value: "SIMULATOR-UDID")
         )
         let option = BuildContextOption(
             id: "simulator-id",
@@ -63,6 +66,17 @@ struct BuildContextTests {
         let metadata = try #require(decoded.data)
         let typed = try JSONDecoder().decode(BuildContextDestination.self, from: JSONEncoder().encode(metadata))
         #expect(typed == destination)
+        #expect(typed.identifier == .init(label: "UDID", value: "SIMULATOR-UDID"))
+        #expect(decoded.id == "simulator-id")
+        let legacyMetadata = try JSONDecoder().decode(
+            BuildContextDestination.self,
+            from: Data(#"{"kind":"host","platform":{"id":"macos","label":"macOS"}}"#.utf8)
+        )
+        #expect(legacyMetadata.identifier == nil)
+        let legacyObject = try #require(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(legacyMetadata)
+        ) as? [String: Any])
+        #expect(legacyObject["identifier"] == nil)
         let future = BuildContextDestination(kind: "vendor-device", platform: .init(id: "vendor", label: "Vendor OS"))
         #expect(try JSONDecoder().decode(BuildContextDestination.self, from: JSONEncoder().encode(future))
             .kind == "vendor-device")
@@ -265,6 +279,60 @@ struct BuildContextTests {
     }
 }
 
+extension BuildContextTests {
+    @Test
+    func omittedBuildPolicyDefaultsToBuildAndUnknownPoliciesFail() throws {
+        let oldRequest = Data(#"{"operation":"run","selection":{}}"#.utf8)
+        let params = try JSONDecoder().decode(BuildContextParams.self, from: oldRequest)
+        #expect(params.buildPolicy == .build)
+        let reuse = Data(#"{"operation":"run","buildPolicy":"reuse"}"#.utf8)
+        #expect(try JSONDecoder().decode(BuildContextParams.self, from: reuse).buildPolicy == .reuse)
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(
+                BuildContextParams.self,
+                from: Data(#"{"operation":"run","buildPolicy":"auto"}"#.utf8)
+            )
+        }
+    }
+
+    @Test
+    func reuseRequiresNegotiationAndCannotCompile() async throws {
+        let harness = try await setup(reuse: false)
+        let descriptor = try #require(harness.initialization.result.data.bspExtensions?[BuildContextExtension.name])
+        #expect(descriptor.buildPolicies == [.build])
+        await #expect(throws: BuildContextError.self) {
+            try await harness.service.resolveContext(.init(operation: .run, buildPolicy: .reuse))
+        }
+        let supported = try await setup()
+        #expect(supported.initialization.result.data.bspExtensions?[BuildContextExtension.name]?
+            .buildPolicies == [.build, .reuse])
+        await #expect(throws: BuildContextError.self) {
+            try await supported.service.resolveContext(.init(operation: .compile, buildPolicy: .reuse))
+        }
+        #expect(await supported.manager.resolvedPolicies.isEmpty)
+    }
+
+    @Test
+    func freezesAndRevalidatesPolicyWithoutDowngradingIt() async throws {
+        let harness = try await setup()
+        let resolved = try await harness.service.resolveContext(.init(operation: .run, buildPolicy: .reuse))
+        #expect(resolved.buildPolicy == .reuse)
+        let reference = BuildContextReference(id: resolved.id)
+        let context = try await harness.service.executionContext(
+            reference, operation: .run, targets: resolved.targets
+        )
+        #expect(context?.buildPolicy == .reuse)
+        #expect(await harness.manager.resolvedPolicies == [.reuse, .reuse])
+        await harness.manager.overridePolicy(.build)
+        await #expect(throws: BuildContextError.self) {
+            try await harness.service.executionContext(reference, operation: .run, targets: resolved.targets)
+        }
+        await #expect(throws: BuildContextError.self) {
+            try await harness.service.resolveContext(.init(operation: .run, buildPolicy: .reuse))
+        }
+    }
+}
+
 private extension BSPServerService {
     func useContextTestManager(_ manager: any ProjectManager) {
         projectManager = manager
@@ -279,13 +347,21 @@ private actor ContextTestManager: ProjectManager {
     let rootURL = URL(fileURLWithPath: "/tmp/ContextPackage")
     nonisolated let projectType = "test"
     let supportsBuildContexts: Bool
+    let supportedBuildPolicies: [BuildContextBuildPolicy]
+    var returnedPolicy: BuildContextBuildPolicy?
+    var resolvedPolicies: [BuildContextBuildPolicy] = []
     let capabilities: ProjectManagerCapabilities = [.compile, .run, .test, .debug]
     let target = BSPBuildTargetIdentifier(uri: URI(URL(fileURLWithPath: "/tmp/ContextPackage/App")))
     var executions: [String] = []
     var releaseAvailable = true
 
-    init(supported: Bool) {
+    init(supported: Bool, reuse: Bool) {
         supportsBuildContexts = supported
+        supportedBuildPolicies = reuse ? [.build, .reuse] : [.build]
+    }
+
+    func overridePolicy(_ policy: BuildContextBuildPolicy) {
+        returnedPolicy = policy
     }
 
     func disableRelease() {
@@ -328,7 +404,13 @@ private actor ContextTestManager: ProjectManager {
               params.scope?.targets == nil || params.scope?.targets == [target] else {
             throw BuildContextError.invalid("The selection is unavailable.")
         }
-        return .init(operation: params.operation, targets: [target], selection: selection)
+        resolvedPolicies.append(params.buildPolicy)
+        return .init(
+            operation: params.operation,
+            targets: [target],
+            selection: selection,
+            buildPolicy: returnedPolicy ?? params.buildPolicy
+        )
     }
 
     func startBuild(

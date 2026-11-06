@@ -31,7 +31,8 @@ extension XcodeDestination {
             platform: BuildContextPlatform(id: platform.rawValue.lowercased(), label: platform.rawValue),
             osVersion: osVersion,
             architecture: architecture,
-            state: kind == "generic" ? nil : state
+            state: kind == "generic" ? nil : state,
+            identifier: kind == "device" || kind == "simulator" ? .init(label: "UDID", value: id) : nil
         )
     }
 }

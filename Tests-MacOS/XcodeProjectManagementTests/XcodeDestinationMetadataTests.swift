@@ -74,14 +74,22 @@ struct XcodeDestinationMetadataTests {
         let online = try #require(destinations.first { $0.id == "ONLINE-DEVICE" })
         #expect(online.isAvailable)
         #expect(online.buildContextMetadata == BuildContextDestination(
-            kind: "device", platform: .init(id: "ios", label: "iOS"), osVersion: "18.5", state: "connected"
+            kind: "device",
+            platform: .init(id: "ios", label: "iOS"),
+            osVersion: "18.5",
+            state: "connected",
+            identifier: .init(label: "UDID", value: "ONLINE-DEVICE")
         ))
         let offline = try #require(destinations.first { $0.id == "OFFLINE-DEVICE" })
         #expect(!offline.isAvailable)
         #expect(offline.buildContextMetadata.state == "disconnected")
+        #expect(offline.buildContextMetadata.identifier == .init(label: "UDID", value: "OFFLINE-DEVICE"))
         let simulator = try #require(destinations.first { $0.id == "SIMULATOR" })
         #expect(simulator.buildContextMetadata == BuildContextDestination(
-            kind: "simulator", platform: .init(id: "ios", label: "iOS"), osVersion: "18.2"
+            kind: "simulator",
+            platform: .init(id: "ios", label: "iOS"),
+            osVersion: "18.2",
+            identifier: .init(label: "UDID", value: "SIMULATOR")
         ))
         #expect(simulator.buildContextMetadata.state == nil)
         #expect(simulator.buildContextMetadata.architecture == nil)
@@ -95,9 +103,11 @@ struct XcodeDestinationMetadataTests {
             #expect(metadata.osVersion == nil)
             #expect(metadata.architecture == nil)
             #expect(metadata.state == nil)
+            #expect(metadata.identifier == nil)
         }
         let host = XcodeDestination.myMac().buildContextMetadata
         #expect(host.kind == "host")
+        #expect(host.identifier == nil)
         #expect(host.platform == .init(id: "macos", label: "macOS"))
         #expect(host.architecture == "arm64")
         let version = ProcessInfo.processInfo.operatingSystemVersion

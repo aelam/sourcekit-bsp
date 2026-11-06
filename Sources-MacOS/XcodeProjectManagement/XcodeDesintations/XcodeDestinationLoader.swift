@@ -59,6 +59,12 @@ final class XcodeDestinationLoader: Sendable {
             return // Already loaded
         }
 
+        let snapshot = try await discoverDestinations()
+        try Task.checkCancellation()
+        publishDestinations(snapshot)
+    }
+
+    func discoverDestinations() async throws -> [XcodeDestination] {
         let destinations = try await loadDestinationsFromXctrace()
         let snapshot = destinations + [
             .anyiOSDevice,
@@ -73,6 +79,10 @@ final class XcodeDestinationLoader: Sendable {
             .anyMac()
         ]
         try Task.checkCancellation()
+        return snapshot
+    }
+
+    func publishDestinations(_ snapshot: [XcodeDestination]) {
         inventory.withLock { $0 = snapshot }
     }
 

@@ -5,6 +5,10 @@ public extension ProjectManager {
         get async { false }
     }
 
+    var supportedBuildPolicies: [BuildContextBuildPolicy] {
+        get async { [.build] }
+    }
+
     func contextOptions(_ params: BuildContextOptionsParams) async throws -> BuildContextOptionsResult {
         throw BuildContextError.invalid("This provider does not support execution contexts.")
     }
