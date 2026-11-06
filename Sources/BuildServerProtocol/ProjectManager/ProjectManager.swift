@@ -20,6 +20,42 @@ public protocol ProjectManager: AnyObject, Sendable {
 
     var watchedFileRoots: [URL] { get async }
 
+    var supportsBuildContexts: Bool { get async }
+    func contextOptions(_ params: BuildContextOptionsParams) async throws -> BuildContextOptionsResult
+    func resolveContext(_ params: BuildContextParams) async throws -> BuildContext
+    func startBuild(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        logHandler: (@Sendable (String) -> Void)?,
+        context: BuildContext
+    ) async throws -> StatusCode
+    // swiftlint:disable:next function_parameter_count
+    func run(
+        targetIdentifier: BSPBuildTargetIdentifier,
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        progressHandler: (@Sendable (String) async -> Void)?,
+        context: BuildContext
+    ) async throws -> StatusCode
+    // swiftlint:disable:next function_parameter_count
+    func test(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        logHandler: (@Sendable (String) -> Void)?,
+        testEventHandler: (@Sendable (TestExecutionEvent) async -> Void)?,
+        context: BuildContext
+    ) async throws -> StatusCode
+    func startDebugSession(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        logHandler: (@Sendable (String) -> Void)?,
+        progressHandler: (@Sendable (String) async -> Void)?,
+        context: BuildContext
+    ) async throws -> DebugSessionConnection
+
     func initialize() async throws
 
     func shutdown() async

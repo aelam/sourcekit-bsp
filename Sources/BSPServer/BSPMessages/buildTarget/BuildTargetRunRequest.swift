@@ -19,6 +19,7 @@ public struct BuildTargetRunRequest: ContextualRequestType, Sendable {
         public let target: BSPBuildTargetIdentifier
         public let originId: String?
         public let arguments: [String]?
+        public var executionContext: BuildContextReference?
         public let environmentVariables: [String: String]?
         public let workingDirectory: URI?
 
@@ -54,12 +55,18 @@ public struct BuildTargetRunRequest: ContextualRequestType, Sendable {
                     originId: params.originId,
                     arguments: params.arguments,
                     environmentVariables: params.environmentVariables,
-                    workingDirectory: params.workingDirectory
+                    workingDirectory: params.workingDirectory,
+                    executionContext: params.executionContext
                 )
 
                 return BuildTargetRunResponse(
                     id: id,
                     result: .init(originId: params.originId, statusCode: statusCode)
+                )
+            } catch let error as BuildContextError {
+                return JSONRPCErrorResponse(
+                    id: id,
+                    error: JSONRPCError(code: -32602, message: error.localizedDescription)
                 )
             } catch is CancellationError {
                 return BuildTargetRunResponse(

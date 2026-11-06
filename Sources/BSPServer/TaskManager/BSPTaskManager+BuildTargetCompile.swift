@@ -6,11 +6,24 @@ public extension BSPTaskManager {
         using projectManager: any ProjectManager,
         targets: [BSPBuildTargetIdentifier],
         originId: String? = nil,
-        arguments: [String]? = nil
+        arguments: [String]? = nil,
+        executionContext: BuildContext? = nil
     ) async throws -> StatusCode {
         let context = await BuildOutputContext.load(using: projectManager, targets: targets)
         return try await executeWithProgress(originId: originId, message: "Compile targets", context: context) { log in
-            try await projectManager.startBuild(targetIdentifiers: targets, arguments: arguments, logHandler: log)
+            if let executionContext {
+                return try await projectManager.startBuild(
+                    targetIdentifiers: targets,
+                    arguments: arguments,
+                    logHandler: log,
+                    context: executionContext
+                )
+            }
+            return try await projectManager.startBuild(
+                targetIdentifiers: targets,
+                arguments: arguments,
+                logHandler: log
+            )
         }
     }
 

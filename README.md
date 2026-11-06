@@ -153,11 +153,15 @@ package dependents.
 
 Compile builds the selected target or executable product. For a test target, it
 uses `swift build --build-tests` to link the test runner; this can build other test
-targets in the package. Run and debug use the
+targets in the package. Without the context extension, run and debug use the
 existing product without building it. Compile first, with the same SwiftPM build
 arguments, such as `--configuration release` or `--scratch-path /path/to/build`.
 The target controls product selection; package-path and target-selection overrides
 are rejected. Run supports the server's environment and working-directory fields. Process output is streamed, and cancellation stops active commands.
+
+With the [context extension](#execution-configuration-extension), run and debug
+prepare products using the resolved configuration. Run arguments are application
+arguments on this path; the context supplies the build settings.
 
 Root test targets support `buildTarget/test`. The server uses `swift test` and a
 module filter to run only the selected targets, including XCTest and Swift Testing.
@@ -177,8 +181,9 @@ toolchain includes SourceKit-LSP, root test targets advertise discovery metadata
 for source navigation and editor test actions. Without it, target testing remains
 available.
 
-Test debugging uses the existing test bundle and lists its tests without building
-or running them. Compile the test target first with the same build arguments. The debugger launches Xcode's `xctest` runner with
+Test debugging lists the existing test bundle's tests without running them.
+Without the context extension, compile the test target first with the same build
+arguments. Context execution prepares the bundle first. The debugger launches Xcode's `xctest` runner with
 the selected module's test identifiers. XCTest and Swift Testing run in the same
 process, so source breakpoints work for both frameworks. The server supports
 SwiftPM's separate test bundles and native build system's combined test bundle.
@@ -236,6 +241,215 @@ python3 Scripts/bsp_client.py --project "$bsp_project" \
 
 The probe uses `.build/debug/sourcekit-bsp` by default. Use `--server` to select
 another build. See the [client guide](Scripts/README.md) for options.
+
+## Execution configuration extension
+
+The optional `vscode-bsp.build-context` extension, version `0.1`, discovers and
+resolves execution settings for Xcode and SwiftPM. It is an experimental extension,
+not part of the BSP standard. Other clients can keep using the standard requests.
+
+Compiler-information requests such as `buildTarget/scalacOptions`,
+`buildTarget/javacOptions`, and SourceKit compiler options describe the current
+compiler inputs. This extension instead lists selectable execution settings.
+Selecting these settings does not change the language server's indexing context.
+
+### Negotiate the extension
+
+Add this object to `build/initialize` parameters under `data.bspExtensions`:
+
+```json
+{
+  "vscode-bsp.build-context": { "version": "0.1" }
+}
+```
+
+The server accepts the extension by returning the following entry under
+`result.data.bspExtensions`. It preserves `dataKind: "sourceKit"` and the existing
+SourceKit initialization fields. The supported operation list can vary by provider.
+
+```json
+{
+  "vscode-bsp.build-context": {
+    "version": "0.1",
+    "required": true,
+    "operations": ["compile", "run", "test", "debug"]
+  }
+}
+```
+
+Only an exact version match enables this mode. After acceptance, all compile,
+run, test, and debug requests on that connection must include a resolved
+`executionContext`. Missing or invalid context references fail; the server does
+not fall back to default settings. Clients that do not negotiate the extension
+keep the existing request behavior.
+
+### Discover and resolve settings
+
+| Method | Purpose |
+| --- | --- |
+| `workspace/contextOptions` | Return available configuration dimensions and effective selections. |
+| `workspace/resolveContext` | Validate a selection and return a context ID and its target set. |
+
+The discovery parameters contain only `scope` and `selection`. `operation` is
+part of resolution, not configuration discovery.
+
+Start discovery without an operation or target:
+
+```json
+{
+  "scope": { "workspaceUri": "file:///workspace/Demo" },
+  "selection": {}
+}
+```
+
+For Xcode, the response supplies all three dimensions: Scheme, Configuration,
+and Destination. Scheme contains the full list. The other fields remain visible
+with `enabled: false` and a reason until a Scheme is chosen. Send its ID in the
+next query to fill their options and enable them:
+
+```json
+{
+  "selection": { "xcode.scheme": "scheme-id-returned-by-the-server" }
+}
+```
+
+Discovery does not require the user to choose Build, Run, Test, or Debug first.
+Only after an action is chosen does resolution require its `operation`:
+
+```json
+{
+  "operation": "run",
+  "selection": {
+    "xcode.scheme": "scheme-id-returned-by-the-server",
+    "xcode.configuration": "Release",
+    "xcode.destination": "destination-id-returned-by-the-server"
+  }
+}
+```
+
+`scope`, `workspaceUri`, `targets`, and `selection` are optional. An explicit
+workspace must match the initialized workspace. Omit `targets` to discover a
+workspace execution entry, such as an Xcode scheme. An explicit target list
+restricts the execution scope; an empty list is invalid. A resolve operation is one of
+`compile`, `run`, `test`, or `debug`.
+
+The options result contains `dimensions`, `selection`, and optional `operations`
+for the selected scope. Each dimension has
+`id`, `label`, `kind`, `required`, `options`, and an optional current `value`.
+Optional `enabled` and `reason` fields describe whether the user can edit the
+dimension. Omitted `enabled` means enabled. Clients display disabled dimensions
+and their reasons, but do not open an option picker for them.
+Version `0.1` supports `kind: "enum"`. Each option has an opaque `id`, a display
+`label`, and optional `description`, `reason`, and boolean `availability` fields.
+An explicit `availability: false` marks an unavailable option. Do not infer
+capabilities or build-tool arguments from an ID. Unknown required dimension kinds
+must prevent execution in the client.
+
+Options can also include `dataKind` and `data` for structured display metadata.
+The custom `execution-destination` data kind describes a destination:
+
+```json
+{
+  "id": "destination-id-returned-by-the-server",
+  "label": "iPhone 16",
+  "availability": true,
+  "dataKind": "execution-destination",
+  "data": {
+    "kind": "simulator",
+    "platform": { "id": "ios", "label": "iOS" },
+    "osVersion": "18.5"
+  }
+}
+```
+
+The `kind` field is an open string. The `platform` object contains `id` and
+`label`. Known kinds include `host`, `device`, `simulator`,
+`emulator`, `remote`, `container`, and `generic`. Optional `osVersion`,
+`architecture`, and `state` fields describe known properties. Providers omit
+unknown values. Clients use these fields for display only; they must not infer
+execution capabilities from a destination kind or state. Unknown data kinds or
+destination kinds fall back to the option's label and description.
+
+Xcode supplies platform, destination type, and known OS versions from its device
+inventory. Its current simulator inventory does not report boot state, so that
+field is omitted. SwiftPM reports its host platform and architecture from the
+selected toolchain's target information; a deployment version is not a host OS
+version. `availability` and execution validation remain independent of metadata.
+
+Dimensions are ordered from earlier choices to dependent choices. When the user
+changes a dimension, the client clears explicit choices for later dimensions and
+queries options again. Server defaults returned by discovery do not become saved
+user preferences. Version `0.1` uses this ordered model rather than a dependency
+graph; servers must supply a suitable order.
+
+Xcode workspace discovery always orders its fields as Scheme, Configuration,
+and Destination. The provider enables dependent fields after their prerequisites
+are satisfied. An automatic value can satisfy a prerequisite; display order does
+not require the user to click every field. A target scope limits the applicable
+scheme actions. Common discovery does not invent a single default configuration
+for all actions. Omitted configuration and destination choices are resolved when
+an action is requested. Run and test defaults come from their scheme actions. SwiftPM supplies
+configuration and the supported host destination, with a target selection when
+needed. It does not supply a scheme. Unknown selection keys fail. Xcode discovery
+can retain an invalid choice as unavailable with a reason so the user can change
+it. Resolution rejects incompatible selections. Discovery and resolution do not build targets, generate
+schemes, or change a global selection.
+
+Xcode destinations come from the local device inventory and platform build
+settings. These checks do not replace `xcodebuild -showdestinations` validation
+for a scheme. Generic destinations can be used for builds; run, test, and debug
+require a concrete destination. Refresh options after changing a scheme or
+configuration, and before using a saved selection. Xcode option discovery reuses
+an inventory snapshot for up to two seconds. Queries without a valid scheme do
+not scan devices. Context resolution and execution always refresh the inventory;
+a refresh failure prevents execution instead of using an older snapshot.
+
+The first Xcode implementation rejects test plans and ambiguous scheme names.
+It also rejects custom launch settings that the run/debug backend cannot apply,
+including enabled scheme arguments, environment variables, and action scripts.
+Test debugging supports one app-hosted unit test target on an iOS simulator.
+Unavailable options include a reason. These restrictions apply to the new
+context path; they do not add support to the legacy execution path.
+
+The resolve response contains `id`, `operation`, `targets`, and the effective
+`selection`. IDs belong to the current connection. They can be reused while valid;
+they are not task IDs or persistent settings. The server keeps at most 128 resolved
+contexts. Reconnection, project reload, cache eviction, or a changed selection can
+require resolution again. Execute requests revalidate the stored selection.
+
+### Execute with a resolved context
+
+Use the existing BSP methods. For example, after resolving a test context:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 12,
+  "method": "buildTarget/test",
+  "params": {
+    "targets": [{ "uri": "target-uri-returned-by-the-server" }],
+    "originId": "test-12",
+    "executionContext": { "id": "context-id-returned-by-resolve" }
+  }
+}
+```
+
+The additional `executionContext` field is also an extension. The request's
+operation and target set must match the resolved context; `buildTarget/run` still
+uses its standard single `target` field. Results, diagnostics, task events, test
+reports, cancellation, and DAP connections keep their existing formats.
+
+Execution settings stay separate from application arguments, test selection data,
+environment variables, and the working directory. Conflicting build flags fail
+instead of overriding the selected configuration. Context execution prepares
+required products using that same configuration. It does not require the client
+to compile under a separately resolved configuration first.
+
+This version does not provide a configuration-change notification or a general
+UI schema. Query options when configuring an operation and resolve before starting
+it. Invalid extension parameters and context references return JSON-RPC
+`InvalidParams` (`-32602`). Do not parse error text or automatically retry with
+default settings.
 
 ## Documentation
 
