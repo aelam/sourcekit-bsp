@@ -4,7 +4,9 @@ import XcodeProj
 
 public extension XcodeProjectManager {
     func contextOptions(_ params: BuildContextOptionsParams) async throws -> BuildContextOptionsResult {
-        try await refreshContextDestinations()
+        try Task.checkCancellation()
+        guard !destinationDiscoveryStopped else { throw CancellationError() }
+        let graphVersion = buildGraphVersion
         guard let base = projectSnapshot else { throw BuildContextError.invalid("Project not initialized") }
         let requested = try contextRequestedTargets(params.scope)
         var selection = params.selection ?? [:]
@@ -77,6 +79,10 @@ public extension XcodeProjectManager {
             ]
             return BuildContextOptionsResult(dimensions: dimensions, selection: selection, operations: [])
         }
+        try await refreshContextDestinations(allowCached: true)
+        guard graphVersion == buildGraphVersion else {
+            throw BuildContextError.invalid("The project changed; request context options again")
+        }
         dimensions += contextDiscoveryTargetDimensions(targets, scheme: scheme, selection: selection)
         let operations = contextDiscoveryOperations(scope: params.scope, selection: selection)
         return BuildContextOptionsResult(dimensions: dimensions, selection: selection, operations: operations)
@@ -137,7 +143,7 @@ extension XcodeProjectManager {
         var destinationOptions = sortedDestinations.map { destination in
             BuildContextOption(
                 id: destination.id,
-                label: destination.fullDescription,
+                label: destination.name,
                 description: (destination.isRunnable ? "" : "Build only. ") +
                     "Device inventory; compatibility is inferred from build settings",
                 reason: destination.isAvailable ? nil : "This destination is offline or unavailable",

@@ -206,7 +206,7 @@ public extension XcodeProjectManager {
             let reason = contextDestinationReason(destination, plan: plan, operation: operation)
             return BuildContextOption(
                 id: destination.id,
-                label: destination.fullDescription,
+                label: destination.name,
                 description: "Device inventory; compatibility is inferred from build settings",
                 reason: reason,
                 availability: reason == nil,

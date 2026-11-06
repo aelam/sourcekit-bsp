@@ -375,7 +375,10 @@ Xcode destinations come from the local device inventory and platform build
 settings. These checks do not replace `xcodebuild -showdestinations` validation
 for a scheme. Generic destinations can be used for builds; run, test, and debug
 require a concrete destination. Refresh options after changing a scheme or
-configuration, and before using a saved selection.
+configuration, and before using a saved selection. Xcode option discovery reuses
+an inventory snapshot for up to two seconds. Queries without a valid scheme do
+not scan devices. Context resolution and execution always refresh the inventory;
+a refresh failure prevents execution instead of using an older snapshot.
 
 The first Xcode implementation rejects test plans and ambiguous scheme names.
 It also rejects custom launch settings that the run/debug backend cannot apply,

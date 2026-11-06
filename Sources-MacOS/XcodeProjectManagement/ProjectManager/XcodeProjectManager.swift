@@ -59,6 +59,8 @@ public actor XcodeProjectManager {
     let schemeLoader: XCSchemeLoader
     let destinationLoader: XcodeDestinationLoader
     var destinationRefreshTask: Task<Void, Error>?
+    var destinationRefreshInstant: ContinuousClock.Instant?
+    let contextDiscoveryClock: @Sendable () -> ContinuousClock.Instant
     var destinationDiscoveryStopped = false
     var debugSessionManager: DebugSessionManager?
     var indexPreparationTasks: [UUID: Task<[XcodeTargetIdentifier], Error>] = [:]
@@ -92,6 +94,7 @@ public actor XcodeProjectManager {
         projectLocator: XcodeProjectLocator,
         settingsLoader: XcodeSettingsLoader,
         schemeLoader: XCSchemeLoader = XCSchemeLoader(),
+        contextDiscoveryClock: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
         destinationDiscovery: (@Sendable () async throws -> String)? = nil
     ) {
         self.rootURL = rootURL
@@ -103,6 +106,7 @@ public actor XcodeProjectManager {
         self.settingsLoader = settingsLoader
         self.schemeLoader = schemeLoader
         self.destinationLoader = XcodeDestinationLoader(discover: destinationDiscovery)
+        self.contextDiscoveryClock = contextDiscoveryClock
     }
 
     /// Cancel this manager's builds and reject further build requests.
@@ -111,6 +115,7 @@ public actor XcodeProjectManager {
     }
 
     public func initialize() async throws {
+        destinationRefreshInstant = nil
         let configURL = rootURL.appendingPathComponent(".sourcekit-bsp/project.json")
         let reference = if FileManager.default.fileExists(atPath: configURL.path) {
             try JSONDecoder().decode(XcodeProjectReference.self, from: Data(contentsOf: configURL))
