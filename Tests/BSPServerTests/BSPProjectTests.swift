@@ -46,4 +46,37 @@ struct BSPProjectTests {
         #expect(project.dependencyClosure(for: []).isEmpty)
         #expect(project.dependencyClosure(for: [identifier("missing")]) == [identifier("missing")])
     }
+
+    @Test
+    func dependencyModulesFollowTargetEdgesAndKeepDistinctLibraries() throws {
+        let app = identifier("app")
+        let library = identifier("library")
+        let unrelated = identifier("unrelated")
+        let module = DependencyModule(name: "Shared", version: "1.2.3", data: ["uri": "file:///one"])
+        let other = DependencyModule(name: "Shared", version: "1.2.3", data: ["uri": "file:///two"])
+        let project = BSPProject(
+            rootURL: root,
+            name: "Example",
+            targets: [
+                .init(id: app, dependencies: [library], capabilities: .init()),
+                .init(id: library, dependencies: [app], capabilities: .init()),
+                .init(id: unrelated, capabilities: .init())
+            ],
+            buildRootURL: root,
+            indexStoreURL: root,
+            indexDatabaseURL: root,
+            dependencyModules: [
+                app: [module],
+                library: [module, other],
+                unrelated: [.init(name: "Unused", version: "")]
+            ]
+        )
+        let items = try project.dependencyModules(for: [app, library])
+        #expect(items.map(\.target) == [app, library])
+        #expect(items.allSatisfy { $0.modules == [module, other] })
+        #expect(try project.dependencyModules(for: []).isEmpty)
+        #expect(throws: DependencyModulesError.self) {
+            try project.dependencyModules(for: [app, identifier("missing")])
+        }
+    }
 }

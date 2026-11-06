@@ -41,7 +41,12 @@ struct XcodeBSPProjectTests {
                 isXcodeSelectedVersion: true
             )
         )
-        let project = snapshot.asBSPProject(dependencies: [app.targetIdentifier: [library.targetIdentifier]])
+        let module = DependencyModule(name: "External", version: "1.0.0")
+        let project = snapshot.asBSPProject(
+            dependencies: [app.targetIdentifier: [library.targetIdentifier]],
+            dependencyModules: [library.targetIdentifier: [module]]
+        )
+        #expect(try project.dependencyModules(for: [app.targetIdentifier.bspIdentifier]).first?.modules == [module])
         #expect(project.name == "Example.xcworkspace")
         #expect(project.rootURL == root)
         #expect(project.targets.count == 2)
@@ -64,6 +69,8 @@ struct XcodeBSPProjectTests {
             .appendingPathComponent("XcodeProjectManagementTests/Resources/DemoProjects/HelloProject")
         try FileManager.default.copyItem(at: fixture, to: root)
         defer { try? FileManager.default.removeItem(at: root) }
+        try addPackageProduct(to: root)
+        try writePackageVersion("1.2.3", in: root)
         let toolchain = XcodeToolchain(workingDirectory: root)
         let backend = XcodeProjectManager(
             rootURL: root,
@@ -73,6 +80,10 @@ struct XcodeBSPProjectTests {
         )
         let manager = XcodeBSPProjectManager(backend: backend)
         #expect(await manager.project == nil)
+        #expect(await manager.capabilities.contains(.dependencyModules))
+        await #expect(throws: DependencyModulesError.self) {
+            try await manager.getDependencyModules(targetIdentifiers: [])
+        }
         await #expect(throws: XcodeProjectError.self) {
             try await manager.getSourceFileList(targetIdentifiers: [])
         }
@@ -88,6 +99,9 @@ struct XcodeBSPProjectTests {
         let tests = try #require(initial.targets.first { $0.displayName == "HelloTests" })
         #expect(tests.dependencies.contains(app.id))
         #expect(tests.capabilities.canTest == true)
+        let modules = try await manager.getDependencyModules(targetIdentifiers: [app.id, tests.id])
+        #expect(modules.map { $0.modules.map(\.name) } == [["ExternalLibrary"], ["ExternalLibrary"]])
+        #expect(modules.allSatisfy { $0.modules.first?.version == "1.2.3" })
 
         // Conversion must not populate the source cache for every target.
         let added = root.appendingPathComponent("Hello/AfterInitialize.swift")
@@ -110,11 +124,14 @@ struct XcodeBSPProjectTests {
         try project.pbxproj.write(path: .init(pbx.path), override: true, outputSettings: .init())
         #expect(await manager.getTargetList() == initial.targets)
         try FileManager.default.removeItem(at: added)
+        try writePackageVersion("1.3.0", in: root)
         try await manager.updateBuildGraph()
         let reloaded = try #require(await manager.project)
         #expect(reloaded.target(for: tests.id) == nil)
         let renamed = try #require(reloaded.targets.first { $0.displayName == "RenamedTests" })
         #expect(renamed.dependencies.contains(app.id))
+        #expect(try await manager.getDependencyModules(targetIdentifiers: [renamed.id])
+            .first?.modules.first?.version == "1.3.0")
         #expect(await manager.getTargetList() == reloaded.targets)
         let refreshedSources = try await manager.getSourceFileList(targetIdentifiers: [app.id])
         #expect(refreshedSources.first?.sources.isEmpty == false)
@@ -135,5 +152,36 @@ struct XcodeBSPProjectTests {
             Issue.record("The last loaded BSP project must remain available after a failed reload")
         }
         await manager.shutdown()
+    }
+
+    private func addPackageProduct(to root: URL) throws {
+        let url = root.appendingPathComponent("Hello.xcodeproj")
+        let project = try XcodeProj(pathString: url.path)
+        let app = try #require(project.pbxproj.nativeTargets.first { $0.name == "Hello" })
+        let reference = XCRemoteSwiftPackageReference(
+            repositoryURL: "https://example.com/external.git", versionRequirement: .upToNextMajorVersion("1.0.0")
+        )
+        let product = XCSwiftPackageProductDependency(productName: "ExternalLibrary", package: reference)
+        project.pbxproj.add(object: reference)
+        project.pbxproj.add(object: product)
+        app.packageProductDependencies = [product]
+        try project.pbxproj.write(path: .init(url.appendingPathComponent("project.pbxproj").path), override: true)
+    }
+
+    private func writePackageVersion(_ version: String, in root: URL) throws {
+        let url = root.appendingPathComponent(
+            "Hello.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+        )
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(withJSONObject: [
+            "version": 3, "pins": [
+                [
+                    "identity": "external",
+                    "location": "https://example.com/external.git",
+                    "state": ["version": version, "revision": "abcdef"]
+                ]
+            ]
+        ])
+        try data.write(to: url)
     }
 }

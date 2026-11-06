@@ -3,6 +3,7 @@ public enum ProjectManagerCapability: String, CaseIterable, Sendable {
     case compile, test, run, debug
     case prepare, sourceKitOptions
     case outputPaths, cleanCache
+    case dependencyModules
 }
 
 public typealias ProjectManagerCapabilities = Set<ProjectManagerCapability>

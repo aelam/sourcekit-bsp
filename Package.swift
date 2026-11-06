@@ -36,6 +36,7 @@ let multiPlatformTargets: [Target] = [
         dependencies: [
             "Logger",
             "BuildServerProtocol",
+            "Support",
         ]
     ),
     .testTarget(
