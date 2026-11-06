@@ -10,6 +10,8 @@ public enum SwiftPMProjectError: Error, LocalizedError {
     case shutDown
     case unknownTarget(String)
     case unsupported(String)
+    case invalidArguments(String)
+    case productNotBuilt(String)
 
     public var errorDescription: String? {
         switch self {
@@ -30,7 +32,11 @@ public enum SwiftPMProjectError: Error, LocalizedError {
         case let .unknownTarget(identifier):
             "Unknown SwiftPM build target: \(identifier)"
         case let .unsupported(operation):
-            "SwiftPM project loading does not support \(operation)."
+            "The SwiftPM provider does not support \(operation)."
+        case let .invalidArguments(message):
+            message
+        case let .productNotBuilt(path):
+            "Build product not found: \(path). Compile the target with the same build arguments first."
         }
     }
 }

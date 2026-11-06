@@ -86,6 +86,7 @@ struct SwiftPMGraphSnapshot: Sendable {
     let sources: [BSPBuildTargetIdentifier: SourcesItem]
     let packageRoots: Set<URL>
     let diagnostics: [String]
+    let executableTargets: [BSPBuildTargetIdentifier: String]
 }
 
 struct SwiftPMResolvedDependency: Decodable, Sendable {

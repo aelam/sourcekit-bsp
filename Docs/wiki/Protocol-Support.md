@@ -6,9 +6,13 @@ The server implements a subset of BSP 2.2.0. Clients should check
 ## Project providers
 
 Xcode projects support the operations listed below. SwiftPM packages currently
-support initialization, target and source discovery, and workspace reloads on
-macOS and Linux. They do not advertise build, run, test, debug, index preparation,
-compiler options, or output paths. Unsupported operations return an error.
+support initialization, target and source discovery, workspace reloads, root-target
+compilation, and executable runs on macOS and Linux. On macOS, root executable
+targets also support debugging through the active Xcode toolchain's LLDB adapter.
+Run and debug require an existing build product. Libraries do not advertise run or
+debug support. Dependency targets are built through root package dependents.
+SwiftPM does not advertise tests, index preparation, compiler options, or output paths.
+Unsupported operations return an error.
 
 ## Requests and notifications
 
@@ -65,7 +69,7 @@ retain explicit declarations. Do not use `@unchecked Sendable` to hide an error.
 
 ## Limitations
 
-- SwiftPM build, run, test, debug, and SourceKit compiler options are not implemented. Native Windows server support is not verified.
+- SwiftPM tests, test debugging, and SourceKit compiler options are not implemented. SwiftPM debug support requires macOS and the active Xcode toolchain. Native Windows server support is not verified.
 - Compiler diagnostics are parsed from text output. Diagnostics with ambiguous target ownership remain in the log.
 - Test case results are read from `.xcresult` after each target completes. Stage logs stream during execution. If the result bundle cannot be read, the server sends a warning and does not invent test counts.
 - SourceKit-LSP provides editor diagnostics independently.

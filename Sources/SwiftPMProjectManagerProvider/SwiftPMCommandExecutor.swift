@@ -16,10 +16,48 @@ struct SwiftPMCommandResult: Sendable {
 
 protocol SwiftPMCommandExecuting: Sendable {
     func execute(executable: URL, arguments: [String], workingDirectory: URL) async throws -> SwiftPMCommandResult
+    func execute(
+        executable: URL,
+        arguments: [String],
+        workingDirectory: URL,
+        environment: [String: String],
+        outputHandler: (@Sendable (String) -> Void)?
+    ) async throws -> SwiftPMCommandResult
+}
+
+extension SwiftPMCommandExecuting {
+    func execute(
+        executable: URL,
+        arguments: [String],
+        workingDirectory: URL,
+        environment: [String: String],
+        outputHandler: (@Sendable (String) -> Void)?
+    ) async throws -> SwiftPMCommandResult {
+        let result = try await execute(executable: executable, arguments: arguments, workingDirectory: workingDirectory)
+        if !result.standardOutput.isEmpty { outputHandler?(swiftPMOutputText(result.standardOutput)) }
+        if !result.standardError.isEmpty { outputHandler?(swiftPMOutputText(result.standardError)) }
+        return result
+    }
 }
 
 struct SwiftPMProcessExecutor: SwiftPMCommandExecuting {
     func execute(executable: URL, arguments: [String], workingDirectory: URL) async throws -> SwiftPMCommandResult {
+        try await execute(
+            executable: executable,
+            arguments: arguments,
+            workingDirectory: workingDirectory,
+            environment: [:],
+            outputHandler: nil
+        )
+    }
+
+    func execute(
+        executable: URL,
+        arguments: [String],
+        workingDirectory: URL,
+        environment: [String: String],
+        outputHandler: (@Sendable (String) -> Void)?
+    ) async throws -> SwiftPMCommandResult {
         let invocation = ProcessInvocation()
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
@@ -30,7 +68,9 @@ struct SwiftPMProcessExecutor: SwiftPMCommandExecuting {
                             returning: invocation.run(
                                 executable: executable,
                                 arguments: arguments,
-                                workingDirectory: workingDirectory
+                                workingDirectory: workingDirectory,
+                                environment: environment,
+                                outputHandler: outputHandler
                             )
                         )
                     } catch {
@@ -102,7 +142,13 @@ private final class ProcessInvocation: @unchecked Sendable {
         }
     }
 
-    func run(executable: URL, arguments: [String], workingDirectory: URL) throws -> SwiftPMCommandResult {
+    func run(
+        executable: URL,
+        arguments: [String],
+        workingDirectory: URL,
+        environment: [String: String],
+        outputHandler: (@Sendable (String) -> Void)?
+    ) throws -> SwiftPMCommandResult {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("sourcekit-bsp-\(UUID())")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -118,12 +164,41 @@ private final class ProcessInvocation: @unchecked Sendable {
         child.executableURL = executable
         child.arguments = arguments
         child.currentDirectoryURL = workingDirectory
+        child.environment = ProcessInfo.processInfo.environment.merging(environment) { _, value in value }
         child.standardInput = FileHandle.nullDevice
         // Files keep both output streams draining without pipe limits or cooperative-thread waits.
         child.standardOutput = output
         child.standardError = errorOutput
+        let outputReader = try FileHandle(forReadingFrom: outputURL)
+        let errorReader = try FileHandle(forReadingFrom: errorURL)
+        defer { try? outputReader.close(); try? errorReader.close() }
+        var outputBuffer = Data()
+        var errorBuffer = Data()
+        func drain(_ handle: FileHandle, buffer: inout Data, final: Bool = false) {
+            buffer.append(handle.availableData)
+            while let end = buffer.firstIndex(of: 10) {
+                let line = buffer.prefix(through: end)
+                outputHandler?(swiftPMOutputText(Data(line)))
+                buffer.removeSubrange(...end)
+            }
+            if final, !buffer.isEmpty {
+                outputHandler?(swiftPMOutputText(buffer))
+                buffer.removeAll()
+            }
+        }
         try launch(child)
+        if outputHandler != nil {
+            while child.isRunning {
+                drain(outputReader, buffer: &outputBuffer)
+                drain(errorReader, buffer: &errorBuffer)
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+        }
         child.waitUntilExit()
+        if outputHandler != nil {
+            drain(outputReader, buffer: &outputBuffer, final: true)
+            drain(errorReader, buffer: &errorBuffer, final: true)
+        }
         lock.lock()
         process = nil
         let wasCancelled = cancelled
@@ -235,3 +310,9 @@ private struct CommandProcessIdentity: Hashable {
     }
 }
 #endif
+
+func swiftPMOutputText(_ data: Data) -> String {
+    // Preserve diagnostics when a process writes invalid UTF-8.
+    // swiftlint:disable:next optional_data_string_conversion
+    String(decoding: data, as: UTF8.self)
+}

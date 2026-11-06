@@ -5,10 +5,11 @@
 [![Build Status](https://github.com/aelam/sourcekit-bsp/actions/workflows/ci.yml/badge.svg)](https://github.com/aelam/sourcekit-bsp/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A Build Server Protocol (BSP) server for Xcode projects and SwiftPM package discovery.
+A Build Server Protocol (BSP) server for Xcode projects and SwiftPM packages.
 For Xcode projects, it supplies compiler arguments to SourceKit-LSP and runs build,
 run, test, and debug operations. For SwiftPM packages, it loads targets, dependencies,
-and source lists on macOS and Linux.
+and source lists on macOS and Linux. It builds root package targets, runs executable
+products, and supports executable debugging on macOS.
 
 - Discover projects, workspaces, sources, and target dependencies.
 - Prepare compiler inputs and index data for SourceKit-LSP.
@@ -142,10 +143,21 @@ filtered by platform or build configuration.
 The Swift executable must be on `PATH`. If `SWIFT_EXEC` selects a `swiftc`
 compiler, the provider uses the `swift` executable in the same directory.
 
-This provider does not yet supply compiler arguments, prepare indexes, or run
-build, test, run, and debug operations. It advertises these capabilities as
-unsupported. SourceKit-LSP's native SwiftPM integration remains the option for
-SwiftPM code navigation; this BSP provider does not replace it yet.
+Root package targets support `buildTarget/compile`. Executable targets with one
+product support `buildTarget/run` and, on macOS, `debugSession/start` through the
+active Xcode toolchain's LLDB adapter. Library and dependency targets do not
+advertise run or debug support. Dependency targets are built through their root
+package dependents.
+
+Compile builds the selected target or executable product. Run and debug use the
+existing product without building it. Compile first, with the same SwiftPM build
+arguments, such as `--configuration release` or `--scratch-path /path/to/build`.
+The target controls product selection; package-path and target-selection overrides
+are rejected. Run supports the server's environment and working-directory fields. Process output is streamed, and cancellation stops active commands.
+
+This provider does not yet run tests, supply compiler arguments, or prepare indexes.
+It advertises these capabilities as unsupported. SourceKit-LSP's native SwiftPM
+integration remains the option for SwiftPM code navigation.
 
 On macOS, an Xcode project takes precedence when the folder also contains
 `Package.swift`. Native Windows server support is not verified.

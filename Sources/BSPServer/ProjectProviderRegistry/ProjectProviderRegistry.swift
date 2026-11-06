@@ -11,6 +11,7 @@ import Logger
 import SwiftPMProjectManagerProvider
 
 #if os(macOS)
+import XcodeProjectManagement
 import XcodeProjectManagerProvider
 #endif
 
@@ -24,7 +25,11 @@ public enum ProjectManagerProviderRegistry {
         #endif
 
         // Prefer an existing Xcode project when the folder also contains a package.
+        #if os(macOS)
+        providers.append(SwiftPMProjectManagerProvider(debugAdapter: SwiftPMLLDBAdapter()))
+        #else
         providers.append(SwiftPMProjectManagerProvider())
+        #endif
         return providers
     }
 
@@ -39,3 +44,12 @@ public enum ProjectManagerProviderRegistry {
         return factory
     }
 }
+
+#if os(macOS)
+private struct SwiftPMLLDBAdapter: SwiftPMDebugAdapterServing {
+    func start() async throws -> SwiftPMDebugEndpoint {
+        let endpoint = try await LLDBDAPServer().start()
+        return SwiftPMDebugEndpoint(uri: endpoint.uri, terminate: endpoint.terminate)
+    }
+}
+#endif

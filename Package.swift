@@ -72,6 +72,7 @@ let bspServerTarget: Target = .target(
         "BuildServerProtocol",
         "Support",
         "XcodeProjectManagerProvider",
+        "XcodeProjectManagement",
     ]
 )
 #else

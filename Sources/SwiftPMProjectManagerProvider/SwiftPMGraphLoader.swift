@@ -5,6 +5,7 @@ struct SwiftPMGraphLoader: Sendable {
     let root: URL
     let executable: URL
     let executor: any SwiftPMCommandExecuting
+    var supportsDebug = false
 
     func load() async throws -> SwiftPMGraphSnapshot {
         var packages: [SwiftPMLoadedPackage] = []
@@ -93,6 +94,7 @@ struct SwiftPMGraphLoader: Sendable {
         var diagnostics = diagnostics
         var targets: [BSPBuildTarget] = []
         var sources: [BSPBuildTargetIdentifier: SourcesItem] = [:]
+        var executableTargets: [BSPBuildTargetIdentifier: String] = [:]
         for package in packages {
             var names = Set<String>()
             for target in package.description.targets {
@@ -132,6 +134,8 @@ struct SwiftPMGraphLoader: Sendable {
                     default: [.library]
                     }
                 if package.root != root { tags.append(.dependency) }
+                let isRoot = package.root == root
+                executableTargets[id] = executableProduct(for: target, in: package)
                 var languages = Set(sourceURLs.compactMap(Self.language))
                 if target.moduleType == "SwiftTarget" { languages.insert(.swift) }
                 targets.append(
@@ -142,7 +146,12 @@ struct SwiftPMGraphLoader: Sendable {
                         tags: tags,
                         languageIds: languages.sorted { $0.rawValue < $1.rawValue },
                         dependencies: edges,
-                        capabilities: .init(canCompile: false, canTest: false, canRun: false, canDebug: false)
+                        capabilities: .init(
+                            canCompile: isRoot,
+                            canTest: false,
+                            canRun: executableTargets[id] != nil,
+                            canDebug: executableTargets[id] != nil && supportsDebug
+                        )
                     )
                 )
                 sources[id] = SourcesItem(
@@ -166,8 +175,18 @@ struct SwiftPMGraphLoader: Sendable {
             project: project,
             sources: sources,
             packageRoots: Set(packages.map(\.root)),
-            diagnostics: Array(Set(diagnostics)).sorted()
+            diagnostics: Array(Set(diagnostics)).sorted(),
+            executableTargets: executableTargets
         )
+    }
+
+    private func executableProduct(
+        for target: SwiftPMPackageDescription.Target,
+        in package: SwiftPMLoadedPackage
+    ) -> String? {
+        guard package.root == root, target.type == "executable" else { return nil }
+        let products = package.description.products.filter { $0.targets.contains(target.name) }
+        return products.count == 1 ? products[0].name : nil
     }
 
     private func dependencies(

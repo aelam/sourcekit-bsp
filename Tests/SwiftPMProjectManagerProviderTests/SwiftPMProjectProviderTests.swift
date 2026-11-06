@@ -97,7 +97,7 @@ struct SwiftPMProjectProviderTests {
             describedTarget("App", type: "executable", dependencies: ["Core"]),
             describedTarget("CoreTests", type: "test", dependencies: ["Core"]),
             describedTarget("Native", sources: ["x.c", "x.cpp", "x.m", "x.mm"]),
-        ])
+        ], products: [["name": "app-tool", "targets": ["App"]]])
         let executor = FixtureCommandExecutor(data)
         let manager = fixture.manager(executor: executor)
         if case .uninitialized = await manager.getProjectState().projectLoadState {
@@ -125,12 +125,10 @@ struct SwiftPMProjectProviderTests {
                 .objective_cpp
             ]
         )
-        #expect(
-            targets.allSatisfy {
-                $0.capabilities == .init(canCompile: false, canTest: false, canRun: false, canDebug: false)
-            }
-        )
-        #expect(await manager.capabilities.isEmpty)
+        #expect(targets.allSatisfy { $0.capabilities.canCompile == true })
+        #expect(targets.allSatisfy { $0.capabilities.canTest == false && $0.capabilities.canDebug == false })
+        #expect(targets.filter { $0.capabilities.canRun == true }.map(\.id) == [app.id])
+        #expect(await manager.capabilities == [.compile, .run])
         #expect(await manager.project?.name == "Root")
         let source = try await manager.getSourceFileList(targetIdentifiers: [core.id])
         #expect(
@@ -205,15 +203,6 @@ struct SwiftPMProjectProviderTests {
                 )
             },
             { _ = try await manager.buildIndex(for: [id]) },
-            { _ = try await manager.startBuild(targetIdentifiers: [id], arguments: nil, logHandler: nil) },
-            {
-                _ = try await manager.run(
-                    targetIdentifier: id,
-                    arguments: nil,
-                    environmentVariables: nil,
-                    workingDirectory: nil
-                )
-            },
             {
                 _ = try await manager.test(
                     targetIdentifiers: [id],
@@ -238,6 +227,17 @@ struct SwiftPMProjectProviderTests {
                 try await action()
                 Issue.record("Expected unsupported operation")
             } catch let SwiftPMProjectError.unsupported(operation) { #expect(!operation.isEmpty) }
+        }
+        await #expect(throws: SwiftPMProjectError.self) {
+            try await manager.startBuild(targetIdentifiers: [id], arguments: nil, logHandler: nil)
+        }
+        await #expect(throws: SwiftPMProjectError.self) {
+            try await manager.run(
+                targetIdentifier: id,
+                arguments: nil,
+                environmentVariables: nil,
+                workingDirectory: nil
+            )
         }
     }
 
