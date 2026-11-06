@@ -24,6 +24,7 @@ struct SwiftPMDependencyTests {
                 at: dependency,
                 targets: [
                     describedTarget("Core", dependencies: ["Internal"]), describedTarget("Internal"),
+                    describedTarget("DependencyTests", type: "test"),
                 ],
                 products: [["name": "LibraryProduct", "targets": ["Core"]]]
             ),
@@ -40,6 +41,18 @@ struct SwiftPMDependencyTests {
         let core = try #require(targets.first { $0.displayName == "Core" && !$0.tags.contains(.dependency) })
         let library = try #require(targets.first { $0.displayName == "Core" && $0.tags.contains(.dependency) })
         let internalTarget = try #require(targets.first { $0.displayName == "Internal" })
+        let dependencyTests = try #require(targets.first { $0.displayName == "DependencyTests" })
+        #expect(dependencyTests.tags.contains(.test))
+        #expect(dependencyTests.capabilities.canTest == false)
+        await #expect(throws: SwiftPMProjectError.self) {
+            try await manager.test(
+                targetIdentifiers: [dependencyTests.id],
+                arguments: nil,
+                environmentVariables: nil,
+                workingDirectory: nil,
+                logHandler: nil
+            )
+        }
         #expect(core.id != library.id)
         #expect(core.dependencies == [library.id])
         #expect(library.dependencies == [internalTarget.id])

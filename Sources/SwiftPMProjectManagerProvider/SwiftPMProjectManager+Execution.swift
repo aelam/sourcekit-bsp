@@ -93,6 +93,9 @@ public extension SwiftPMProjectManager {
         guard targetIdentifiers.count == 1, let target = targetIdentifiers.first else {
             throw SwiftPMProjectError.invalidArguments("Select one executable target to debug.")
         }
+        if testModules[target] != nil {
+            throw SwiftPMProjectError.unsupported("debugging SwiftPM test targets; use buildTarget/test to run tests")
+        }
         guard let debugAdapter else { throw SwiftPMProjectError.unsupported("debug sessions on this host") }
         let program = try await builtExecutable(for: target, arguments: arguments)
         await progressHandler?("Starting the debug adapter for \(program.lastPathComponent)")
@@ -128,7 +131,7 @@ public extension SwiftPMProjectManager {
         }
     }
 
-    private func executionTarget(_ identifier: BSPBuildTargetIdentifier) throws -> BSPBuildTarget {
+    internal func executionTarget(_ identifier: BSPBuildTargetIdentifier) throws -> BSPBuildTarget {
         guard !isShutDown else { throw SwiftPMProjectError.shutDown }
         guard let project else { throw SwiftPMProjectError.notInitialized }
         guard let target = project.target(for: identifier) else {
@@ -198,7 +201,7 @@ public extension SwiftPMProjectManager {
         return arguments
     }
 
-    private func executeCommand(
+    internal func executeCommand(
         executable: URL,
         arguments: [String],
         workingDirectory: URL? = nil,

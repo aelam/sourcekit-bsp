@@ -6,7 +6,7 @@ public actor SwiftPMProjectManager: ProjectManager {
     public let rootURL: URL
     public nonisolated let projectType = "swiftpm"
     public var capabilities: ProjectManagerCapabilities {
-        var result: ProjectManagerCapabilities = [.compile, .run]
+        var result: ProjectManagerCapabilities = [.compile, .run, .test]
         if debugAdapter != nil { result.insert(.debug) }
         return result
     }
@@ -27,6 +27,7 @@ public actor SwiftPMProjectManager: ProjectManager {
     let commandExecutor: any SwiftPMCommandExecuting
     let debugAdapter: (any SwiftPMDebugAdapterServing)?
     var executableTargets: [BSPBuildTargetIdentifier: String] = [:]
+    var testModules: [BSPBuildTargetIdentifier: String] = [:]
     var executionTasks: [UUID: Task<SwiftPMCommandResult, Error>] = [:]
     var debugStartupTasks: [UUID: Task<DebugSessionConnection, Error>] = [:]
     var debugEndpoints: [UUID: SwiftPMDebugEndpoint] = [:]
@@ -74,6 +75,7 @@ public actor SwiftPMProjectManager: ProjectManager {
                     guard !isShutDown else { throw SwiftPMProjectError.shutDown }
                     project = snapshot.project
                     executableTargets = snapshot.executableTargets
+                    testModules = snapshot.testModules
                     sources = snapshot.sources
                     packageRoots = snapshot.packageRoots
                     diagnostics = snapshot.diagnostics
@@ -152,6 +154,7 @@ public actor SwiftPMProjectManager: ProjectManager {
         if let reloadTask { _ = await reloadTask.result }
         project = nil
         executableTargets = [:]
+        testModules = [:]
         sources = [:]
         diagnostics = []
         state = ProjectState()
@@ -163,24 +166,5 @@ public actor SwiftPMProjectManager: ProjectManager {
 
     public func buildIndex(for targetIdentifiers: [BSPBuildTargetIdentifier]) throws -> [BSPBuildTargetIdentifier] {
         throw SwiftPMProjectError.unsupported("index preparation")
-    }
-
-    public func test(
-        targetIdentifiers: [BSPBuildTargetIdentifier],
-        arguments: [String]?,
-        environmentVariables: [String: String]?,
-        workingDirectory: URI?,
-        logHandler: (@Sendable (String) -> Void)?
-    ) throws -> StatusCode {
-        throw SwiftPMProjectError.unsupported("testing targets")
-    }
-
-    public func testArguments(
-        targetIdentifiers: [BSPBuildTargetIdentifier],
-        arguments: [String]?,
-        dataKind: String?,
-        data: LSPAny?
-    ) async throws -> [String]? {
-        throw SwiftPMProjectError.unsupported("test arguments")
     }
 }

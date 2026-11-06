@@ -51,7 +51,9 @@ func describedTarget(
     products: [String] = []
 ) -> [String: Any] {
     [
-        "name": name, "type": type, "path": path ?? "Sources/\(name)", "sources": sources,
+        "name": name, "c99name": name.replacingOccurrences(of: "-", with: "_"), "type": type,
+        "path": path ?? "Sources/\(name)",
+        "sources": sources,
         "module_type": (sources.contains { $0.hasSuffix(".swift") }) ? "SwiftTarget" : "ClangTarget",
         "target_dependencies": dependencies, "product_dependencies": products,
     ]

@@ -33,7 +33,7 @@ struct SwiftPMBSPIntegrationTests {
             contextualHandler: handler, id: .int(1)
         ) as? BuildInitializeResponse)
         #expect(response.result.capabilities.compileProvider != nil)
-        #expect(response.result.capabilities.testProvider == nil)
+        #expect(response.result.capabilities.testProvider != nil)
         #expect(response.result.capabilities.runProvider != nil)
         #if os(macOS)
         #expect(response.result.capabilities.debugProvider != nil)

@@ -9,7 +9,7 @@ A Build Server Protocol (BSP) server for Xcode projects and SwiftPM packages.
 For Xcode projects, it supplies compiler arguments to SourceKit-LSP and runs build,
 run, test, and debug operations. For SwiftPM packages, it loads targets, dependencies,
 and source lists on macOS and Linux. It builds root package targets, runs executable
-products, and supports executable debugging on macOS.
+products, runs root test targets, and supports executable debugging on macOS.
 
 - Discover projects, workspaces, sources, and target dependencies.
 - Prepare compiler inputs and index data for SourceKit-LSP.
@@ -155,7 +155,15 @@ arguments, such as `--configuration release` or `--scratch-path /path/to/build`.
 The target controls product selection; package-path and target-selection overrides
 are rejected. Run supports the server's environment and working-directory fields. Process output is streamed, and cancellation stops active commands.
 
-This provider does not yet run tests, supply compiler arguments, or prepare indexes.
+Root test targets support `buildTarget/test`. The server uses `swift test` and a
+module filter to run only the selected targets, including XCTest and Swift Testing.
+SwiftPM can build other test targets as part of this command. Test arguments accept
+build configuration options, `--skip-build`, parallel execution, and code coverage.
+The server rejects test filters, case selection data, and commands that do not run
+tests. Tests run from the package root and support environment variables. The server forwards SwiftPM output as it arrives. SwiftPM can buffer test output.
+Test failures and cancellation return the corresponding BSP status. Individual test case reports and test debugging are not supported.
+
+This provider does not yet supply compiler arguments or prepare indexes.
 It advertises these capabilities as unsupported. SourceKit-LSP's native SwiftPM
 integration remains the option for SwiftPM code navigation.
 

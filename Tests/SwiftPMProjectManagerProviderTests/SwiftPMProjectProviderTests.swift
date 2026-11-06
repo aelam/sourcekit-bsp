@@ -126,9 +126,10 @@ struct SwiftPMProjectProviderTests {
             ]
         )
         #expect(targets.allSatisfy { $0.capabilities.canCompile == true })
-        #expect(targets.allSatisfy { $0.capabilities.canTest == false && $0.capabilities.canDebug == false })
+        #expect(targets.filter { $0.capabilities.canTest == true }.map(\.id) == [tests.id])
+        #expect(targets.allSatisfy { $0.capabilities.canDebug == false })
         #expect(targets.filter { $0.capabilities.canRun == true }.map(\.id) == [app.id])
-        #expect(await manager.capabilities == [.compile, .run])
+        #expect(await manager.capabilities == [.compile, .run, .test])
         #expect(await manager.project?.name == "Root")
         let source = try await manager.getSourceFileList(targetIdentifiers: [core.id])
         #expect(
@@ -203,16 +204,6 @@ struct SwiftPMProjectProviderTests {
                 )
             },
             { _ = try await manager.buildIndex(for: [id]) },
-            {
-                _ = try await manager.test(
-                    targetIdentifiers: [id],
-                    arguments: nil,
-                    environmentVariables: nil,
-                    workingDirectory: nil,
-                    logHandler: nil
-                )
-            },
-            { _ = try await manager.testArguments(targetIdentifiers: [id], arguments: nil, dataKind: nil, data: nil) },
             {
                 _ = try await manager.startDebugSession(
                     targetIdentifiers: [id],

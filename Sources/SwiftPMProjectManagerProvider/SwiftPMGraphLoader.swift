@@ -95,6 +95,7 @@ struct SwiftPMGraphLoader: Sendable {
         var targets: [BSPBuildTarget] = []
         var sources: [BSPBuildTargetIdentifier: SourcesItem] = [:]
         var executableTargets: [BSPBuildTargetIdentifier: String] = [:]
+        var testModules: [BSPBuildTargetIdentifier: String] = [:]
         for package in packages {
             var names = Set<String>()
             for target in package.description.targets {
@@ -136,6 +137,7 @@ struct SwiftPMGraphLoader: Sendable {
                 if package.root != root { tags.append(.dependency) }
                 let isRoot = package.root == root
                 executableTargets[id] = executableProduct(for: target, in: package)
+                testModules[id] = try testModule(for: target, in: package)
                 var languages = Set(sourceURLs.compactMap(Self.language))
                 if target.moduleType == "SwiftTarget" { languages.insert(.swift) }
                 targets.append(
@@ -148,7 +150,7 @@ struct SwiftPMGraphLoader: Sendable {
                         dependencies: edges,
                         capabilities: .init(
                             canCompile: isRoot,
-                            canTest: false,
+                            canTest: testModules[id] != nil,
                             canRun: executableTargets[id] != nil,
                             canDebug: executableTargets[id] != nil && supportsDebug
                         )
@@ -176,8 +178,23 @@ struct SwiftPMGraphLoader: Sendable {
             sources: sources,
             packageRoots: Set(packages.map(\.root)),
             diagnostics: Array(Set(diagnostics)).sorted(),
-            executableTargets: executableTargets
+            executableTargets: executableTargets,
+            testModules: testModules
         )
+    }
+
+    private func testModule(
+        for target: SwiftPMPackageDescription.Target,
+        in package: SwiftPMLoadedPackage
+    ) throws -> String? {
+        guard package.root == root, target.type == "test" else { return nil }
+        guard let module = target.c99name, !module.isEmpty else {
+            throw SwiftPMProjectError.invalidMetadata(
+                package: package.root.path,
+                details: "Test target '\(target.name)' has no module name."
+            )
+        }
+        return module
     }
 
     private func executableProduct(
