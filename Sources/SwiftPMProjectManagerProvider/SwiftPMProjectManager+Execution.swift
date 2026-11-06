@@ -32,6 +32,8 @@ public extension SwiftPMProjectManager {
                 outputHandler: logHandler
             )
             if result.exitCode != 0 { return .error }
+            let outputTargets = testModules[target.id] == nil ? [target.id] : project?.targets.map(\.id) ?? []
+            recordOutputArguments(options, for: outputTargets)
         }
         return .ok
     }

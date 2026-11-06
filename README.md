@@ -186,6 +186,11 @@ cannot be passed to the XCTest selector and return an error. The client must
 forward the debug response's `args`, `env`, and `cwd` fields to DAP. This requires
 an updated client, such as [vscode-bsp PR #14](https://github.com/aelam/vscode-bsp/pull/14).
 
+Build output paths come from `swift build --show-bin-path`; this query does not
+compile the package. After a successful build or test in the current connection,
+the server uses its configuration and scratch directory for the affected targets.
+Before a build, or after reconnecting, it uses SwiftPM's default build options.
+
 This provider does not yet supply compiler arguments or prepare indexes.
 It advertises these capabilities as unsupported. SourceKit-LSP's native SwiftPM
 integration remains the option for SwiftPM code navigation.

@@ -34,6 +34,9 @@ public protocol ProjectManager: AnyObject, Sendable {
     func getSourceFileList(targetIdentifiers: [BSPBuildTargetIdentifier]) async throws
         -> [SourcesItem]
 
+    func outputPaths(for targets: [BSPBuildTargetIdentifier]) async throws
+        -> [BuildTargetOutputPathsResult.OutputPathsItem]
+
     func getCompileArguments(
         targetIdentifier: String,
         sourceFileURL: URL
@@ -119,6 +122,11 @@ public extension ProjectManager {
     /// Reload for every nonempty batch unless the provider can safely filter it.
     func shouldReloadProject(for changes: [ProjectFileChange]) async -> Bool {
         !changes.isEmpty
+    }
+
+    func outputPaths(for targets: [BSPBuildTargetIdentifier]) async throws
+        -> [BuildTargetOutputPathsResult.OutputPathsItem] {
+        targets.map { .init(target: $0, outputPaths: []) }
     }
 
     func getTargetList() async -> [BSPBuildTarget] {

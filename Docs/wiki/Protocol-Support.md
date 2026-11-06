@@ -23,7 +23,10 @@ Tests run from the package root. Test debugging launches Xcode's `xctest` runner
 with an explicit list of tests in the selected module. XCTest and Swift Testing
 run in the same debug process. The server supplies DAP arguments, environment,
 and working directory with the debug connection.
-SwiftPM does not advertise index preparation, compiler options, or output paths.
+SwiftPM supports output paths through `swift build --show-bin-path`. It uses the
+last successful build or test options for affected targets in the current connection,
+or SwiftPM defaults before a build and after reconnecting.
+SwiftPM does not advertise index preparation or compiler options.
 Unsupported operations return an error.
 
 ## Requests and notifications
@@ -41,7 +44,7 @@ Unsupported operations return an error.
 | `buildTarget/run` | Client request | Install/launch an existing product |
 | `buildTarget/test` | Client request | Build and run test bundles; publish case results and target reports |
 | `debugSession/start` | Client request | Return an LLDB DAP connection for existing macOS/simulator products |
-| `buildTarget/outputPaths` | Client request | Return each target's default project product directory |
+| `buildTarget/outputPaths` | Client request | Return product directories from the active project provider |
 | `buildTarget/cleanCache` | Client request | Clear shared project products and indexes, not isolated target caches |
 | `workspace/reload` | Client request | Reload state and emit target changes |
 | `workspace/didChangeWatchedFiles` | Client notification | Process source/configuration file events |

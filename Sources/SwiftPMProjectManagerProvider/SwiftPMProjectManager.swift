@@ -6,7 +6,7 @@ public actor SwiftPMProjectManager: ProjectManager {
     public let rootURL: URL
     public nonisolated let projectType = "swiftpm"
     public var capabilities: ProjectManagerCapabilities {
-        var result: ProjectManagerCapabilities = [.compile, .run, .test]
+        var result: ProjectManagerCapabilities = [.compile, .run, .test, .outputPaths]
         if debugAdapter != nil { result.insert(.debug) }
         return result
     }
@@ -26,6 +26,7 @@ public actor SwiftPMProjectManager: ProjectManager {
     let commandExecutable: URL
     let commandExecutor: any SwiftPMCommandExecuting
     let debugAdapter: (any SwiftPMDebugAdapterServing)?
+    var outputBuildArguments: [BSPBuildTargetIdentifier: [String]] = [:]
     var executableTargets: [BSPBuildTargetIdentifier: String] = [:]
     var testModules: [BSPBuildTargetIdentifier: String] = [:]
     var executionTasks: [UUID: Task<SwiftPMCommandResult, Error>] = [:]
@@ -155,6 +156,7 @@ public actor SwiftPMProjectManager: ProjectManager {
         debugEndpoints.removeAll()
         if let reloadTask { _ = await reloadTask.result }
         project = nil
+        outputBuildArguments = [:]
         executableTargets = [:]
         testModules = [:]
         sources = [:]

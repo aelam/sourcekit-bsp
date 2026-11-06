@@ -78,6 +78,10 @@ struct XcodeBSPProjectTests {
         }
         try await manager.initialize()
         let initial = try #require(await manager.project)
+        let outputTarget = try #require(initial.targets.first)
+        let outputs = try await manager.outputPaths(for: [outputTarget.id])
+        let productsDirectory = initial.buildRootURL.appendingPathComponent("Build/Products", isDirectory: true)
+        #expect(outputs.first?.outputPaths == [.init(uri: URI(productsDirectory), kind: .directory)])
         #expect(await manager.getTargetList() == initial.targets)
         #expect(initial.name == "Hello.xcodeproj")
         let app = try #require(initial.targets.first { $0.displayName == "Hello" })

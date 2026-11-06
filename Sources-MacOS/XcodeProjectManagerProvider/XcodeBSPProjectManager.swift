@@ -62,6 +62,14 @@ public actor XcodeBSPProjectManager: ProjectManager {
         return sources.map { $0.asBSPSourcesItems() }
     }
 
+    public func outputPaths(for targets: [BSPBuildTargetIdentifier]) async throws
+        -> [BuildTargetOutputPathsResult.OutputPathsItem] {
+        try validateTargets(targets)
+        guard let project else { throw XcodeProjectError.invalidConfig("Project not initialized") }
+        let directory = project.buildRootURL.appendingPathComponent("Build/Products", isDirectory: true)
+        return targets.map { .init(target: $0, outputPaths: [.init(uri: URI(directory), kind: .directory)]) }
+    }
+
     public func getCompileArguments(targetIdentifier: String, sourceFileURL: URL) async throws -> [String] {
         let identifier = try BSPBuildTargetIdentifier(uri: URI(string: targetIdentifier))
         try validateTargets([identifier])
