@@ -195,7 +195,7 @@ extension SwiftPMProjectManager {
         guard !isShutDown else { throw BuildContextError.invalid("The project is shut down.") }
         guard let project else { throw BuildContextError.invalid("The project is not initialized.") }
         if let workspace = params.scope?.workspaceUri {
-            guard workspace.fileURL?.standardizedFileURL.resolvingSymlinksInPath() == rootURL else {
+            guard workspace.fileURL?.standardizedFileURL.resolvingSymlinksInPath().path == workspaceRootURL.path else {
                 throw BuildContextError.invalid("The workspace does not belong to this package.")
             }
         }

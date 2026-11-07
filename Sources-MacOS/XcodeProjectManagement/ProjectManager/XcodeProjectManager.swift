@@ -118,10 +118,12 @@ public actor XcodeProjectManager {
     public func initialize() async throws {
         invalidateContextDestinationDiscovery()
         let configURL = rootURL.appendingPathComponent(".sourcekit-bsp/project.json")
-        let reference = if FileManager.default.fileExists(atPath: configURL.path) {
+        let reference = if let xcodeProjectReference {
+            xcodeProjectReference
+        } else if FileManager.default.fileExists(atPath: configURL.path) {
             try JSONDecoder().decode(XcodeProjectReference.self, from: Data(contentsOf: configURL))
         } else {
-            xcodeProjectReference
+            nil as XcodeProjectReference?
         }
         let start = ContinuousClock.now
         try await toolchain.initialize()

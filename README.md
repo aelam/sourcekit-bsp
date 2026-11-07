@@ -131,10 +131,94 @@ The clients start the executable in `argv`; running it directly waits for protoc
 For projects with multiple workspaces, configure `.sourcekit-bsp/project.json`;
 see [project configuration](Docs/wiki/Getting-Started.md#configure-the-application-project).
 
+## Multiple connections in one workspace
+
+A parent workspace can keep several connection files in `.bsp`. Each file starts
+an independent server process with its own targets and execution context. All
+connections initialize with the same parent workspace URI.
+
+The server accepts one of `--package PATH`, `--project PATH`, or `--workspace PATH`.
+Relative paths are resolved against `build/initialize.rootUri`, not the process's
+working directory. A launch selection takes precedence over the parent's
+`.sourcekit-bsp/project.json` and remains selected across reloads. The three
+selectors are mutually exclusive; malformed options fail on stderr before the
+stdio server starts. These are sourcekit-bsp CLI options carried in the standard
+`argv` field, not new BSP fields or requests.
+
+For example, place these four files in the parent `.bsp` directory:
+
+`.bsp/swift-a.json`:
+
+```json
+{"name":"Swift A","argv":["sourcekit-bsp","--package","packages/A"],"version":"1.0","bspVersion":"2.2.0","languages":["swift"]}
+```
+
+`.bsp/swift-b.json`:
+
+```json
+{"name":"Swift B","argv":["sourcekit-bsp","--package","packages/B"],"version":"1.0","bspVersion":"2.2.0","languages":["swift"]}
+```
+
+`.bsp/xcode-a.json`:
+
+```json
+{"name":"Xcode A","argv":["sourcekit-bsp","--project","apps/A/App.xcodeproj"],"version":"1.0","bspVersion":"2.2.0","languages":["swift"]}
+```
+
+`.bsp/xcode-b.json`:
+
+```json
+{"name":"Xcode B","argv":["sourcekit-bsp","--project","apps/B/App.xcodeproj"],"version":"1.0","bspVersion":"2.2.0","languages":["swift"]}
+```
+
+Use `--workspace apps/A/App.xcworkspace` for an Xcode workspace instead of a
+project. Xcode connections require macOS. SwiftPM products stay in each package's
+build directory; Xcode derived data is keyed by the selected container path, so
+projects with the same product name have separate outputs. Context IDs belong to
+one connection and cannot be used on another connection.
+
+SourceKit-LSP 6.4 cannot select a specific connection when a workspace contains
+multiple Swift/C-family connection files. Target-level BSP operations can use
+these independent connections, but individual test discovery and source locations
+need a matching SourceKit-LSP connection. The companion vscode-bsp client reports
+this ambiguity. Use separate workspace folders with one Swift connection each
+when individual test discovery is required.
+
 ## SwiftPM packages
 
-Use a folder that contains `Package.swift` as the BSP workspace root. The SwiftPM
-provider loads package metadata with `swift package describe --type json`. It
+The BSP workspace can contain a package at its root or in a subdirectory.
+Keep the connection file in the workspace's `.bsp` directory and send that
+workspace's URI in `build/initialize`. A nested package does not need its own
+connection file.
+
+To select a package explicitly, create `.sourcekit-bsp/project.json` at the
+workspace root:
+
+```json
+{"package": "p3"}
+```
+
+The path is relative to the workspace root; an absolute path or a path to
+`Package.swift` is also accepted. `package` cannot be combined with `project` or
+`workspace`. An explicit package selects the SwiftPM provider even if an Xcode
+project is present. Invalid selections fail without an automatic fallback.
+Reconnect after changing the selected package.
+
+Without an explicit selection, SwiftPM first checks the workspace root. If there
+is no root manifest, it searches for one nested package. Discovery stops below
+each package and skips hidden directories, symlinks, and common build or dependency
+cache directories such as `.build`, `node_modules`, `Pods`, and `DerivedData`.
+Multiple packages require an explicit selection; the error lists their paths.
+Generated `.swiftpm/xcode/package.xcworkspace` metadata does not select the Xcode
+provider, including symlink aliases. Selecting that metadata with `--workspace`
+fails with a `--package` hint. If a real Xcode container and a root `Package.swift`
+coexist, automatic discovery requires an explicit build-system selection.
+This discovery and configuration behavior is a sourcekit-bsp feature, not a
+requirement of the BSP standard. Build commands, outputs, and default run/test
+working directories use the selected package root; context workspace scopes use
+the original workspace root.
+
+The SwiftPM provider loads package metadata with `swift package describe --type json`. It
 exposes targets, source files, dependencies, and workspace reloads without building
 package products. It loads local packages and uses `swift package show-dependencies`
 to locate resolved remote dependencies. Resolution can download packages. Plugins,

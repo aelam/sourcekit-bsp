@@ -19,6 +19,14 @@ struct SwiftPMBSPIntegrationTests {
         """.write(to: root.appendingPathComponent("Package.swift"), atomically: true, encoding: .utf8)
         let source = root.appendingPathComponent("Sources/Core/Core.swift")
         try "public let value = 1".write(to: source, atomically: true, encoding: .utf8)
+        let generated = root.appendingPathComponent(".swiftpm/xcode/package.xcworkspace")
+        try FileManager.default.createDirectory(at: generated, withIntermediateDirectories: true)
+        try #"<Workspace version="1.0"><FileRef location="self:"/></Workspace>"#.write(
+            to: generated.appendingPathComponent("contents.xcworkspacedata"), atomically: true, encoding: .utf8
+        )
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("Package.xcworkspace"), withDestinationURL: generated
+        )
         let factory = await ProjectManagerProviderRegistry.createFactory()
         let service = BSPServerService.createStdioService(projectManagerProvider: factory)
         let handler = BSPMessageHandler()
@@ -68,13 +76,14 @@ struct SwiftPMBSPIntegrationTests {
     }
 
     @Test
-    func keepsXcodePriorityInMixedProjectFolders() async throws {
+    func requiresExplicitSelectionInMixedProjectFolders() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("BSP Mixed \(UUID())")
         try FileManager.default.createDirectory(
             at: root.appendingPathComponent("App.xcodeproj"), withIntermediateDirectories: true
         )
         defer { try? FileManager.default.removeItem(at: root) }
         try Data().write(to: root.appendingPathComponent("Package.swift"))
+        try Data().write(to: root.appendingPathComponent("App.xcodeproj/project.pbxproj"))
         let providers = ProjectManagerProviderRegistry.getAllProviders()
         var matches: [String] = []
         for provider in providers where await provider.canHandle(projectURL: root) {
@@ -82,6 +91,14 @@ struct SwiftPMBSPIntegrationTests {
         }
         #if os(macOS)
         #expect(matches == ["XcodeProjectManagerProvider", "SwiftPMProjectManagerProvider"])
+        let factory = await ProjectManagerProviderRegistry.createFactory()
+        do {
+            _ = try await factory.createProjectManager(rootURL: root)
+            Issue.record("Expected an explicit build-system selection")
+        } catch {
+            #expect(error.localizedDescription.contains("--package"))
+            #expect(error.localizedDescription.contains("--project"))
+        }
         #else
         #expect(matches == ["SwiftPMProjectManagerProvider"])
         #endif

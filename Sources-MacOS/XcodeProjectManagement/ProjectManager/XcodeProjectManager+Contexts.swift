@@ -280,8 +280,8 @@ extension XcodeProjectManager {
     func contextRequestedTargets(_ scope: BuildContextScope?) throws -> [XcodeTarget]? {
         guard let base = projectSnapshot else { throw BuildContextError.invalid("Project not initialized") }
         if let uri = scope?.workspaceUri,
-           uri.fileURL?.resolvingSymlinksInPath().standardizedFileURL != rootURL.resolvingSymlinksInPath()
-           .standardizedFileURL {
+           uri.fileURL?.resolvingSymlinksInPath().standardizedFileURL.path != rootURL.resolvingSymlinksInPath()
+           .standardizedFileURL.path {
             throw BuildContextError.invalid("The workspace URI does not match this project")
         }
         guard let identifiers = scope?.targets else { return nil }

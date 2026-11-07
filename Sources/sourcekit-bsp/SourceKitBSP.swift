@@ -37,13 +37,24 @@ struct SourceKitBSP {
             }
         }
 
+        let launch: BSPServerLaunchOptions
+        do {
+            launch = try BSPServerLaunchOptions(arguments: Array(arguments.dropFirst()))
+        } catch {
+            FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
+            exit(2)
+        }
+
         defer { logger.flush() }
         logger.info("sourcekit-bsp started; debug=\(logger.isDebugEnabled); log=\(logger.logFileURL.path)")
 
         // 使用清晰的分层架构 - BSPServerService 作为服务层
         // 使用工厂来管理多个项目管理器提供者
         let factory = await ProjectManagerProviderRegistry.createFactory()
-        let bspService = BSPServerService.createStdioService(projectManagerProvider: factory)
+        let bspService = BSPServerService.createStdioService(
+            projectManagerProvider: factory,
+            launchConfiguration: launch.configuration
+        )
 
         // Monitor parent process at a reasonable interval using Task
         Task {
@@ -82,6 +93,10 @@ struct SourceKitBSP {
         print("  -h, --help      Show this help message and exit")
         print("  --version       Show the version and exit")
         print("  --debug         Enable debug logs (or set BSP_DEBUG=1)")
+        print("  --package PATH  Select one SwiftPM package")
+        print("  --project PATH  Select one Xcode project")
+        print("  --workspace PATH Select one Xcode workspace")
+        print("  Selectors are mutually exclusive; paths are relative to the initialized workspace root.")
         print("  xcode-project   Inspect or compile Xcode projects")
         print("")
         print("BSP Protocol:")

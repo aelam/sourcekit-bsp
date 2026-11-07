@@ -24,7 +24,8 @@ public extension BSPServerService {
 
         logger.debug("Initializing project at \(rootURL.path)")
 
-        let projectManager = try await projectManagerProvider.createProjectManager(rootURL: rootURL)
+        let config = try launchConfiguration ?? WorkspaceProjectConfiguration.load(at: rootURL)
+        let projectManager = try await projectManagerProvider.createProjectManager(rootURL: rootURL, config: config)
         try await projectManager.initialize()
         logger.info("Project ready: \(rootURL.path)")
         self.projectManager = projectManager

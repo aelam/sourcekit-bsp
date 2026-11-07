@@ -9,6 +9,7 @@ import Foundation
 
 public protocol ProjectManager: AnyObject, Sendable {
     var rootURL: URL { get async }
+    var workspaceRootURL: URL { get async }
 
     var project: BSPProject? { get async }
 
@@ -147,6 +148,10 @@ public protocol ProjectManager: AnyObject, Sendable {
 }
 
 public extension ProjectManager {
+    var workspaceRootURL: URL {
+        get async { await rootURL }
+    }
+
     var watchedFileRoots: [URL] {
         get async { await [rootURL] }
     }

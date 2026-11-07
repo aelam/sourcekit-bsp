@@ -4,6 +4,8 @@ import Logger
 
 public actor SwiftPMProjectManager: ProjectManager {
     public let rootURL: URL
+    public let workspaceRootURL: URL
+
     public nonisolated let projectType = "swiftpm"
     public var capabilities: ProjectManagerCapabilities {
         var result: ProjectManagerCapabilities = [.compile, .run, .test, .outputPaths]
@@ -39,9 +41,11 @@ public actor SwiftPMProjectManager: ProjectManager {
         executable: URL,
         executor: any SwiftPMCommandExecuting,
         debugAdapter: (any SwiftPMDebugAdapterServing)? = nil,
-        discoveryToolchain: URL? = nil
+        discoveryToolchain: URL? = nil,
+        workspaceRootURL: URL? = nil
     ) {
         self.rootURL = rootURL
+        self.workspaceRootURL = (workspaceRootURL ?? rootURL).standardizedFileURL.resolvingSymlinksInPath()
         self.commandExecutable = executable
         self.commandExecutor = executor
         self.debugAdapter = debugAdapter

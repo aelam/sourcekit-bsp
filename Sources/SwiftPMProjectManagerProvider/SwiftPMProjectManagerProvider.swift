@@ -2,7 +2,8 @@ import BuildServerProtocol
 import Foundation
 
 public struct SwiftPMProjectManagerProvider: ProjectManagerProvider {
-    public let name = "SwiftPMProjectManagerProvider"
+    public static let providerName = "SwiftPMProjectManagerProvider"
+    public let name = Self.providerName
     private let executor: any SwiftPMCommandExecuting
     private let environment: [String: String]
     private let debugAdapter: (any SwiftPMDebugAdapterServing)?
@@ -26,14 +27,28 @@ public struct SwiftPMProjectManagerProvider: ProjectManagerProvider {
     }
 
     public func canHandle(projectURL: URL) async -> Bool {
-        (try? Self.packageRoot(projectURL)) != nil
+        (try? Self.discoverPackageRoot(projectURL)) != nil
+    }
+
+    public func canHandle(projectURL: URL, config: ProjectConfiguration?) async throws -> Bool {
+        if config?.packagePath != nil { return true }
+        return try Self.discoverPackageRoot(projectURL) != nil
     }
 
     public func createProjectManager(
         rootURL: URL,
         config: ProjectConfiguration?
     ) async throws -> any ProjectManager {
-        let root = try Self.packageRoot(rootURL)
+        let root: URL
+        if let packagePath = config?.packagePath {
+            let selected = (packagePath as NSString).isAbsolutePath
+                ? URL(fileURLWithPath: packagePath) : rootURL.appendingPathComponent(packagePath)
+            root = try Self.packageRoot(selected)
+        } else if let discovered = try Self.discoverPackageRoot(rootURL) {
+            root = discovered
+        } else {
+            throw SwiftPMProjectError.invalidPackage(rootURL.path)
+        }
         let executable = try SwiftPMExecutableResolver.resolve(
             configured: config?.customSettings["swiftExecutable"],
             environment: environment,
@@ -49,7 +64,9 @@ public struct SwiftPMProjectManagerProvider: ProjectManagerProvider {
             executable: executable,
             executor: executor,
             debugAdapter: debugAdapter,
-            discoveryToolchain: toolchain
+            discoveryToolchain: toolchain,
+            workspaceRootURL: rootURL.lastPathComponent == "Package.swift" ? rootURL
+                .deletingLastPathComponent() : rootURL
         )
     }
 

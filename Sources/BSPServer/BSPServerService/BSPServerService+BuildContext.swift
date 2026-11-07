@@ -112,8 +112,8 @@ extension BSPServerService {
             }
         }
         if let workspace = scope?.workspaceUri {
-            let root = await projectManager.rootURL.standardizedFileURL.resolvingSymlinksInPath()
-            guard workspace.fileURL?.standardizedFileURL.resolvingSymlinksInPath() == root else {
+            let root = await projectManager.workspaceRootURL.standardizedFileURL.resolvingSymlinksInPath()
+            guard workspace.fileURL?.standardizedFileURL.resolvingSymlinksInPath().path == root.path else {
                 throw BuildContextError.invalid("The workspace does not belong to this connection.")
             }
         }
