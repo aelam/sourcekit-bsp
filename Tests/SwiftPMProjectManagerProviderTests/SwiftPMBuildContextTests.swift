@@ -22,6 +22,7 @@ struct SwiftPMBuildContextTests {
         let host = try #require(dimension.options.first)
         #expect(host.dataKind == BuildContextDestination.dataKind)
         #expect(host.description == triple)
+        #expect(host.label == (platform == "macos" ? "My Mac" : "Host"))
         let data = try #require(host.data)
         let metadata = try JSONDecoder().decode(BuildContextDestination.self, from: JSONEncoder().encode(data))
         #expect(metadata.kind == "host")

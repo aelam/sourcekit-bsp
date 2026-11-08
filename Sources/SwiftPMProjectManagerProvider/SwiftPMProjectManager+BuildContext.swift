@@ -286,7 +286,7 @@ extension SwiftPMProjectManager {
         }
         let host = BuildContextOption(
             id: info.target.triple,
-            label: "Host",
+            label: platform?.id == "macos" ? "My Mac" : "Host",
             description: info.target.triple,
             dataKind: metadata.map { _ in BuildContextDestination.dataKind },
             data: metadata?.encodeToLSPAny()

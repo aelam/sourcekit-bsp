@@ -66,6 +66,7 @@ struct SwiftPMDependencyTests {
         #expect(await !(executor.calls.contains { $0.arguments.contains("show-dependencies") }))
         #expect(await executor.calls.count == 3)
         let app = try #require(targets.first { $0.displayName == "App" })
+        #expect(targets.map(\.id) == [app.id, core.id, library.id, dependencyTests.id, internalTarget.id])
         let items = try await manager.getDependencyModules(targetIdentifiers: [app.id, core.id, library.id])
         #expect(items[0].modules.map(\.name) == ["LibraryProduct"])
         #expect(items[0].modules.first?.version.isEmpty == true)

@@ -125,8 +125,8 @@ do not participate in this lock. See [indexing and paths](Docs/wiki/Indexing-and
    Its `.bsp` directory must be at that folder's root.
 5. vscode-bsp discovers and connects to the server on activation.
    If needed, run **BSP: Connect BSP Servers** from the Command Palette.
-6. Run **BSP: Show Build Targets** to open **BSP Targets**.
-   Open **BSP Contexts** to select the scheme, configuration, and destination.
+6. Run **BSP: Show Build Targets** to open **BSP**.
+   Expand the server's **Build Context** to select the scheme, configuration, and destination.
    Use its **Compile Target**, **Build and Run**, **Build and Test**, or **Build and Debug Target** action, as supported.
 
 Use the same Xcode toolchain for the server and Swift extension.
