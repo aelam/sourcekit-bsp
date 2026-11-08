@@ -10,11 +10,11 @@
             "args": [
                 "buildSettings",
                 "--workspace-folder",
-                "/Users/wang.lun/Work/line-stickers-ios",
+                "${workspaceFolder}/Tests-MacOS/XcodeProjectManagementTests/Resources/DemoProjects/HelloProject",
                 "--xcodeproj",
-                "UserStickers/UserStickers.xcodeproj",
+                "Hello.xcodeproj",
                 "--target",
-                "UserStickers",
+                "Hello",
                 "--configuration",
                 "Debug",
             ]

@@ -154,7 +154,6 @@ let macOnlyTargets: [Target] = [
         resources: [
             .copy("README.md"),
             .copy("Resources/DemoProjects"),
-            .copy("Resources/buildSettingsForIndexForTarget.json"),
             .copy("Resources/TestScheme.xcscheme")
         ]
     ),

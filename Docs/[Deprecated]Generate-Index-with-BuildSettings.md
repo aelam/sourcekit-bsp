@@ -123,14 +123,14 @@ Release-iphoneos → Release-iphonesimulator
 
 **Before**
 ```
--Xcc /Users/.../line-stickers-ios/build/Debug-iphoneos/LCSColors
--F   /Users/.../line-stickers-ios/build/Debug-iphoneos/LCSColors
+-Xcc /workspace/Example/build/Debug-iphoneos/ExampleFramework
+-F   /workspace/Example/build/Debug-iphoneos/ExampleFramework
 ```
 
 **After**
 ```
--Xcc $(BUILD_DIR)/LCSColors
--F   $(BUILD_DIR)/LCSColors
+-Xcc $(BUILD_DIR)/ExampleFramework
+-F   $(BUILD_DIR)/ExampleFramework
 ```
 (Where `BUILD_DIR = .../Build/Products/Debug-iphonesimulator` from `norm.json`.)
 
