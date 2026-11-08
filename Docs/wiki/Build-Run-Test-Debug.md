@@ -135,27 +135,36 @@ python3 Scripts/bsp_client.py --server "$bsp_server" --project "$bsp_project" \
   --breakpoint /absolute/path/to/HelloProject/Hello/HelloApp.swift:14
 ```
 
-The server uses the existing app product and returns an LLDB DAP endpoint. The
-probe connects, checks the breakpoint and stack, then terminates the app. Use an
-executable line for `--breakpoint`, or omit it to break at `main`. If a client
-wants build-before-debug behavior, it must send `buildTarget/compile` first and
-then send `debugSession/start`.
+`debugSession/start` returns a DAP endpoint without building, installing, or
+launching the app. After connecting, send `initialize`, then `launch` or `attach`.
+The server prepares the selected target when it receives that DAP request.
+
+DAP `launch` uses existing products unless the resolved Build Context requests a
+build. Without Build Context, compile the target first. The probe sends `launch`,
+checks the breakpoint and stack, then terminates the app. Use an executable line
+for `--breakpoint`, or omit it to break at `main`.
+
+DAP `attach` finds an existing process for the selected target and destination.
+It does not build, install, or launch the app. If exactly one process matches, the
+server uses it automatically. If several processes match, supply DAP `pid`; the
+PID must match the selected target. Attach requires a resolved debug Build Context
+and supports iOS simulator apps and macOS executables. Physical-device and test
+Attach are not supported.
 
 Use `--destination platform=macOS` for a Mac app or `--destination id=DEVICE-UDID`
 for an iPhone. The server uses the project's signing settings through
 `xcodebuild`. The device must be paired, unlocked, and have Developer Mode enabled.
 
-For iOS devices, the server installs the app with `devicectl` and launches it
+For DAP `launch` on iOS devices, the server installs the app with `devicectl` and launches it
 with `--start-stopped`. A server-side DAP relay supplies LLDB's `device select`
-and `device process attach` commands and the local executable path. Clients keep
-using the existing DAP address and PID. This requires an Xcode LLDB with these
+and `device process attach` commands and the local executable path. The client
+sends `launch` to the returned DAP address. This requires an Xcode LLDB with these
 device commands and `lldb-dap` support for `attachCommands`.
 
-Preparation emits BSP task and log notifications. Once the endpoint is ready,
-attach errors and debugger output arrive through DAP. An abandoned session has
-120 seconds to attach before the server stops its suspended app. Failed attach
-requests and disconnects before attachment also stop that app. After attachment,
-DAP disconnect options control whether the app continues running.
+Launch preparation emits BSP task and log notifications. Preparation errors and
+debugger output also arrive through DAP. Unused endpoints expire. If launch
+preparation created a suspended app, cleanup stops that app when attachment fails.
+An Attach session detaches from its existing process during cleanup.
 
 The iPhone path has automated command, protocol, and cleanup tests. Breakpoints,
 stepping, and variables still need validation on a physical device. Other physical
@@ -168,11 +177,11 @@ and DerivedData directory must match the products that are already built. Missin
 products produce an error; the server does not silently build them.
 
 Request `debugSession/start` with an app-hosted unit test target such as
-`HelloTests` and a concrete iOS simulator destination. The server resolves the
+`HelloTests` and a concrete iOS simulator destination, then send DAP `launch`.
+The server resolves the
 existing test host and bundle, installs the host, and launches it with XCTest's
 bundle injection environment. The process waits for the debugger before
-executing tests. Connect to the returned DAP endpoint and attach with
-`stopOnEntry: false`. Set breakpoints, then send `configurationDone` to start the
+executing tests. Use `stopOnEntry: false` in the launch request. Set breakpoints, then send `configurationDone` to start the
 tests.
 
 For test debug sessions, the server resolves settings with

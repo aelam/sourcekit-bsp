@@ -1,6 +1,7 @@
 import BuildServerProtocol
 import Foundation
 import Logger
+import Support
 
 /// The build product to debug, resolved from a target.
 public struct DebugProduct: Sendable {
@@ -86,6 +87,18 @@ public actor DebugSessionManager {
     private let simulatorLauncher: WaitForDebuggerLaunching
     private var deviceSession: DeviceDebugSession?
     private var liveEndpoints: [DebugAdapterEndpoint] = []
+    private var pendingSimulatorProcesses: [String: HostProcessIdentity] = [:]
+    var captureLaunchedProcess: @Sendable (Int, String) -> HostProcessIdentity? = { pid, device in
+        guard let identity = HostProcessIdentity.read(pid: pid),
+              identity.executable.contains("/CoreSimulator/Devices/\(device)/") else { return nil }
+        return identity
+    }
+
+    var stopPendingProcess: @Sendable (HostProcessIdentity) -> Void = { identity in
+        // Stop only the process this launch created, and only before DAP takes ownership.
+        guard (try? identity.validate()) != nil, let pid = Int32(exactly: identity.pid) else { return }
+        _ = kill(pid, SIGKILL)
+    }
 
     public init(adapter: DebugAdapterServing, simulatorLauncher: WaitForDebuggerLaunching) {
         self.adapter = adapter
@@ -153,6 +166,7 @@ public actor DebugSessionManager {
             let pid = try await (launcher ?? simulatorLauncher).launchWaitingForDebugger(
                 deviceID: udid, appIdentifier: bundleId, settings: product.launchSettings
             )
+            try registerPendingSimulatorProcess(pid: pid, deviceID: udid, uri: endpoint.uri)
             succeeded = true
             return DebugSessionConnection(
                 uri: endpoint.uri,
@@ -166,10 +180,52 @@ public actor DebugSessionManager {
         }
     }
 
+    private func registerPendingSimulatorProcess(pid: Int, deviceID: String, uri: String) throws {
+        if let identity = captureLaunchedProcess(pid, deviceID) {
+            pendingSimulatorProcesses[uri] = identity
+        }
+        if Task.isCancelled {
+            if let identity = pendingSimulatorProcesses.removeValue(forKey: uri) {
+                stopPendingProcess(identity)
+            }
+            throw CancellationError()
+        }
+    }
+
+    func makeAttachConnection(identity: HostProcessIdentity) async throws -> DebugSessionConnection {
+        let endpoint = try await adapter.start()
+        do {
+            try Task.checkCancellation()
+            liveEndpoints.append(endpoint)
+            return .init(uri: endpoint.uri, request: .attach, program: identity.executable, pid: identity.pid)
+        } catch {
+            await endpoint.stop()
+            throw error
+        }
+    }
+
+    func didStartConnection(uri: String) {
+        pendingSimulatorProcesses[uri] = nil
+    }
+
+    func stopConnection(uri: String) async {
+        if let identity = pendingSimulatorProcesses.removeValue(forKey: uri) { stopPendingProcess(identity) }
+        let endpoints = liveEndpoints.filter { $0.uri == uri }
+        liveEndpoints.removeAll { $0.uri == uri }
+        for endpoint in endpoints {
+            await endpoint.stop()
+        }
+    }
+
     /// Terminate every lldb-dap we started (call on shutdown).
     public func terminateAll() async {
         let endpoints = liveEndpoints
         liveEndpoints.removeAll()
+        let pending = pendingSimulatorProcesses.values
+        pendingSimulatorProcesses.removeAll()
+        for identity in pending {
+            stopPendingProcess(identity)
+        }
         for endpoint in endpoints {
             await endpoint.stop()
         }

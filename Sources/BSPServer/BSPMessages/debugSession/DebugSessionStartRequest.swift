@@ -59,8 +59,8 @@ public struct DebugSessionStartResponse: ResponseType, Hashable {
 
     public struct Result: Codable, Hashable, Sendable {
         public let uri: String
-        public let dataKind: String
-        public let data: DebugData
+        public let dataKind: String?
+        public let data: DebugData?
 
         public struct DebugData: Codable, Hashable, Sendable {
             public let request: String
@@ -78,16 +78,16 @@ public struct DebugSessionStartResponse: ResponseType, Hashable {
         self.jsonrpc = jsonrpc
         self.result = Result(
             uri: connection.uri,
-            dataKind: "lldb",
-            data: .init(
-                request: connection.request.rawValue,
+            dataKind: connection.request == nil ? nil : "lldb",
+            data: connection.request.map { request in .init(
+                request: request.rawValue,
                 program: connection.program,
                 pid: connection.pid,
                 bundleId: connection.bundleId,
                 args: connection.args,
                 env: connection.env,
                 cwd: connection.cwd
-            )
+            ) }
         )
     }
 }

@@ -1,6 +1,7 @@
 import BuildServerProtocol
 import Foundation
 import Logger
+import Support
 
 public actor SwiftPMProjectManager: ProjectManager {
     public let rootURL: URL
@@ -25,6 +26,9 @@ public actor SwiftPMProjectManager: ProjectManager {
     private var packageRoots: Set<URL>
     private var reloadTask: Task<Void, Error>?
     var isShutDown = false
+    var debugGeneration = UUID()
+    var attachProcessLookup: @Sendable (String) throws -> [HostProcessIdentity] = HostProcessIdentity.processes
+    var attachIdentityCheck: @Sendable (HostProcessIdentity) throws -> Void = { try $0.validate() }
     var buildContextHost: BuildContextOption?
     let commandExecutable: URL
     let commandExecutor: any SwiftPMCommandExecuting
@@ -81,6 +85,7 @@ public actor SwiftPMProjectManager: ProjectManager {
                     let snapshot = try await loader.load()
                     try Task.checkCancellation()
                     guard !isShutDown else { throw SwiftPMProjectError.shutDown }
+                    debugGeneration = UUID()
                     buildContextHost = nil
                     project = snapshot.project
                     executableTargets = snapshot.executableTargets
@@ -141,6 +146,7 @@ public actor SwiftPMProjectManager: ProjectManager {
 
     public func shutdown() async {
         isShutDown = true
+        debugGeneration = UUID()
         reloadTask?.cancel()
         let tasks = Array(executionTasks.values)
         let debugTasks = Array(debugStartupTasks.values)

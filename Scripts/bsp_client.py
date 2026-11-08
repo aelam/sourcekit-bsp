@@ -24,6 +24,7 @@ class Connection:
         self.messages = queue.Queue()
         self.sequence = 0
         self.events = []
+        self.dap_responses = {}
         self.closed = threading.Event()
         threading.Thread(target=self.read, daemon=True).start()
 
@@ -61,6 +62,8 @@ class Connection:
         self.writer.flush()
 
     def response(self, key, value, timeout=None):
+        if key == "request_seq" and value in self.dap_responses:
+            return self.dap_responses.pop(value)
         timeout = self.timeout if timeout is None else timeout
         deadline = time.monotonic() + timeout
         while True:
@@ -76,6 +79,10 @@ class Connection:
                 return item
             if "event" in item:
                 self.events.append(item)
+            if item.get("type") == "response" and "request_seq" in item:
+                if not item.get("success"):
+                    raise RuntimeError(json.dumps(item, indent=2))
+                self.dap_responses[item["request_seq"]] = item
             for line in item.get("params", {}).get("message", "").splitlines():
                 if "error:" in line or "**" in line:
                     print(line, file=sys.stderr, flush=True)
@@ -89,14 +96,20 @@ class Connection:
             raise RuntimeError(json.dumps(result, indent=2))
         return result.get("result")
 
-    def dap(self, command, arguments):
+    def begin_dap(self, command, arguments):
         self.sequence += 1
         self.send({"seq": self.sequence, "type": "request", "command": command, "arguments": arguments})
-        result = self.response("request_seq", self.sequence, timeout=60)
+        return self.sequence
+
+    def finish_dap(self, command, sequence):
+        result = self.response("request_seq", sequence, timeout=60)
         print("DAP", command, "success=" + str(result.get("success")), file=sys.stderr, flush=True)
         if not result.get("success"):
             raise RuntimeError(json.dumps(result, indent=2))
         return result
+
+    def dap(self, command, arguments):
+        return self.finish_dap(command, self.begin_dap(command, arguments))
 
     def event(self, name):
         for index, item in enumerate(self.events):
@@ -118,10 +131,12 @@ def verify_debug(result, breakpoint, verbose):
                     "adapterID": "lldb", "pathFormat": "path",
                     "linesStartAt1": True, "columnsStartAt1": True
                 })
-                data = result["data"]
+                data = result.get("data") or {}
                 arguments = {k: v for k, v in data.items() if k in ("program", "pid", "args", "env", "cwd")}
                 arguments["stopOnEntry"] = True
-                dap.dap(data["request"], arguments)
+                command = data.get("request", "launch")
+                startup = dap.begin_dap(command, arguments)
+                dap.event("initialized")
                 if breakpoint:
                     source, line = breakpoint.rsplit(":", 1)
                     dap.dap("setBreakpoints", {
@@ -131,6 +146,7 @@ def verify_debug(result, breakpoint, verbose):
                 else:
                     dap.dap("setFunctionBreakpoints", {"breakpoints": [{"name": "main"}]})
                 dap.dap("configurationDone", {})
+                dap.finish_dap(command, startup)
                 stopped = dap.event("stopped")["body"]
                 if stopped.get("reason") != "breakpoint":
                     dap.dap("continue", {"threadId": stopped["threadId"]})

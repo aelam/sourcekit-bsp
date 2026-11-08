@@ -429,7 +429,7 @@ private struct ContextDebugAdapter: SwiftPMDebugAdapterServing {
     }
 }
 
-private actor ContextCommandRecorder: SwiftPMCommandExecuting {
+actor ContextCommandRecorder: SwiftPMCommandExecuting {
     struct Call: Sendable {
         let executable: URL
         let arguments: [String]

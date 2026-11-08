@@ -3,6 +3,18 @@ import Foundation
 import XcodeProjectManagement
 
 public extension XcodeBSPProjectManager {
+    func prepareDebugAttach(context: BuildContext, pid: Int?) async throws -> DebugSessionBackend {
+        try await backend.prepareDebugAttach(context: context, pid: pid)
+    }
+
+    func debugSessionDidStart(uri: String) async {
+        await backend.debugSessionDidStart(uri: uri)
+    }
+
+    func stopDebugSession(uri: String) async {
+        await backend.stopDebugSession(uri: uri)
+    }
+
     /// BSP entry point: convert the BSP target identifier to the Xcode domain
     /// and delegate to the debug orchestration in `XcodeProjectManagement`.
     func startDebugSession(

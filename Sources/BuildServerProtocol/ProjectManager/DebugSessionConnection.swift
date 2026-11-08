@@ -7,9 +7,8 @@
 
 import Foundation
 
-/// Everything the client needs to attach a DAP debugger for a target.
-/// `uri` is the DAP TCP endpoint; the remaining fields are the DAP
-/// launch/attach configuration the client should send once connected.
+/// A DAP endpoint. A nil request exposes only the standard BSP URI.
+/// Native endpoints can retain their launch configuration for internal relays.
 public struct DebugSessionConnection: Sendable, Equatable {
     public enum Request: String, Sendable, Equatable {
         case launch
@@ -17,7 +16,7 @@ public struct DebugSessionConnection: Sendable, Equatable {
     }
 
     public let uri: String // e.g. "tcp://127.0.0.1:52345"
-    public let request: Request
+    public let request: Request?
     public let program: String? // macOS launch: built binary path
     public let pid: Int? // attach: PID on the platform configured by the server
     public let bundleId: String?
@@ -27,7 +26,7 @@ public struct DebugSessionConnection: Sendable, Equatable {
 
     public init(
         uri: String,
-        request: Request,
+        request: Request? = nil,
         program: String? = nil,
         pid: Int? = nil,
         bundleId: String? = nil,

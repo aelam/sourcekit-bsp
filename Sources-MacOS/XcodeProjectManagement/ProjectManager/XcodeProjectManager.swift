@@ -6,6 +6,7 @@
 
 import Foundation
 import Logger
+import Support
 import XcodeProj
 
 /// Project Level buildSettings
@@ -64,6 +65,16 @@ public actor XcodeProjectManager {
     let contextDiscoveryClock: @Sendable () -> ContinuousClock.Instant
     var destinationDiscoveryStopped = false
     var debugSessionManager: DebugSessionManager?
+    var attachProcessLookup: @Sendable (String) throws -> [HostProcessIdentity] = HostProcessIdentity.processes
+    var attachIdentityCheck: @Sendable (HostProcessIdentity) throws -> Void = { try $0.validate() }
+    var simulatorAttachExecutable: @Sendable (URL, String, String) async throws
+        -> String = { developer, device, bundle in
+            try await SimulatorAttachDiscovery(developerDirectory: developer).executable(
+                deviceID: device,
+                bundleID: bundle
+            )
+        }
+
     var indexPreparationTasks: [UUID: Task<[XcodeTargetIdentifier], Error>] = [:]
     let indexPreparationCoordinator = IndexPreparationCoordinator<IndexPreparationKey>()
     var indexInputVersion = UUID()

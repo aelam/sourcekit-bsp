@@ -75,7 +75,7 @@ struct DebugProgressTests {
         }
         let finish = try #require(messages.last?["params"] as? [String: Any])
         #expect(finish["status"] as? Int == 1)
-        #expect(finish["message"] as? String == "Debug adapter ready; waiting for DAP attach")
+        #expect(finish["message"] as? String == "Debug adapter ready")
         #expect(manager.getActiveTasks().isEmpty)
     }
 

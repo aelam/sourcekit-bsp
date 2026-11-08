@@ -58,6 +58,11 @@ public protocol ProjectManager: AnyObject, Sendable {
         context: BuildContext
     ) async throws -> DebugSessionConnection
 
+    /// Prepares an existing process for DAP attach without running a build.
+    func prepareDebugAttach(context: BuildContext, pid: Int?) async throws -> DebugSessionBackend
+    func stopDebugSession(uri: String) async
+    func debugSessionDidStart(uri: String) async
+
     func initialize() async throws
 
     func shutdown() async

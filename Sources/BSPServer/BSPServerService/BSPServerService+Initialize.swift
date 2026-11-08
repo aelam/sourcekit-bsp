@@ -13,6 +13,7 @@ public extension BSPServerService {
     func shutdownProject() async {
         invalidateBuildContexts()
         graphUpdateTask?.cancel()
+        await stopDebugSessions()
         await projectManager?.shutdown()
         _ = await graphUpdateTask?.result
     }

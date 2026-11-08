@@ -5,6 +5,22 @@ import Testing
 @testable import BSPServer
 
 struct BuildContextTests {
+    @Test
+    func debugStartCreatesOnlyADeferredEndpoint() async throws {
+        let harness = try await setup()
+        let resolved = try await harness.service.resolveContext(.init(operation: .debug, buildPolicy: .build))
+        let connection = try await harness.service.startDebugSession(
+            targets: [harness.manager.target], arguments: nil, executionContext: .init(id: resolved.id)
+        )
+        #expect(connection.request == nil)
+        #expect(await harness.manager.executions.isEmpty)
+        let json = try #require(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(DebugSessionStartResponse(connection: connection).result)
+        ) as? [String: Any])
+        #expect(Set(json.keys) == ["uri"])
+        await harness.service.shutdownProject()
+    }
+
     private struct Harness {
         let service: BSPServerService
         let handler: BSPMessageHandler
@@ -473,9 +489,21 @@ private actor ContextTestManager: ProjectManager {
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?,
         logHandler: (@Sendable (String) -> Void)?,
+        progressHandler: (@Sendable (String) async -> Void)?,
+        context: BuildContext
+    ) async throws -> DebugSessionConnection {
+        executions.append("context-debug")
+        return .init(uri: "tcp://127.0.0.1:12345", request: .launch)
+    }
+
+    func startDebugSession(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        logHandler: (@Sendable (String) -> Void)?,
         progressHandler: (@Sendable (String) async -> Void)?
     ) async throws
         -> DebugSessionConnection {
-        .init(uri: "tcp://127.0.0.1:12345", request: .launch)
+        executions.append("legacy-debug")
+        return .init(uri: "tcp://127.0.0.1:12345", request: .launch)
     }
 }
