@@ -35,14 +35,24 @@ struct DeviceCommandRunner: Sendable {
         }
     }
 
-    func launch(deviceID: String, bundleID: String, stopped: Bool) async throws -> Int {
+    func launch(
+        deviceID: String, bundleID: String, stopped: Bool, settings: XcodeLaunchSettings = .init()
+    ) async throws -> Int {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let resultURL = directory.appendingPathComponent("launch.json")
         var arguments = ["device", "process", "launch", "--device", deviceID, "--terminate-existing"]
         if stopped { arguments.append("--start-stopped") }
-        arguments += ["--json-output", resultURL.path, bundleID]
+        if !settings.environment.isEmpty {
+            let data = try JSONSerialization.data(withJSONObject: settings.environment, options: .sortedKeys)
+            guard let json = String(data: data, encoding: .utf8) else {
+                throw XcodeRunError.failedToLaunchApp("Cannot encode the launch environment")
+            }
+            arguments += ["--environment-variables", json]
+        }
+        if let directory = settings.workingDirectory { arguments += ["--working-directory", directory] }
+        arguments += ["--json-output", resultURL.path, bundleID] + settings.arguments
         do {
             _ = try await run(arguments, timeout: 60, phase: "Launching \(bundleID) on device \(deviceID)")
             return try Self.launchPID(from: Data(contentsOf: resultURL))

@@ -60,12 +60,12 @@ actor XcodeBuildExecutor {
     }
 
     private func derivedDataDirectory(command: [String], workingDirectory: URL) throws -> URL {
-        guard let flag = command.lastIndex(of: "-derivedDataPath"),
-              command.indices.contains(flag + 1), !command[flag + 1].isEmpty else {
+        guard let directory = try XcodeBuildScheduler.derivedDataDirectory(
+            command: command, workingDirectory: workingDirectory
+        ) else {
             throw XcodeProjectError.invalidConfig("Build commands require an explicit -derivedDataPath")
         }
-        let base = URL(fileURLWithPath: workingDirectory.path, isDirectory: true)
-        return URL(fileURLWithPath: command[flag + 1], isDirectory: true, relativeTo: base).absoluteURL
+        return directory
     }
 
     private static func run(

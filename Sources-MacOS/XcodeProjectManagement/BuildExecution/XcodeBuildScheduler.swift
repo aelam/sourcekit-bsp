@@ -1,6 +1,6 @@
 import Foundation
 
-/// Coordinates builds that use the same DerivedData directory within this server.
+/// Coordinates access to a DerivedData directory across server processes.
 actor XcodeBuildScheduler {
     static let shared = XcodeBuildScheduler()
 
@@ -9,31 +9,36 @@ actor XcodeBuildScheduler {
         let continuation: CheckedContinuation<Void, Error>
     }
 
+    private let lockDirectory: URL
     private var activeDirectories: Set<URL> = []
     private var waiters: [URL: [Waiter]] = [:]
 
-    func withBuild(
+    init(lockDirectory: URL = XcodeBuildFileLock.defaultDirectory) {
+        self.lockDirectory = lockDirectory
+    }
+
+    func withBuild<Result: Sendable>(
         in directory: URL,
-        operation: @Sendable () async throws -> XcodeBuildExitCode
-    ) async throws -> XcodeBuildExitCode {
-        let key = canonicalDirectory(directory)
+        operation: @Sendable () async throws -> Result
+    ) async throws -> Result {
+        let key = XcodeBuildFileLock.canonicalDirectory(directory)
         try await acquire(key)
         defer { release(key) }
         try Task.checkCancellation()
-        return try await operation()
+        return try await XcodeBuildFileLock.withLock(in: key, lockDirectory: lockDirectory, operation: operation)
     }
 
-    private func canonicalDirectory(_ directory: URL) -> URL {
-        // Resolve the existing ancestor because DerivedData may not exist before the first build.
-        var ancestor = directory
-        var components: [String] = []
-        while !FileManager.default.fileExists(atPath: ancestor.path), ancestor.path != "/" {
-            components.append(ancestor.lastPathComponent)
-            ancestor.deleteLastPathComponent()
+    nonisolated static func derivedDataDirectory(command: [String], workingDirectory: URL?) throws -> URL? {
+        guard let flag = command.lastIndex(of: "-derivedDataPath") else { return nil }
+        guard command.indices.contains(flag + 1), !command[flag + 1].isEmpty,
+              !command[flag + 1].hasPrefix("-") else {
+            throw XcodeProjectError.invalidConfig("Missing -derivedDataPath value")
         }
-        return components.reversed().reduce(ancestor.resolvingSymlinksInPath()) {
-            $0.appendingPathComponent($1, isDirectory: true)
-        }.standardizedFileURL
+        let base = URL(
+            fileURLWithPath: workingDirectory?.path ?? FileManager.default.currentDirectoryPath,
+            isDirectory: true
+        )
+        return URL(fileURLWithPath: command[flag + 1], isDirectory: true, relativeTo: base).absoluteURL
     }
 
     private func acquire(_ directory: URL) async throws {

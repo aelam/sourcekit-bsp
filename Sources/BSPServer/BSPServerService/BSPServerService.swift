@@ -14,10 +14,15 @@ import Logger
 public actor BSPServerService: ProjectStateObserver, BSPNotificationService {
     public let projectManagerProvider: ProjectManagerFactory
     private let jsonrpcConnection: JSONRPCConnection
+    let launchConfiguration: ProjectConfiguration?
     lazy var taskManager: BSPTaskManager = .init(notificationService: self)
 
     var projectManager: (any ProjectManager)?
     var graphUpdateTask: Task<Void, Error>?
+    var buildContextExtension: BuildContextExtension?
+    var buildContexts: [String: BuildContext] = [:]
+    var buildContextOrder: [String] = []
+    var buildContextRevision = 0
 
     /// Service state tracking
     public enum ServiceState {
@@ -31,10 +36,12 @@ public actor BSPServerService: ProjectStateObserver, BSPNotificationService {
 
     public init(
         projectManagerProvider: ProjectManagerFactory,
-        jsonrpcConnection: JSONRPCConnection
+        jsonrpcConnection: JSONRPCConnection,
+        launchConfiguration: ProjectConfiguration? = nil
     ) {
         self.projectManagerProvider = projectManagerProvider
         self.jsonrpcConnection = jsonrpcConnection
+        self.launchConfiguration = launchConfiguration
     }
 
     // MARK: - Service Lifecycle
@@ -97,7 +104,10 @@ public extension BSPServerService {
 
 public extension BSPServerService {
     /// 创建标准的 stdio BSP 服务
-    static func createStdioService(projectManagerProvider: ProjectManagerFactory) -> BSPServerService {
+    static func createStdioService(
+        projectManagerProvider: ProjectManagerFactory,
+        launchConfiguration: ProjectConfiguration? = nil
+    ) -> BSPServerService {
         let transport = StdioJSONRPCConnectionTransport()
         let messageHandler = BSPMessageHandler()
         let connection = JSONRPCConnection(
@@ -108,7 +118,8 @@ public extension BSPServerService {
 
         let service = BSPServerService(
             projectManagerProvider: projectManagerProvider,
-            jsonrpcConnection: connection
+            jsonrpcConnection: connection,
+            launchConfiguration: launchConfiguration
         )
 
         // Set the service reference in the message handler

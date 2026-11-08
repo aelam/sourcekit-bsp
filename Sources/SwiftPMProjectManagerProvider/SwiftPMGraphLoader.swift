@@ -176,7 +176,7 @@ struct SwiftPMGraphLoader: Sendable {
         let project = BSPProject(
             rootURL: root,
             name: packages[0].description.name,
-            targets: targets.sorted { $0.id.uri.stringValue < $1.id.uri.stringValue },
+            targets: targets.sorted(by: Self.targetPrecedes),
             buildRootURL: buildRoot,
             indexStoreURL: buildRoot.appendingPathComponent("index/store", isDirectory: true),
             indexDatabaseURL: buildRoot.appendingPathComponent("index/db", isDirectory: true),
@@ -190,6 +190,13 @@ struct SwiftPMGraphLoader: Sendable {
             executableTargets: executableTargets,
             testModules: testModules
         )
+    }
+
+    private static func targetPrecedes(_ lhs: BSPBuildTarget, _ rhs: BSPBuildTarget) -> Bool {
+        let lhsIsDependency = lhs.tags.contains(.dependency)
+        let rhsIsDependency = rhs.tags.contains(.dependency)
+        if lhsIsDependency != rhsIsDependency { return !lhsIsDependency }
+        return lhs.id.uri.stringValue < rhs.id.uri.stringValue
     }
 
     private func discoveryData(module: String?) -> LSPAny? {

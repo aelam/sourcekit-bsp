@@ -2,6 +2,7 @@ import Foundation
 
 public enum SwiftPMProjectError: Error, LocalizedError {
     case invalidPackage(String)
+    case ambiguousPackages([String])
     case executableNotFound(String)
     case commandFailed(command: String, status: Int32, output: String)
     case launchFailed(String)
@@ -17,6 +18,9 @@ public enum SwiftPMProjectError: Error, LocalizedError {
         switch self {
         case let .invalidPackage(path):
             "No Package.swift file was found at \(path)."
+        case let .ambiguousPackages(paths):
+            "Multiple SwiftPM packages found: \(paths.joined(separator: ", ")). "
+                + "Set package in .sourcekit-bsp/project.json to select one."
         case let .executableNotFound(details):
             "Cannot find an executable Swift toolchain. \(details)"
         case let .commandFailed(command, status, output):

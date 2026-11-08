@@ -16,17 +16,34 @@ public protocol ProjectManagerProvider: Sendable {
     var name: String { get }
 
     func canHandle(projectURL: URL) async -> Bool
+    func canHandle(projectURL: URL, config: ProjectConfiguration?) async throws -> Bool
 
     func createProjectManager(rootURL: URL, config: ProjectConfiguration?) async throws -> any ProjectManager
+}
+
+public extension ProjectManagerProvider {
+    func canHandle(projectURL: URL, config: ProjectConfiguration?) async throws -> Bool {
+        await canHandle(projectURL: projectURL)
+    }
 }
 
 public struct ProjectConfiguration: Sendable {
     public let customSettings: [String: String]
     public let workingDirectory: URL?
 
-    public init(customSettings: [String: String] = [:], workingDirectory: URL? = nil) {
+    public let preferredProvider: String?
+    public let packagePath: String?
+
+    public init(
+        customSettings: [String: String] = [:],
+        workingDirectory: URL? = nil,
+        preferredProvider: String? = nil,
+        packagePath: String? = nil
+    ) {
         self.customSettings = customSettings
         self.workingDirectory = workingDirectory
+        self.preferredProvider = preferredProvider
+        self.packagePath = packagePath
     }
 }
 
@@ -50,7 +67,14 @@ public actor ProjectManagerFactory {
         try await Task.detached {
             let providers = await self.providers
             logger.debug("Creating project manager for \(rootURL.path)")
-            for provider in providers where await provider.canHandle(projectURL: rootURL) {
+            if let preferred = config?.preferredProvider {
+                guard let provider = providers.first(where: { $0.name == preferred }) else {
+                    throw ProjectManagerFactoryError
+                        .noSuitableProvider("Configured provider is unavailable: \(preferred)")
+                }
+                return try await provider.createProjectManager(rootURL: rootURL, config: config)
+            }
+            for provider in providers where try await provider.canHandle(projectURL: rootURL, config: config) {
                 return try await provider.createProjectManager(rootURL: rootURL, config: config)
             }
 

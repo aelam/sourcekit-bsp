@@ -28,6 +28,7 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
         let displayName: String?
         let version: String?
         let bspVersion: String?
+        var data: LSPAny?
     }
 
     let id: JSONRPCID
@@ -87,6 +88,7 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
                 project: projectInfo,
                 projectCapabilities: projectManager.capabilities,
                 watchedRoots: projectManager.watchedFileRoots,
+                contextExtension: service.negotiateBuildContext(self.params.data),
                 clientCapabilities: self.params.capabilities
             )
         }
@@ -96,6 +98,7 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
         project: BSPProject,
         projectCapabilities: ProjectManagerCapabilities,
         watchedRoots: [URL],
+        contextExtension: BuildContextExtension?,
         clientCapabilities: Params.BuildClientCapabilities
     ) -> BuildInitializeResponse {
         // Create server capabilities based on client capabilities
@@ -115,7 +118,8 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
                     indexDatabasePath: project.indexDatabaseURL.path,
                     prepareProvider: projectCapabilities.contains(.prepare),
                     sourceKitOptionsProvider: projectCapabilities.contains(.sourceKitOptions),
-                    watchers: fileWatchers
+                    watchers: fileWatchers,
+                    bspExtensions: contextExtension.map { [BuildContextExtension.name: $0] }
                 ),
                 rootUri: self.params.rootUri,
                 bspVersion: "2.2.0",
@@ -177,6 +181,7 @@ struct BuildInitializeResponse: ResponseType {
             let prepareProvider: Bool?
             let sourceKitOptionsProvider: Bool?
             let watchers: [FileSystemWatcher]
+            let bspExtensions: [String: BuildContextExtension]?
         }
 
         let capabilities: BuildServerCapabilities

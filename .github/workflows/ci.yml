@@ -103,8 +103,8 @@ jobs:
           }
         ' coverage.info
 
-    - name: Test DAP relay and project loading with one cooperative thread
-      run: swift test --skip-build --filter 'DeviceDAPRelayTests|LLDBDAPServerTests|XcodeProjectManagerTests|SwiftPM'
+    - name: Test process coordination and project loading with one cooperative thread
+      run: swift test --skip-build --filter 'DeviceDAPRelayTests|LLDBDAPServerTests|XcodeBuildFileLockTests|XcodeProjectManagerTests|SwiftPM'
       env:
         LIBDISPATCH_COOPERATIVE_POOL_STRICT: "1"
 

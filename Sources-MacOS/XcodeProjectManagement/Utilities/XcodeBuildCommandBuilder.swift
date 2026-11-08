@@ -77,6 +77,7 @@ public enum XcodeBuildCommand: Sendable {
         case buildForTesting = "build-for-testing"
         case clean
         case test
+        case testWithoutBuilding = "test-without-building"
         case archive
         case analyze
         case installsrc

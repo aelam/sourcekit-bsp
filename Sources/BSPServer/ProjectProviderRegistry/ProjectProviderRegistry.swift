@@ -24,7 +24,7 @@ public enum ProjectManagerProviderRegistry {
         providers.append(XcodeProjectManagerProvider())
         #endif
 
-        // Prefer an existing Xcode project when the folder also contains a package.
+        // Probe Xcode containers before scanning for nested packages.
         #if os(macOS)
         providers.append(SwiftPMProjectManagerProvider(debugAdapter: SwiftPMLLDBAdapter()))
         #else

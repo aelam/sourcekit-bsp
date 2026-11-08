@@ -61,6 +61,23 @@ public extension SwiftPMProjectManager {
         progressHandler: (@Sendable (String) async -> Void)?
     ) async throws -> StatusCode {
         let program = try await builtExecutable(for: targetIdentifier, arguments: arguments)
+        return try await runExecutable(
+            program,
+            arguments: [],
+            environmentVariables: environmentVariables,
+            workingDirectory: workingDirectory,
+            progressHandler: progressHandler
+        )
+    }
+
+    internal func runExecutable(
+        _ program: URL,
+        arguments: [String],
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        progressHandler: (@Sendable (String) async -> Void)?
+    )
+        async throws -> StatusCode {
         let directory: URL
         if let workingDirectory {
             guard let url = workingDirectory.fileURL else {
@@ -79,7 +96,7 @@ public extension SwiftPMProjectManager {
         do {
             let result = try await executeCommand(
                 executable: program,
-                arguments: [],
+                arguments: arguments,
                 workingDirectory: directory,
                 environment: environmentVariables ?? [:]
             ) { continuation.yield($0) }
@@ -102,7 +119,7 @@ public extension SwiftPMProjectManager {
         guard targetIdentifiers.count == 1, let target = targetIdentifiers.first else {
             throw SwiftPMProjectError.invalidArguments("Select one executable or root test target to debug.")
         }
-        guard let debugAdapter else { throw SwiftPMProjectError.unsupported("debug sessions on this host") }
+        guard debugAdapter != nil else { throw SwiftPMProjectError.unsupported("debug sessions on this host") }
         let launch: SwiftPMDebugLaunch
         if testModules[target] != nil {
             await progressHandler?("Finding the built test bundle")
@@ -110,6 +127,15 @@ public extension SwiftPMProjectManager {
         } else {
             launch = try await SwiftPMDebugLaunch(program: builtExecutable(for: target, arguments: arguments))
         }
+        return try await startDebugLaunch(launch, progressHandler: progressHandler)
+    }
+
+    internal func startDebugLaunch(
+        _ launch: SwiftPMDebugLaunch,
+        progressHandler: (@Sendable (String) async -> Void)?
+    )
+        async throws -> DebugSessionConnection {
+        guard let debugAdapter else { throw SwiftPMProjectError.unsupported("debug sessions on this host") }
         await progressHandler?("Starting the debug adapter for \(launch.program.lastPathComponent)")
         try Task.checkCancellation()
         guard !isShutDown else { throw SwiftPMProjectError.shutDown }
@@ -162,7 +188,7 @@ public extension SwiftPMProjectManager {
         return target
     }
 
-    private func builtExecutable(for identifier: BSPBuildTargetIdentifier, arguments: [String]?) async throws -> URL {
+    internal func builtExecutable(for identifier: BSPBuildTargetIdentifier, arguments: [String]?) async throws -> URL {
         _ = try executionTarget(identifier)
         guard let product = executableTargets[identifier] else {
             throw SwiftPMProjectError.invalidArguments("Select a target with one executable product.")

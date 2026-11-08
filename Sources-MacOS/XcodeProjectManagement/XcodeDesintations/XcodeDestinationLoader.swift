@@ -1,13 +1,33 @@
 import Foundation
 import Support
 
-final class XcodeDestinationLoader: @unchecked Sendable {
-    private var destinations: [XcodeDestination] = []
-    private(set) var macDestinations: [XcodeDestination] = []
-    private(set) var iosDestinations: [XcodeDestination] = []
-    private(set) var tvosDestinations: [XcodeDestination] = []
-    private(set) var watchosDestinations: [XcodeDestination] = []
-    private(set) var visionosDestinations: [XcodeDestination] = []
+final class XcodeDestinationLoader: Sendable {
+    private let discover: @Sendable () async throws -> String
+    private let inventory = CrossPlatformLock<[XcodeDestination]>(initialState: [])
+
+    var allDestinations: [XcodeDestination] {
+        inventory.withLock { $0 }
+    }
+
+    var macDestinations: [XcodeDestination] {
+        allDestinations.filter { $0.platform == .macOS }
+    }
+
+    var iosDestinations: [XcodeDestination] {
+        allDestinations.filter { $0.platform == .iOS }
+    }
+
+    var tvosDestinations: [XcodeDestination] {
+        allDestinations.filter { $0.platform == .tvOS }
+    }
+
+    var watchosDestinations: [XcodeDestination] {
+        allDestinations.filter { $0.platform == .watchOS }
+    }
+
+    var visionosDestinations: [XcodeDestination] {
+        allDestinations.filter { $0.platform == .visionOS }
+    }
 
     enum LoaderError: Error {
         case xcrunNotFound
@@ -21,15 +41,32 @@ final class XcodeDestinationLoader: @unchecked Sendable {
         let udid: String?
     }
 
-    init() {}
+    init(discover: (@Sendable () async throws -> String)? = nil) {
+        self.discover = discover ?? {
+            let result = try await ProcessExecutor().execute(
+                executable: "/usr/bin/xcrun", arguments: ["xctrace", "list", "devices"]
+            )
+            guard result.isSuccess else {
+                throw XcodeProjectError
+                    .invalidConfig("Failed to list Xcode destinations: \(result.error ?? result.output)")
+            }
+            return result.output
+        }
+    }
 
     func loadDestinations(reload: Bool = false) async throws {
-        if !destinations.isEmpty, !reload {
+        if !reload, !allDestinations.isEmpty {
             return // Already loaded
         }
 
+        let snapshot = try await discoverDestinations()
+        try Task.checkCancellation()
+        publishDestinations(snapshot)
+    }
+
+    func discoverDestinations() async throws -> [XcodeDestination] {
         let destinations = try await loadDestinationsFromXctrace()
-        self.destinations = destinations + [
+        let snapshot = destinations + [
             .anyiOSDevice,
             .anyiOSSimulator,
             .anyTVOSSimulator,
@@ -41,22 +78,20 @@ final class XcodeDestinationLoader: @unchecked Sendable {
             .myMac(),
             .anyMac()
         ]
-        macDestinations = self.destinations.filter { $0.platform == .macOS }
-        iosDestinations = self.destinations.filter { $0.platform == .iOS }
-        tvosDestinations = self.destinations.filter { $0.platform == .tvOS }
-        watchosDestinations = self.destinations.filter { $0.platform == .watchOS }
-        visionosDestinations = self.destinations.filter { $0.platform == .visionOS }
+        try Task.checkCancellation()
+        return snapshot
+    }
+
+    func publishDestinations(_ snapshot: [XcodeDestination]) {
+        inventory.withLock { $0 = snapshot }
     }
 
     private func loadDestinationsFromXctrace() async throws -> [XcodeDestination] {
-        let result = try await ProcessExecutor().execute(
-            executable: "/usr/bin/xcrun", arguments: ["xctrace", "list", "devices"]
-        )
-        guard result.isSuccess else {
-            throw XcodeProjectError.invalidConfig("Failed to list Xcode destinations: \(result.error ?? result.output)")
-        }
-        let output = result.output
+        let output = try await discover()
+        return parseXctraceDestinations(output)
+    }
 
+    func parseXctraceDestinations(_ output: String) -> [XcodeDestination] {
         var destinations: [XcodeDestination] = []
         let lines = output.components(separatedBy: .newlines)
         var currentSection = ""
@@ -145,7 +180,8 @@ final class XcodeDestinationLoader: @unchecked Sendable {
             platform: platform,
             type: .device,
             version: version,
-            isAvailable: isAvailable
+            isAvailable: isAvailable,
+            state: isAvailable ? "connected" : "disconnected"
         )
     }
 

@@ -4,6 +4,7 @@ import XcodeProj
 /// Parsed projects and source lists owned by one XcodeProjectManager.
 struct XcodeProjectStore {
     private var projects: [URL: XcodeProj] = [:]
+    private var contextTargets: [String: [String: XcodeTarget]] = [:]
     private var sourceFiles: [XcodeTargetIdentifier: [SourceItem]] = [:]
     var compilerSettings = CompilerSettingsCache()
 
@@ -14,6 +15,15 @@ struct XcodeProjectStore {
         assignFileParents(in: project)
         projects[key] = project
         return project
+    }
+
+    mutating func registerContextTargets(_ targets: [String: XcodeTarget], projectURL: URL) {
+        let key = projectURL.resolvingSymlinksInPath().standardizedFileURL.path
+        if contextTargets[key] == nil { contextTargets[key] = targets }
+    }
+
+    func contextTarget(projectURL: URL, blueprintIdentifier: String) -> XcodeTarget? {
+        contextTargets[projectURL.resolvingSymlinksInPath().standardizedFileURL.path]?[blueprintIdentifier]
     }
 
     private func assignFileParents(in project: XcodeProj) {

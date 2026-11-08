@@ -36,11 +36,21 @@ Settings depend on the SourceKit-LSP version. Each preparation checks for change
 sources or deleted products. Failures include build output; a failed or cancelled
 build can be retried.
 
-Within one server process, compile, test, preparation, and builds before debug
-share a queue for each DerivedData directory, including explicit path overrides.
-Builds in different directories can run concurrently. Cancellation waits for the
-process to exit and its output to drain before the next build starts. Separate
-server processes and builds started directly in Xcode are outside this queue.
+Compile, test, preparation, builds before debug, and build-settings queries with
+an explicit DerivedData path share a queue for that directory. An operating-system
+file lock also coordinates separate sourcekit-bsp processes, including the servers
+started by vscode-bsp and SourceKit-LSP. Different directories can run concurrently.
+Cancellation removes a waiting request or waits for its running process and output
+to finish before releasing the lock.
+
+Lock files remain in `~/Library/Caches/sourcekit-bsp/build-locks`, outside DerivedData,
+so cache cleanup cannot replace a lock that another process is waiting for. The
+operating system releases a process's lock when it closes the file or exits.
+
+After upgrading, restart both the vscode-bsp connection and SourceKit-LSP's server.
+Let builds from older server processes finish first. Xcode GUI builds and manual
+`xcodebuild` commands do not use this lock; avoid running them concurrently against
+the same DerivedData directory.
 
 ## Keep executable and project paths separate
 

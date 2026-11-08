@@ -99,6 +99,11 @@ that provides build, run, test, and debug controls. The
 [Swift extension](https://github.com/swiftlang/vscode-swift) runs SourceKit-LSP
 for code completion and navigation. Each client uses its own BSP connection.
 
+Xcode builds from separate sourcekit-bsp processes coordinate access to the same
+DerivedData directory with a file lock. After upgrading, restart both clients'
+servers once older builds finish. Xcode GUI builds and manual `xcodebuild` commands
+do not participate in this lock. See [indexing and paths](Docs/wiki/Indexing-and-Paths.md).
+
 1. Install the server as described [above](#install) and follow the
    [vscode-bsp installation steps](https://github.com/aelam/vscode-bsp#installation).
    For Swift editing, also install the Swift extension.
@@ -120,8 +125,8 @@ for code completion and navigation. Each client uses its own BSP connection.
    Its `.bsp` directory must be at that folder's root.
 5. vscode-bsp discovers and connects to the server on activation.
    If needed, run **BSP: Connect BSP Servers** from the Command Palette.
-6. Run **BSP: Show Build Targets** to open **BSP Targets**.
-   Expand a target and select its **Configuration** and **Destination**.
+6. Run **BSP: Show Build Targets** to open **BSP**.
+   Expand the server's **Build Context** to select the scheme, configuration, and destination.
    Use its **Compile Target**, **Build and Run**, **Build and Test**, or **Build and Debug Target** action, as supported.
 
 Use the same Xcode toolchain for the server and Swift extension.
@@ -131,10 +136,94 @@ The clients start the executable in `argv`; running it directly waits for protoc
 For projects with multiple workspaces, configure `.sourcekit-bsp/project.json`;
 see [project configuration](Docs/wiki/Getting-Started.md#configure-the-application-project).
 
+## Multiple connections in one workspace
+
+A parent workspace can keep several connection files in `.bsp`. Each file starts
+an independent server process with its own targets and execution context. All
+connections initialize with the same parent workspace URI.
+
+The server accepts one of `--package PATH`, `--project PATH`, or `--workspace PATH`.
+Relative paths are resolved against `build/initialize.rootUri`, not the process's
+working directory. A launch selection takes precedence over the parent's
+`.sourcekit-bsp/project.json` and remains selected across reloads. The three
+selectors are mutually exclusive; malformed options fail on stderr before the
+stdio server starts. These are sourcekit-bsp CLI options carried in the standard
+`argv` field, not new BSP fields or requests.
+
+For example, place these four files in the parent `.bsp` directory:
+
+`.bsp/swift-a.json`:
+
+```json
+{"name":"Swift A","argv":["sourcekit-bsp","--package","packages/A"],"version":"1.0","bspVersion":"2.2.0","languages":["swift"]}
+```
+
+`.bsp/swift-b.json`:
+
+```json
+{"name":"Swift B","argv":["sourcekit-bsp","--package","packages/B"],"version":"1.0","bspVersion":"2.2.0","languages":["swift"]}
+```
+
+`.bsp/xcode-a.json`:
+
+```json
+{"name":"Xcode A","argv":["sourcekit-bsp","--project","apps/A/App.xcodeproj"],"version":"1.0","bspVersion":"2.2.0","languages":["swift"]}
+```
+
+`.bsp/xcode-b.json`:
+
+```json
+{"name":"Xcode B","argv":["sourcekit-bsp","--project","apps/B/App.xcodeproj"],"version":"1.0","bspVersion":"2.2.0","languages":["swift"]}
+```
+
+Use `--workspace apps/A/App.xcworkspace` for an Xcode workspace instead of a
+project. Xcode connections require macOS. SwiftPM products stay in each package's
+build directory; Xcode derived data is keyed by the selected container path, so
+projects with the same product name have separate outputs. Context IDs belong to
+one connection and cannot be used on another connection.
+
+SourceKit-LSP 6.4 cannot select a specific connection when a workspace contains
+multiple Swift/C-family connection files. Target-level BSP operations can use
+these independent connections, but individual test discovery and source locations
+need a matching SourceKit-LSP connection. The companion vscode-bsp client reports
+this ambiguity. Use separate workspace folders with one Swift connection each
+when individual test discovery is required.
+
 ## SwiftPM packages
 
-Use a folder that contains `Package.swift` as the BSP workspace root. The SwiftPM
-provider loads package metadata with `swift package describe --type json`. It
+The BSP workspace can contain a package at its root or in a subdirectory.
+Keep the connection file in the workspace's `.bsp` directory and send that
+workspace's URI in `build/initialize`. A nested package does not need its own
+connection file.
+
+To select a package explicitly, create `.sourcekit-bsp/project.json` at the
+workspace root:
+
+```json
+{"package": "p3"}
+```
+
+The path is relative to the workspace root; an absolute path or a path to
+`Package.swift` is also accepted. `package` cannot be combined with `project` or
+`workspace`. An explicit package selects the SwiftPM provider even if an Xcode
+project is present. Invalid selections fail without an automatic fallback.
+Reconnect after changing the selected package.
+
+Without an explicit selection, SwiftPM first checks the workspace root. If there
+is no root manifest, it searches for one nested package. Discovery stops below
+each package and skips hidden directories, symlinks, and common build or dependency
+cache directories such as `.build`, `node_modules`, `Pods`, and `DerivedData`.
+Multiple packages require an explicit selection; the error lists their paths.
+Generated `.swiftpm/xcode/package.xcworkspace` metadata does not select the Xcode
+provider, including symlink aliases. Selecting that metadata with `--workspace`
+fails with a `--package` hint. If a real Xcode container and a root `Package.swift`
+coexist, automatic discovery requires an explicit build-system selection.
+This discovery and configuration behavior is a sourcekit-bsp feature, not a
+requirement of the BSP standard. Build commands, outputs, and default run/test
+working directories use the selected package root; context workspace scopes use
+the original workspace root.
+
+The SwiftPM provider loads package metadata with `swift package describe --type json`. It
 exposes targets, source files, dependencies, and workspace reloads without building
 package products. It loads local packages and uses `swift package show-dependencies`
 to locate resolved remote dependencies. Resolution can download packages. Plugins,
@@ -153,11 +242,15 @@ package dependents.
 
 Compile builds the selected target or executable product. For a test target, it
 uses `swift build --build-tests` to link the test runner; this can build other test
-targets in the package. Run and debug use the
+targets in the package. Without the context extension, run and debug use the
 existing product without building it. Compile first, with the same SwiftPM build
 arguments, such as `--configuration release` or `--scratch-path /path/to/build`.
 The target controls product selection; package-path and target-selection overrides
 are rejected. Run supports the server's environment and working-directory fields. Process output is streamed, and cancellation stops active commands.
+
+With the [context extension](#execution-configuration-extension), run and debug
+prepare products using the resolved configuration. Run arguments are application
+arguments on this path; the context supplies the build settings.
 
 Root test targets support `buildTarget/test`. The server uses `swift test` and a
 module filter to run only the selected targets, including XCTest and Swift Testing.
@@ -177,8 +270,9 @@ toolchain includes SourceKit-LSP, root test targets advertise discovery metadata
 for source navigation and editor test actions. Without it, target testing remains
 available.
 
-Test debugging uses the existing test bundle and lists its tests without building
-or running them. Compile the test target first with the same build arguments. The debugger launches Xcode's `xctest` runner with
+Test debugging lists the existing test bundle's tests without running them.
+Without the context extension, compile the test target first with the same build
+arguments. Context execution prepares the bundle first. The debugger launches Xcode's `xctest` runner with
 the selected module's test identifiers. XCTest and Swift Testing run in the same
 process, so source breakpoints work for both frameworks. The server supports
 SwiftPM's separate test bundles and native build system's combined test bundle.
@@ -236,6 +330,295 @@ python3 Scripts/bsp_client.py --project "$bsp_project" \
 
 The probe uses `.build/debug/sourcekit-bsp` by default. Use `--server` to select
 another build. See the [client guide](Scripts/README.md) for options.
+
+## Execution configuration extension
+
+The optional `vscode-bsp.build-context` extension, version `0.1`, discovers and
+resolves execution settings for Xcode and SwiftPM. It is an experimental extension,
+not part of the BSP standard. Other clients can keep using the standard requests.
+
+Compiler-information requests such as `buildTarget/scalacOptions`,
+`buildTarget/javacOptions`, and SourceKit compiler options describe the current
+compiler inputs. This extension instead lists selectable execution settings.
+Selecting these settings does not change the language server's indexing context.
+
+### Negotiate the extension
+
+Add this object to `build/initialize` parameters under `data.bspExtensions`:
+
+```json
+{
+  "vscode-bsp.build-context": { "version": "0.1" }
+}
+```
+
+The server accepts the extension by returning the following entry under
+`result.data.bspExtensions`. It preserves `dataKind: "sourceKit"` and the existing
+SourceKit initialization fields. The supported operation list can vary by provider.
+Targets retain toolchain and test discovery metadata. Configuration and destination
+choices are queried through `workspace/contextOptions`; targets no longer carry
+the private `data.selectors` lists. Clients that used those lists must adopt
+the context extension to offer execution settings.
+
+```json
+{
+  "vscode-bsp.build-context": {
+    "version": "0.1",
+    "required": true,
+    "operations": ["compile", "run", "test", "debug"],
+    "buildPolicies": ["build", "reuse"]
+  }
+}
+```
+
+Only an exact version match enables this mode. After acceptance, all compile,
+run, test, and debug requests on that connection must include a resolved
+`executionContext`. Missing or invalid context references fail; the server does
+not fall back to default settings. Clients that do not negotiate the extension
+keep the existing request behavior.
+
+### Discover and resolve settings
+
+| Method | Purpose |
+| --- | --- |
+| `workspace/contextOptions` | Return available configuration dimensions and effective selections. |
+| `workspace/resolveContext` | Validate a selection and return a context ID and its target set. |
+
+The discovery parameters contain only `scope` and `selection`. `operation` is
+part of resolution, not configuration discovery.
+
+Start discovery without an operation or target:
+
+```json
+{
+  "scope": { "workspaceUri": "file:///workspace/Demo" },
+  "selection": {}
+}
+```
+
+For Xcode, the response supplies all three dimensions: Scheme, Configuration,
+and Destination. Scheme contains the full list. The other fields remain visible
+with `enabled: false` and a reason until a Scheme is chosen. Send its ID in the
+next query to fill their options and enable them:
+
+```json
+{
+  "selection": { "xcode.scheme": "scheme-id-returned-by-the-server" }
+}
+```
+
+Discovery does not require the user to choose Build, Run, Test, or Debug first.
+Only after an action is chosen does resolution require its `operation`:
+
+```json
+{
+  "operation": "run",
+  "selection": {
+    "xcode.scheme": "scheme-id-returned-by-the-server",
+    "xcode.configuration": "Release",
+    "xcode.destination": "destination-id-returned-by-the-server"
+  }
+}
+```
+
+`scope`, `workspaceUri`, `targets`, and `selection` are optional. An explicit
+workspace must match the initialized workspace. Omit `targets` to discover a
+workspace execution entry, such as an Xcode scheme. An explicit target list
+restricts the execution scope; an empty list is invalid. A resolve operation is one of
+`compile`, `run`, `test`, or `debug`.
+
+The options result contains `dimensions`, `selection`, and optional `operations`
+for the selected scope. Each dimension has
+`id`, `label`, `kind`, `required`, `options`, and an optional current `value`.
+Optional `enabled` and `reason` fields describe whether the user can edit the
+dimension. Omitted `enabled` means enabled. Clients display disabled dimensions
+and their reasons, but do not open an option picker for them.
+Version `0.1` supports `kind: "enum"`. Each option has an opaque `id`, a display
+`label`, and optional `description`, `reason`, and boolean `availability` fields.
+An explicit `availability: false` marks an unavailable option. Do not infer
+capabilities or build-tool arguments from an ID. Unknown required dimension kinds
+must prevent execution in the client.
+
+Options can also include `dataKind` and `data` for structured display metadata.
+The custom `execution-destination` data kind describes a destination:
+
+```json
+{
+  "id": "destination-id-returned-by-the-server",
+  "label": "iPhone 16",
+  "availability": true,
+  "dataKind": "execution-destination",
+  "data": {
+    "kind": "simulator",
+    "platform": { "id": "ios", "label": "iOS" },
+    "osVersion": "18.5",
+    "identifier": { "label": "UDID", "value": "F76DD514-D57D-475E-9C1A-EB230A2FF86B" }
+  }
+}
+```
+
+The `kind` field is an open string. The `platform` object contains `id` and
+`label`. Known kinds include `host`, `device`, `simulator`,
+`emulator`, `remote`, `container`, and `generic`. Optional `osVersion`,
+`architecture`, and `state` fields describe known properties. Providers omit
+unknown values. Clients use these fields for display only; they must not infer
+execution capabilities from a destination kind or state. Unknown data kinds or
+destination kinds fall back to the option's label and description.
+
+| Metadata field | Meaning |
+| --- | --- |
+| `kind` | Destination type; unknown kinds remain valid. |
+| `platform` | Platform ID and display label. |
+| `osVersion` | Optional known OS version. |
+| `architecture` | Optional known architecture. |
+| `state` | Optional observed state, such as connected or booted. |
+| `identifier` | Optional display identifier with `label` and `value`, such as an actual device or simulator UDID. |
+
+The display identifier is separate from the option's opaque `id`, which remains
+the selection key. Clients must not parse an option ID to invent a display
+identifier. Xcode supplies `identifier` only for devices and simulators with an
+actual UDID. Generic destinations and host entries with synthetic platform IDs
+omit it. SwiftPM host destinations also omit it.
+
+Xcode supplies platform, destination type, and known OS versions from its device
+inventory. Its current simulator inventory does not report boot state, so that
+field is omitted. SwiftPM reports its host platform and architecture from the
+selected toolchain's target information; a deployment version is not a host OS
+version. `availability` and execution validation remain independent of metadata.
+
+Dimensions are ordered from earlier choices to dependent choices. When the user
+changes a dimension, the client queries options in that order and keeps later
+explicit choices that remain enabled and available. It removes only choices that
+are no longer valid, including removed or disabled dimensions. Selecting the
+current value does not clear later choices. Server defaults returned by discovery
+do not become saved user preferences. Version `0.1` uses this ordered model;
+servers must supply a suitable order.
+
+Within one server connection, a dimension ID has the same meaning and value
+namespace across workspace and target scopes. Use different IDs when the meaning
+is different. Clients can inherit explicit workspace choices for dimensions with
+matching IDs in a target scope; workspace-only choices do not enter that target
+selection. The server validates the resulting selection against the exact target
+scope during resolution. Incompatible choices fail instead of selecting a
+different scheme, configuration, or destination silently.
+
+Xcode workspace discovery always orders its fields as Scheme, Configuration,
+and Destination. The provider enables dependent fields after their prerequisites
+are satisfied. An automatic value can satisfy a prerequisite; display order does
+not require the user to click every field. A target scope limits the applicable
+scheme actions. Common discovery does not invent a single default configuration
+for all actions. Omitted configuration and destination choices are resolved when
+an action is requested. Run and test defaults come from their scheme actions. SwiftPM supplies
+configuration and the supported host destination, with a target selection when
+needed. It does not supply a scheme. Unknown selection keys fail. Xcode discovery
+can retain an invalid choice as unavailable with a reason so the user can change
+it. Resolution rejects incompatible selections. Discovery and resolution do not build targets, generate
+schemes, or change a global selection.
+Workspace discovery reads the selected scheme and uses loaded metadata for the
+other scheme options. Target lookups use the canonical project path and target
+identifier. Project reloads rebuild this lookup; selected scheme edits are read
+on the next query. Target-scoped discovery still checks scheme membership.
+
+Xcode destinations come from the local device inventory and platform build
+settings. These checks do not replace `xcodebuild -showdestinations` validation
+for a scheme. Generic destinations can be used for builds; run, test, and debug
+require a concrete destination. Refresh options after changing a scheme or
+configuration, and before using a saved selection. Xcode option discovery returns
+an existing inventory snapshot immediately. Once that snapshot is two seconds
+old, discovery starts a shared background refresh; the displayed list can remain
+briefly out of date while that refresh runs. Queries without a valid scheme do
+not scan devices. A background refresh failure invalidates the reusable snapshot,
+so the next discovery query waits for a new scan and reports any failure. Context
+resolution and execution always wait for a fresh scan or an in-flight refresh;
+a refresh failure prevents execution instead of using an older snapshot.
+
+Xcode target operations only use existing schemes. If no matching scheme exists,
+the operation reports an error that asks the user to create or share a scheme in
+Xcode. The server does not generate scheme files in the project.
+
+Context operation buttons reflect the selected scheme's Build, Run, and Test
+actions and their target membership. Build-action checkboxes describe which
+targets participate in each build; they do not make a library runnable or create
+a test action. Configuration, destination, and backend execution constraints are
+checked when an operation is resolved, without hiding the scheme's actions.
+
+Xcode test contexts use the scheme's default Test Plan when one is configured.
+The server reads its enabled test targets to validate the requested scope and
+passes the plan name to `xcodebuild`. Xcode applies the plan's test settings,
+configurations, and test filters. Selecting a different Test Plan is not exposed
+as a context option yet. Ambiguous scheme or plan names are rejected.
+
+Application Run and Debug read enabled arguments and environment variables from
+the selected scheme and expand build-setting references. The server passes these
+values to the application launcher. The scheme's custom LLDB initialization file
+is not applied or used to determine which operations are available. Debugger
+initialization remains controlled by the existing debugger configuration.
+Unsupported launch settings, such as action scripts and custom working
+directories, still prevent context execution.
+
+Test debugging supports one app-hosted unit test target on an iOS simulator.
+It does not yet support Test Plans or custom test action settings. Unavailable
+options include a reason. These limits apply to the context path.
+
+The resolve response contains `id`, `operation`, `targets`, `buildPolicy`, and the effective
+`selection`. IDs belong to the current connection. They can be reused while valid;
+they are not task IDs or persistent settings. The server keeps at most 128 resolved
+contexts. Reconnection, project reload, cache eviction, or a changed selection can
+require resolution again. Execute requests revalidate the stored selection.
+
+### Execute with a resolved context
+
+Use the existing BSP methods. For example, after resolving a test context:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 12,
+  "method": "buildTarget/test",
+  "params": {
+    "targets": [{ "uri": "target-uri-returned-by-the-server" }],
+    "originId": "test-12",
+    "executionContext": { "id": "context-id-returned-by-resolve" }
+  }
+}
+```
+
+The additional `executionContext` field is also an extension. The request's
+operation and target set must match the resolved context; `buildTarget/run` still
+uses its standard single `target` field. Results, diagnostics, task events, test
+reports, cancellation, and DAP connections keep their existing formats.
+
+Execution settings stay separate from application arguments, test selection data,
+environment variables, and the working directory. Conflicting build flags fail
+instead of overriding the selected configuration. By default, context execution
+builds the required products with that same configuration.
+
+`workspace/resolveContext` also accepts an optional `buildPolicy`: `"build"`
+(the default) or `"reuse"`. For example, Run Without Building resolves a `run`
+context with `"buildPolicy": "reuse"`. The response echoes the policy, and the
+context ID freezes it along with the scheme, configuration, destination, and
+targets. The execute request still sends only `executionContext: {"id": "..."}`.
+
+A client can offer Without Building only when the negotiated `buildPolicies`
+contains `"reuse"`. If the field is absent, only `"build"` is supported. When
+present, the list must contain `"build"` and can also contain `"reuse"`. The client
+must check that resolution returned the requested policy; an omitted response
+policy means `"build"` for compatibility. Compile rejects `"reuse"`. Unsupported
+policies and policy mismatches fail instead of falling back to a build. Test
+arguments cannot override the frozen policy; `"build"` rejects `--skip-build`.
+
+With `"reuse"`, run and debug require existing products. Test uses
+`xcodebuild test-without-building` or `swift test --skip-build`, retaining the
+selected tests and execution settings. Missing products fail without a fallback
+build. Product lookup, build-setting queries, installation, and launch can still
+run; they do not compile products. Both application and test debugging follow
+this policy. Revalidation preserves and checks the frozen policy.
+
+This version does not provide a configuration-change notification or a general
+UI schema. Query options when configuring an operation and resolve before starting
+it. Invalid extension parameters and context references return JSON-RPC
+`InvalidParams` (`-32602`). Do not parse error text or automatically retry with
+default settings.
 
 ## Documentation
 

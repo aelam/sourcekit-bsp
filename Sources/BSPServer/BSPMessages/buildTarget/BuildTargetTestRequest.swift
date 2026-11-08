@@ -21,6 +21,7 @@ public struct BuildTargetTestRequest: ContextualRequestType, Sendable {
         public let targets: [BSPBuildTargetIdentifier]
         public let originId: String?
         public let arguments: [String]?
+        public var executionContext: BuildContextReference?
         public let environmentVariables: [String: String]?
         public let workingDirectory: URI?
         public let dataKind: TestParamsDataKind?
@@ -64,7 +65,8 @@ public struct BuildTargetTestRequest: ContextualRequestType, Sendable {
                     environmentVariables: params.environmentVariables,
                     workingDirectory: params.workingDirectory,
                     dataKind: params.dataKind,
-                    data: params.data
+                    data: params.data,
+                    executionContext: params.executionContext
                 )
                 return BuildTargetTestResponse(
                     jsonrpc: jsonrpc,
@@ -72,6 +74,11 @@ public struct BuildTargetTestRequest: ContextualRequestType, Sendable {
                     result: BuildTargetTestResult(originId: params.originId, statusCode: statusCode)
                 )
 
+            } catch let error as BuildContextError {
+                return JSONRPCErrorResponse(
+                    id: id,
+                    error: JSONRPCError(code: -32602, message: error.localizedDescription)
+                )
             } catch {
                 logger.error("Failed to test targets: \(error)")
                 return BuildTargetTestResponse(

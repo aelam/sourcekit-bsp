@@ -57,7 +57,12 @@ public actor XcodeProjectManager {
     let buildExecutor: XcodeBuildExecutor
     let settingsLoader: XcodeSettingsLoader
     let schemeLoader: XCSchemeLoader
-    let destinationLoader = XcodeDestinationLoader()
+    let destinationLoader: XcodeDestinationLoader
+    var destinationRefreshTask: Task<Void, Error>?
+    var destinationRefreshID: UUID?
+    var destinationRefreshInstant: ContinuousClock.Instant?
+    let contextDiscoveryClock: @Sendable () -> ContinuousClock.Instant
+    var destinationDiscoveryStopped = false
     var debugSessionManager: DebugSessionManager?
     var indexPreparationTasks: [UUID: Task<[XcodeTargetIdentifier], Error>] = [:]
     let indexPreparationCoordinator = IndexPreparationCoordinator<IndexPreparationKey>()
@@ -89,7 +94,9 @@ public actor XcodeProjectManager {
         toolchain: XcodeToolchain,
         projectLocator: XcodeProjectLocator,
         settingsLoader: XcodeSettingsLoader,
-        schemeLoader: XCSchemeLoader = XCSchemeLoader()
+        schemeLoader: XCSchemeLoader = XCSchemeLoader(),
+        contextDiscoveryClock: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
+        destinationDiscovery: (@Sendable () async throws -> String)? = nil
     ) {
         self.rootURL = rootURL
         self.xcodeProjectReference = xcodeProjectReference
@@ -99,6 +106,8 @@ public actor XcodeProjectManager {
         self.projectLocator = projectLocator
         self.settingsLoader = settingsLoader
         self.schemeLoader = schemeLoader
+        self.destinationLoader = XcodeDestinationLoader(discover: destinationDiscovery)
+        self.contextDiscoveryClock = contextDiscoveryClock
     }
 
     /// Cancel this manager's builds and reject further build requests.
@@ -107,11 +116,14 @@ public actor XcodeProjectManager {
     }
 
     public func initialize() async throws {
+        invalidateContextDestinationDiscovery()
         let configURL = rootURL.appendingPathComponent(".sourcekit-bsp/project.json")
-        let reference = if FileManager.default.fileExists(atPath: configURL.path) {
+        let reference = if let xcodeProjectReference {
+            xcodeProjectReference
+        } else if FileManager.default.fileExists(atPath: configURL.path) {
             try JSONDecoder().decode(XcodeProjectReference.self, from: Data(contentsOf: configURL))
         } else {
-            xcodeProjectReference
+            nil as XcodeProjectReference?
         }
         let start = ContinuousClock.now
         try await toolchain.initialize()
@@ -129,7 +141,7 @@ public actor XcodeProjectManager {
         let derivedDataPath = PathHash.derivedDataFullPath(for: projectLocation.workspaceOrProjectFileURL.path)
         let xcodeGlobalSettings = XcodeGlobalSettings(derivedDataPath: derivedDataPath)
 
-        try await destinationLoader.loadDestinations(reload: true)
+        try await refreshContextDestinations()
         let destinationsReady = ContinuousClock.now
 
         // Load containers for workspace projects to get actual targets

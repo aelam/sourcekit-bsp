@@ -9,9 +9,10 @@ extension XcodeProjectManager {
         environmentVariables: [String: String]?,
         workingDirectory: URL?,
         outputHandler: ProcessOutputHandler? = nil,
-        testEventHandler: (@Sendable (TestExecutionEvent) async -> Void)? = nil
+        testEventHandler: (@Sendable (TestExecutionEvent) async -> Void)? = nil,
+        skipBuild: Bool = false
     ) async throws -> XcodeRunResult {
-        let commands = try testInvocations(for: xcodeTargetIdentifiers, arguments: arguments)
+        let commands = try testInvocations(for: xcodeTargetIdentifiers, arguments: arguments, skipBuild: skipBuild)
         var failed = false
         // Xcode forwards TEST_RUNNER_ variables to the test runner.
         var environment = environmentVariables ?? [:]
@@ -72,12 +73,14 @@ extension XcodeProjectManager {
         }
     }
 
-    func testCommands(for identifiers: [XcodeTargetIdentifier], arguments: [String]?) throws -> [[String]] {
-        try testInvocations(for: identifiers, arguments: arguments).map(\.command)
+    func testCommands(
+        for identifiers: [XcodeTargetIdentifier], arguments: [String]?, skipBuild: Bool = false
+    ) throws -> [[String]] {
+        try testInvocations(for: identifiers, arguments: arguments, skipBuild: skipBuild).map(\.command)
     }
 
     private func testInvocations(
-        for identifiers: [XcodeTargetIdentifier], arguments: [String]?
+        for identifiers: [XcodeTargetIdentifier], arguments: [String]?, skipBuild: Bool
     ) throws -> [(target: XcodeTargetIdentifier, command: [String])] {
         guard let base = projectSnapshot, !identifiers.isEmpty else {
             throw XcodeProjectError.invalidConfig("Testing requires at least one test target in an initialized project")
@@ -105,9 +108,9 @@ extension XcodeProjectManager {
         }
         let flags = try selected.map { try testArguments(for: $0, arguments: arguments) }
         return try zip(selected, flags).map { target, flags in
-            let options = XcodeBuildOptions(
+            let options = try XcodeBuildOptions(
                 command: .build(
-                    action: .test,
+                    action: skipBuild ? .testWithoutBuilding : .test,
                     sdk: nil,
                     destination: nil,
                     configuration: nil,
@@ -115,10 +118,10 @@ extension XcodeProjectManager {
                     resultBundlePath: nil
                 ),
                 flags: XcodeBuildFlags(),
-                customFlags: flags
+                customFlags: argumentsWithoutScheme(flags)
             )
             return try (target.targetIdentifier, XcodeBuildCommandBuilder().buildCommand(
-                project: buildConfiguration(for: target),
+                project: buildConfiguration(for: target, arguments: arguments),
                 options: options
             ))
         }

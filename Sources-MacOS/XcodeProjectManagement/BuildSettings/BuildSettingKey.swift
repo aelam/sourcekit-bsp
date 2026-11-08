@@ -74,14 +74,12 @@ enum BuildSettingKey: String, CaseIterable {
 
     case enableModuleVerifier = "ENABLE_MODULE_VERIFIER"
     case alwaysSearchUserPaths = "ALWAYS_SEARCH_USER_PATHS" // NO
-    /// case infoPlistFile = "INFOPLIST_FILE" // =
-    /// UserStickersShareExtension/Info.plist;
     case ldRunPathSearchPaths =
         "LD_RUNPATH_SEARCH_PATHS" // = ( "$(inherited)",
     /// "@executable_path/Frameworks",
     /// "@executable_path/../../Frameworks",);
     case productBundleIdentifier =
-        "PRODUCT_BUNDLE_IDENTIFIER" // = com.linecorp.creatorsstudio.shareextension;
+        "PRODUCT_BUNDLE_IDENTIFIER" // = com.example.app.shareextension;
 
     /// Dynamic/implicit
     case batchMode = "BATCH_MODE"

@@ -21,11 +21,22 @@ public struct XcodeProjectManagerProvider: ProjectManagerProvider {
     public func canHandle(projectURL: URL) async -> Bool {
         let fileManager = FileManager.default
         do {
-            let contents = try fileManager.contentsOfDirectory(atPath: projectURL.path)
-            return contents.contains { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") }
+            let contents = try fileManager.contentsOfDirectory(at: projectURL, includingPropertiesForKeys: nil)
+            return contents.contains(where: XcodeContainerDiscovery.isBuildContainer)
         } catch {
             return false
         }
+    }
+
+    public func canHandle(projectURL: URL, config: ProjectConfiguration?) async throws -> Bool {
+        guard await canHandle(projectURL: projectURL) else { return false }
+        var directory: ObjCBool = false
+        if FileManager.default.fileExists(
+            atPath: projectURL.appendingPathComponent("Package.swift").path, isDirectory: &directory
+        ), !directory.boolValue {
+            throw XcodeProjectManagerProviderError.ambiguousBuildSystems
+        }
+        return true
     }
 
     public func createProjectManager(
@@ -38,9 +49,15 @@ public struct XcodeProjectManagerProvider: ProjectManagerProvider {
             return toolchain
         }.value
 
+        let project = config?.customSettings["project"]
+        let workspace = config?.customSettings["workspace"]
+        let reference = project == nil && workspace == nil ? nil : XcodeProjectReference(
+            workspace: workspace, project: project
+        )
         // Initialize the project manager
         let projectManager = XcodeProjectManager(
             rootURL: rootURL,
+            xcodeProjectReference: reference,
             toolchain: toolchain,
             projectLocator: XcodeProjectLocator(),
             settingsLoader: XcodeSettingsLoader(
@@ -78,9 +95,13 @@ public struct XcodeProjectManagerProvider: ProjectManagerProvider {
 public enum XcodeProjectManagerProviderError: Error, LocalizedError {
     case notAvailable(String)
     case notImplemented(String)
+    case ambiguousBuildSystems
 
     public var errorDescription: String? {
         switch self {
+        case .ambiguousBuildSystems:
+            "Both an Xcode container and Package.swift are present. "
+                + "Select --package, --project, or --workspace, or configure .sourcekit-bsp/project.json."
         case let .notAvailable(message):
             "Xcode provider not available: \(message)"
         case let .notImplemented(message):

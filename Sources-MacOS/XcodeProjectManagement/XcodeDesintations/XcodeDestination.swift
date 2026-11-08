@@ -56,6 +56,7 @@ public struct XcodeDestination: Sendable, Codable, Hashable {
     public let isAvailable: Bool
     public let isRunnable: Bool
     public let pairedDevice: XcodePairedDevice?
+    public let state: String?
 
     /// iPhone + Apple Watch
     var supportedPlatforms: [XcodeDestinationPlatform] {
@@ -75,7 +76,8 @@ public struct XcodeDestination: Sendable, Codable, Hashable {
         architectures: [XcodeDestinationArchitecture] = [.arm64, .x86_64],
         isAvailable: Bool = true,
         isRunnable: Bool = true,
-        pairedDevice: XcodePairedDevice? = nil
+        pairedDevice: XcodePairedDevice? = nil,
+        state: String? = nil
     ) {
         self.name = name
         self.id = id
@@ -86,6 +88,7 @@ public struct XcodeDestination: Sendable, Codable, Hashable {
         self.isAvailable = isAvailable
         self.isRunnable = isRunnable
         self.pairedDevice = pairedDevice
+        self.state = state
     }
 
     public var displayName: String {

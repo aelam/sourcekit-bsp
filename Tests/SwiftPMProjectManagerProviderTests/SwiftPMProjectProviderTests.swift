@@ -10,7 +10,7 @@ struct SwiftPMProjectProviderTests {
         let provider = SwiftPMProjectManagerProvider()
         #expect(await provider.canHandle(projectURL: fixture.root))
         #expect(await provider.canHandle(projectURL: fixture.root.appendingPathComponent("Package.swift")))
-        #expect(await !(provider.canHandle(projectURL: fixture.directory)))
+        #expect(await provider.canHandle(projectURL: fixture.directory))
         #expect(try await !(provider.canHandle(projectURL: #require(URL(string: "https://example.com/Package.swift")))))
         #expect(
             try SwiftPMProjectManagerProvider.packageRoot(fixture.root.appendingPathComponent("Package.swift"))

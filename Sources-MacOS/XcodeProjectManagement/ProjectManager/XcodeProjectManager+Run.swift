@@ -56,8 +56,12 @@ extension XcodeProjectManager {
 
         await progressHandler?("Resolving build settings for \(target.name)")
         let buildSettings: [String: String]
+        var settings: XcodeLaunchSettings
         do {
             buildSettings = try await resolvedBuildSettings(for: target, arguments: arguments)
+            settings = try launchSettings(for: target, arguments: arguments, buildSettings: buildSettings)
+            settings.environment.merge(environmentVariables ?? [:]) { _, new in new }
+            if let workingDirectory { settings.workingDirectory = workingDirectory.path }
         } catch {
             return XcodeRunResult(
                 statusCode: .error,
@@ -91,25 +95,15 @@ extension XcodeProjectManager {
         guard FileManager.default.fileExists(atPath: binaryPath) else {
             return XcodeRunResult(
                 statusCode: .error,
-                message: "Build product not found: \(binaryPath). Compile this target with the same configuration and destination first."
+                message: "Build product not found: \(binaryPath). " +
+                    "Compile this target with the same configuration and destination first."
             )
         }
         if sdk == .macOS {
             logger.info("Running on macOS")
-            do {
-                await progressHandler?("Running \(target.name) on macOS; waiting for the app to exit")
-                let result = try await runOnMac(binaryPath: binaryPath)
-                await progressHandler?("App exited with code \(result.exitCode)")
-                return XcodeRunResult(
-                    statusCode: .init(rawValue: Int(result.exitCode)) ?? .error,
-                    message: result.output
-                )
-            } catch {
-                return XcodeRunResult(
-                    statusCode: .error,
-                    message: "Failed to run on macOS: \(error.localizedDescription)"
-                )
-            }
+            return await runOnMac(
+                binaryPath: binaryPath, settings: settings, targetName: target.name, progressHandler: progressHandler
+            )
         }
 
         guard let destinationID = getDestination(from: arguments, buildSettings: buildSettings) else {
@@ -119,50 +113,38 @@ extension XcodeProjectManager {
             )
         }
 
+        let isSimulator: Bool
         if sdk == .iOS || sdk == .tvOS || sdk == .watchOS {
-            // real device
-            do {
-                try await installOnNonMac(
-                    isSimulator: false, outputPath: binaryPath, deviceID: destinationID,
-                    progressHandler: progressHandler
-                )
-                await progressHandler?("Launching \(target.name) on device \(destinationID)")
-                try await launchAppOnNonMac(isSimulator: false, deviceID: destinationID, appIdentifier: appIdentifier)
-                await progressHandler?("App launched on device \(destinationID)")
-                return XcodeRunResult(
-                    statusCode: .success,
-                    message: "App launched on device \(destinationID)"
-                )
-            } catch {
-                return XcodeRunResult(
-                    statusCode: .error,
-                    message: "Failed to launch on device: \(error.localizedDescription)"
-                )
-            }
+            isSimulator = false
         } else if sdk == .iOSSimulator || sdk == .tvSimulator || sdk == .watchSimulator {
-            // simulator
-            do {
-                try await installOnNonMac(
-                    isSimulator: true, outputPath: binaryPath, deviceID: destinationID,
-                    progressHandler: progressHandler
-                )
-                await progressHandler?("Launching \(target.name) on simulator \(destinationID)")
-                try await launchAppOnNonMac(isSimulator: true, deviceID: destinationID, appIdentifier: appIdentifier)
-                await progressHandler?("App launched on simulator \(destinationID)")
-                return XcodeRunResult(
-                    statusCode: .success,
-                    message: "App launched on simulator \(destinationID)"
-                )
-            } catch {
-                return XcodeRunResult(
-                    statusCode: .error,
-                    message: "Failed to launch on simulator: \(error.localizedDescription)"
-                )
-            }
+            isSimulator = true
         } else {
             return XcodeRunResult(
                 statusCode: .error,
                 message: "error: Unsupported SDK \(sdk.rawValue) for running apps"
+            )
+        }
+        let destinationKind = isSimulator ? "simulator" : "device"
+        do {
+            try await installOnNonMac(
+                isSimulator: isSimulator,
+                outputPath: binaryPath,
+                deviceID: destinationID,
+                progressHandler: progressHandler
+            )
+            await progressHandler?("Launching \(target.name) on \(destinationKind) \(destinationID)")
+            try await launchAppOnNonMac(
+                isSimulator: isSimulator,
+                deviceID: destinationID,
+                appIdentifier: appIdentifier,
+                settings: settings
+            )
+            await progressHandler?("App launched on \(destinationKind) \(destinationID)")
+            return XcodeRunResult(statusCode: .success, message: "App launched on \(destinationKind) \(destinationID)")
+        } catch {
+            return XcodeRunResult(
+                statusCode: .error,
+                message: "Failed to launch on \(destinationKind): \(error.localizedDescription)"
             )
         }
     }
@@ -226,14 +208,31 @@ extension XcodeProjectManager {
 
     // MARK: - Run on Mac
 
-    private func runOnMac(binaryPath: String) async throws -> ProcessExecutionResult {
-        let executor = ProcessExecutor()
-        return try await executor.execute(
-            executable: binaryPath,
-            arguments: [],
-            workingDirectory: nil,
-            environment: [:]
-        )
+    private func runOnMac(
+        binaryPath: String,
+        settings: XcodeLaunchSettings,
+        targetName: String,
+        progressHandler: (@Sendable (String) async -> Void)?
+    ) async -> XcodeRunResult {
+        do {
+            await progressHandler?("Running \(targetName) on macOS; waiting for the app to exit")
+            let result = try await ProcessExecutor().execute(
+                executable: binaryPath,
+                arguments: settings.arguments,
+                workingDirectory: settings.workingDirectory.map { URL(fileURLWithPath: $0) },
+                environment: settings.environment
+            )
+            await progressHandler?("App exited with code \(result.exitCode)")
+            return XcodeRunResult(
+                statusCode: .init(rawValue: Int(result.exitCode)) ?? .error,
+                message: result.output
+            )
+        } catch {
+            return XcodeRunResult(
+                statusCode: .error,
+                message: "Failed to run on macOS: \(error.localizedDescription)"
+            )
+        }
     }
 
     // MARK: simulators / real device
@@ -245,7 +244,11 @@ extension XcodeProjectManager {
         progressHandler: (@Sendable (String) async -> Void)? = nil
     ) async throws {
         let commands = DeviceCommandRunner(developerDirectory: projectSnapshot?.xcodeInstallation.developerDir)
-        let installer: AppInstaller = isSimulator ? SimulatorInstaller() : DeviceInstaller(commands: commands)
+        let installer: AppInstaller = isSimulator
+            ?
+            SimulatorInstaller(commands: SimulatorCommandRunner(developerDirectory: projectSnapshot?
+                    .xcodeInstallation.developerDir))
+            : DeviceInstaller(commands: commands)
         _ = try await installer.installApp(
             appPath: outputPath,
             deviceID: deviceID,
@@ -253,12 +256,19 @@ extension XcodeProjectManager {
         )
     }
 
-    private func launchAppOnNonMac(isSimulator: Bool, deviceID: String, appIdentifier: String) async throws {
+    private func launchAppOnNonMac(
+        isSimulator: Bool, deviceID: String, appIdentifier: String, settings: XcodeLaunchSettings
+    ) async throws {
         let commands = DeviceCommandRunner(developerDirectory: projectSnapshot?.xcodeInstallation.developerDir)
-        let launcher: AppLauncher = isSimulator ? SimulatorLauncher() : DeviceLauncher(commands: commands)
+        let launcher: AppLauncher = isSimulator
+            ?
+            SimulatorLauncher(commands: SimulatorCommandRunner(developerDirectory: projectSnapshot?
+                    .xcodeInstallation.developerDir))
+            : DeviceLauncher(commands: commands)
         _ = try await launcher.launchApp(
             deviceID: deviceID,
-            appIdentifier: appIdentifier
+            appIdentifier: appIdentifier,
+            settings: settings
         )
     }
 }

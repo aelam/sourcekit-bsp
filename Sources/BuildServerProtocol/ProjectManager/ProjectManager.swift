@@ -9,6 +9,7 @@ import Foundation
 
 public protocol ProjectManager: AnyObject, Sendable {
     var rootURL: URL { get async }
+    var workspaceRootURL: URL { get async }
 
     var project: BSPProject? { get async }
 
@@ -19,6 +20,43 @@ public protocol ProjectManager: AnyObject, Sendable {
     var capabilities: ProjectManagerCapabilities { get async }
 
     var watchedFileRoots: [URL] { get async }
+
+    var supportsBuildContexts: Bool { get async }
+    var supportedBuildPolicies: [BuildContextBuildPolicy] { get async }
+    func contextOptions(_ params: BuildContextOptionsParams) async throws -> BuildContextOptionsResult
+    func resolveContext(_ params: BuildContextParams) async throws -> BuildContext
+    func startBuild(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        logHandler: (@Sendable (String) -> Void)?,
+        context: BuildContext
+    ) async throws -> StatusCode
+    // swiftlint:disable:next function_parameter_count
+    func run(
+        targetIdentifier: BSPBuildTargetIdentifier,
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        progressHandler: (@Sendable (String) async -> Void)?,
+        context: BuildContext
+    ) async throws -> StatusCode
+    // swiftlint:disable:next function_parameter_count
+    func test(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        logHandler: (@Sendable (String) -> Void)?,
+        testEventHandler: (@Sendable (TestExecutionEvent) async -> Void)?,
+        context: BuildContext
+    ) async throws -> StatusCode
+    func startDebugSession(
+        targetIdentifiers: [BSPBuildTargetIdentifier],
+        arguments: [String]?,
+        logHandler: (@Sendable (String) -> Void)?,
+        progressHandler: (@Sendable (String) async -> Void)?,
+        context: BuildContext
+    ) async throws -> DebugSessionConnection
 
     func initialize() async throws
 
@@ -113,6 +151,10 @@ public protocol ProjectManager: AnyObject, Sendable {
 }
 
 public extension ProjectManager {
+    var workspaceRootURL: URL {
+        get async { await rootURL }
+    }
+
     func getDependencyModules(targetIdentifiers: [BSPBuildTargetIdentifier]) async throws -> [DependencyModulesItem] {
         guard await capabilities.contains(.dependencyModules) else { throw DependencyModulesError.unsupported }
         guard let project = await project else { throw DependencyModulesError.notInitialized }

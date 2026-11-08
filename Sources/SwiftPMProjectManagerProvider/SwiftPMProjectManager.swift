@@ -4,6 +4,8 @@ import Logger
 
 public actor SwiftPMProjectManager: ProjectManager {
     public let rootURL: URL
+    public let workspaceRootURL: URL
+
     public nonisolated let projectType = "swiftpm"
     public var capabilities: ProjectManagerCapabilities {
         var result: ProjectManagerCapabilities = [.compile, .run, .test, .outputPaths, .dependencyModules]
@@ -23,6 +25,7 @@ public actor SwiftPMProjectManager: ProjectManager {
     private var packageRoots: Set<URL>
     private var reloadTask: Task<Void, Error>?
     var isShutDown = false
+    var buildContextHost: BuildContextOption?
     let commandExecutable: URL
     let commandExecutor: any SwiftPMCommandExecuting
     let debugAdapter: (any SwiftPMDebugAdapterServing)?
@@ -38,9 +41,11 @@ public actor SwiftPMProjectManager: ProjectManager {
         executable: URL,
         executor: any SwiftPMCommandExecuting,
         debugAdapter: (any SwiftPMDebugAdapterServing)? = nil,
-        discoveryToolchain: URL? = nil
+        discoveryToolchain: URL? = nil,
+        workspaceRootURL: URL? = nil
     ) {
         self.rootURL = rootURL
+        self.workspaceRootURL = (workspaceRootURL ?? rootURL).standardizedFileURL.resolvingSymlinksInPath()
         self.commandExecutable = executable
         self.commandExecutor = executor
         self.debugAdapter = debugAdapter
@@ -76,6 +81,7 @@ public actor SwiftPMProjectManager: ProjectManager {
                     let snapshot = try await loader.load()
                     try Task.checkCancellation()
                     guard !isShutDown else { throw SwiftPMProjectError.shutDown }
+                    buildContextHost = nil
                     project = snapshot.project
                     executableTargets = snapshot.executableTargets
                     testModules = snapshot.testModules

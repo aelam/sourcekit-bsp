@@ -19,7 +19,8 @@ public extension XcodeProjectManager {
             )
         }
         let product = try await prepareDebugProduct(
-            xcodeTargetIdentifier: xcodeTargetIdentifier, arguments: arguments,
+            xcodeTargetIdentifier: xcodeTargetIdentifier,
+            arguments: arguments,
             progressHandler: progressHandler
         )
 
@@ -71,7 +72,7 @@ public extension XcodeProjectManager {
             let adapter = LLDBDAPServer(developerDirectory: base.xcodeInstallation.developerDir)
             manager = DebugSessionManager(
                 adapter: adapter,
-                simulatorLauncher: SimulatorDebugLauncher(),
+                simulatorLauncher: SimulatorDebugLauncher(developerDirectory: base.xcodeInstallation.developerDir),
                 deviceSession: DeviceDebugSession(
                     commands: DeviceCommandRunner(developerDirectory: base.xcodeInstallation.developerDir),
                     adapter: adapter
@@ -99,12 +100,17 @@ public extension XcodeProjectManager {
             throw DebugSessionError.unsupportedProduct(target.name)
         }
         let buildSettings = try await resolvedBuildSettings(for: target, arguments: arguments)
-        return try DebugProduct(buildSettings: buildSettings, arguments: arguments ?? [])
+        let settings = try launchSettings(
+            for: target, arguments: arguments, buildSettings: buildSettings
+        )
+        return try DebugProduct(buildSettings: buildSettings, arguments: arguments ?? [], launchSettings: settings)
     }
 }
 
 extension DebugProduct {
-    init(buildSettings: [String: String], arguments: [String]) throws {
+    init(
+        buildSettings: [String: String], arguments: [String], launchSettings: XcodeLaunchSettings = .init()
+    ) throws {
         guard let platformName = buildSettings["PLATFORM_NAME"],
               let platform = Platform(rawValue: platformName) else {
             throw DebugSessionError.unresolvedPlatform
@@ -132,7 +138,8 @@ extension DebugProduct {
             destinationID: destinationID,
             executablePath: buildSettings["EXECUTABLE_PATH"].flatMap {
                 $0.isEmpty ? nil : URL(fileURLWithPath: buildDirectory).appendingPathComponent($0).path
-            }
+            },
+            launchSettings: launchSettings
         )
     }
 }
