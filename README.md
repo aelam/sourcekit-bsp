@@ -126,7 +126,7 @@ do not participate in this lock. See [indexing and paths](Docs/wiki/Indexing-and
 5. vscode-bsp discovers and connects to the server on activation.
    If needed, run **BSP: Connect BSP Servers** from the Command Palette.
 6. Run **BSP: Show Build Targets** to open **BSP Targets**.
-   Expand a target and select its **Configuration** and **Destination**.
+   Open **BSP Contexts** to select the scheme, configuration, and destination.
    Use its **Compile Target**, **Build and Run**, **Build and Test**, or **Build and Debug Target** action, as supported.
 
 Use the same Xcode toolchain for the server and Swift extension.
@@ -331,6 +331,10 @@ Add this object to `build/initialize` parameters under `data.bspExtensions`:
 The server accepts the extension by returning the following entry under
 `result.data.bspExtensions`. It preserves `dataKind: "sourceKit"` and the existing
 SourceKit initialization fields. The supported operation list can vary by provider.
+Targets retain toolchain and test discovery metadata. Configuration and destination
+choices are queried through `workspace/contextOptions`; targets no longer carry
+the private `data.selectors` lists. Clients that used those lists must adopt
+the context extension to offer execution settings.
 
 ```json
 {

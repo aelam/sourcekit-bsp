@@ -11,29 +11,31 @@ import XcodeProjectManagement
 @testable import XcodeProjectManagerProvider
 
 struct XcodeProjectManagerProviderTests {
-    @Test(arguments: [
-        "generic/platform=iOS Simulator",
-        "generic/platform=iOS",
-        "platform=macOS,arch=arm64",
-        "SIM-UDID"
-    ])
-    func preservesDestinationArguments(destination: String) throws {
+    @Test(arguments: [XcodeProductType.unitTestBundle, .uiTestBundle, .application])
+    func targetMetadataPreservesLanguageServicesWithoutExecutionSelectors(productType: XcodeProductType) throws {
         let projectURL = URL(fileURLWithPath: "/tmp/Hello.xcodeproj")
+        let toolchain = URL(fileURLWithPath: "/tmp/Xcode.xctoolchain")
         let target = XcodeTarget(
             targetIdentifier: XcodeTargetIdentifier(projectFilePath: projectURL.path, targetName: "Hello"),
             name: "Hello",
             projectURL: projectURL,
             productName: "Hello",
-            xcodeProductType: .application,
-            destinations: [XcodeDestination(name: "Destination", id: destination, platform: .iOS, type: .simulator)]
+            xcodeProductType: productType,
+            buildConfigurations: ["Debug", "Release", "Custom"],
+            destinations: [XcodeDestination(name: "Simulator", id: "SIM-UDID", platform: .iOS, type: .simulator)]
         )
-        let bspTarget = target.asBSPBuildTarget()
+        let bspTarget = target.asBSPBuildTarget(toolchain: toolchain)
         let object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(bspTarget)) as? [String: Any])
         let data = try #require(object["data"] as? [String: Any])
-        let selectors = try #require(data["selectors"] as? [[String: Any]])
-        let values = try #require(selectors[1]["values"] as? [[String: Any]])
-        let expected = destination.contains("platform=") ? destination : "id=\(destination)"
-        #expect(values[0]["arguments"] as? [String] == ["-destination", expected])
+        #expect(object["dataKind"] as? String == "sourceKit")
+        #expect(data["toolchain"] as? String == toolchain.absoluteString)
+        #expect(Set(data.keys) == (productType.isTestBundle ? ["toolchain", "testDiscovery"] : ["toolchain"]))
+        if productType.isTestBundle {
+            let discovery = try #require(data["testDiscovery"] as? [String: Any])
+            #expect(discovery["provider"] as? String == "sourcekit-lsp")
+            #expect(discovery["version"] as? Int == 1)
+            #expect(discovery["selectionDataKind"] as? String == "sourcekit-test-selection")
+        }
     }
 
     @Test
