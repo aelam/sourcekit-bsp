@@ -72,6 +72,9 @@ public protocol ProjectManager: AnyObject, Sendable {
     func getSourceFileList(targetIdentifiers: [BSPBuildTargetIdentifier]) async throws
         -> [SourcesItem]
 
+    /// buildTarget/dependencyModules
+    func getDependencyModules(targetIdentifiers: [BSPBuildTargetIdentifier]) async throws -> [DependencyModulesItem]
+
     func outputPaths(for targets: [BSPBuildTargetIdentifier]) async throws
         -> [BuildTargetOutputPathsResult.OutputPathsItem]
 
@@ -150,6 +153,12 @@ public protocol ProjectManager: AnyObject, Sendable {
 public extension ProjectManager {
     var workspaceRootURL: URL {
         get async { await rootURL }
+    }
+
+    func getDependencyModules(targetIdentifiers: [BSPBuildTargetIdentifier]) async throws -> [DependencyModulesItem] {
+        guard await capabilities.contains(.dependencyModules) else { throw DependencyModulesError.unsupported }
+        guard let project = await project else { throw DependencyModulesError.notInitialized }
+        return try project.dependencyModules(for: targetIdentifiers)
     }
 
     var watchedFileRoots: [URL] {

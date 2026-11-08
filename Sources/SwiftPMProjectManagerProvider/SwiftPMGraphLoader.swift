@@ -1,5 +1,6 @@
 import BuildServerProtocol
 import Foundation
+import Support
 
 struct SwiftPMGraphLoader: Sendable {
     let root: URL
@@ -95,6 +96,8 @@ struct SwiftPMGraphLoader: Sendable {
         var diagnostics = diagnostics
         var targets: [BSPBuildTarget] = []
         var sources: [BSPBuildTargetIdentifier: SourcesItem] = [:]
+        var modules: [BSPBuildTargetIdentifier: [DependencyModule]] = [:]
+        let pins = try SwiftPackageResolvedFile(url: root.appendingPathComponent("Package.resolved"))
         var executableTargets: [BSPBuildTargetIdentifier: String] = [:]
         var testModules: [BSPBuildTargetIdentifier: String] = [:]
         for package in packages {
@@ -126,9 +129,10 @@ struct SwiftPMGraphLoader: Sendable {
                     of: target,
                     in: package,
                     packages: packages,
-                    resolvedPaths: resolvedPaths,
+                    resolution: (resolvedPaths, pins),
                     diagnostics: &diagnostics
                 )
+                modules[id] = edges.modules
                 var tags: [BuildTargetTag] =
                     switch target.type {
                     case "executable": [.application]
@@ -149,7 +153,7 @@ struct SwiftPMGraphLoader: Sendable {
                         baseDirectory: URI(directory),
                         tags: tags,
                         languageIds: languages.sorted { $0.rawValue < $1.rawValue },
-                        dependencies: edges,
+                        dependencies: edges.targets,
                         capabilities: .init(
                             canCompile: isRoot,
                             canTest: testModules[id] != nil,
@@ -175,7 +179,8 @@ struct SwiftPMGraphLoader: Sendable {
             targets: targets.sorted { $0.id.uri.stringValue < $1.id.uri.stringValue },
             buildRootURL: buildRoot,
             indexStoreURL: buildRoot.appendingPathComponent("index/store", isDirectory: true),
-            indexDatabaseURL: buildRoot.appendingPathComponent("index/db", isDirectory: true)
+            indexDatabaseURL: buildRoot.appendingPathComponent("index/db", isDirectory: true),
+            dependencyModules: modules
         )
         return SwiftPMGraphSnapshot(
             project: project,
@@ -227,10 +232,11 @@ struct SwiftPMGraphLoader: Sendable {
         of target: SwiftPMPackageDescription.Target,
         in package: SwiftPMLoadedPackage,
         packages: [SwiftPMLoadedPackage],
-        resolvedPaths: [String: URL],
+        resolution: (paths: [String: URL], pins: SwiftPackageResolvedFile),
         diagnostics: inout [String]
-    ) throws -> [BSPBuildTargetIdentifier] {
+    ) throws -> (targets: [BSPBuildTargetIdentifier], modules: [DependencyModule]) {
         var result: [BSPBuildTargetIdentifier] = []
+        var modules: [DependencyModule] = []
         for name in target.targetDependencies ?? [] {
             if let dependency = package.description.targets.first(where: { $0.name == name }), dependency.isSupported {
                 try result.append(Self.identifier(package: package.root, target: name))
@@ -240,22 +246,29 @@ struct SwiftPMGraphLoader: Sendable {
         }
         for name in target.productDependencies ?? [] {
             let reference = package.manifest?.packageReference(target: target.name, product: name)
-            var candidates: [(SwiftPMLoadedPackage, SwiftPMPackageDescription.Product)] = []
+            var candidates: [ResolvedProduct] = []
             for dependency in package.description.dependencies {
                 let aliases = package.manifest?.aliases(for: dependency.identity) ?? [dependency.identity.lowercased()]
                 if let reference, !aliases.contains(reference) { continue }
-                let url = try dependencyRoot(dependency, in: package.root, resolvedPaths: resolvedPaths)
+                let url = try dependencyRoot(dependency, in: package.root, resolvedPaths: resolution.paths)
                 if let loaded = packages.first(where: { $0.root.path == url.path }),
                    let product = loaded.description.products.first(where: { $0.name == name }) {
-                    candidates.append((loaded, product))
+                    candidates.append(.init(package: loaded, product: product, reference: dependency))
                 }
             }
-            guard candidates.count == 1, let (dependency, product) = candidates.first else {
+            guard candidates.count == 1, let candidate = candidates.first else {
                 diagnostics.append(
                     "Product dependency '\(name)' of target '\(target.name)' could not be resolved uniquely "
                         + "within loaded packages. Its dependency edge is omitted."
                 )
                 continue
+            }
+            let dependency = candidate.package
+            let product = candidate.product
+            if dependency.root != root {
+                modules.append(dependencyModule(
+                    product: product.name, package: dependency, reference: candidate.reference, pins: resolution.pins
+                ))
             }
             for name in product.targets {
                 if dependency.description.targets.contains(where: { $0.name == name && $0.isSupported }) {
@@ -267,25 +280,7 @@ struct SwiftPMGraphLoader: Sendable {
                 }
             }
         }
-        return Array(Set(result)).sorted { $0.uri.stringValue < $1.uri.stringValue }
-    }
-
-    private func dependencyRoot(
-        _ dependency: SwiftPMPackageDescription.Dependency,
-        in package: URL,
-        resolvedPaths: [String: URL]
-    ) throws -> URL {
-        if dependency.type == "fileSystem", let path = dependency.path {
-            return URL(fileURLWithPath: path, isDirectory: true, relativeTo: package)
-                .standardizedFileURL.resolvingSymlinksInPath()
-        }
-        guard let path = resolvedPaths[dependency.identity.lowercased()] else {
-            throw SwiftPMProjectError.invalidMetadata(
-                package: package.path,
-                details: "SwiftPM did not return a checkout path for dependency '\(dependency.identity)'."
-            )
-        }
-        return path
+        return (Array(Set(result)).sorted { $0.uri.stringValue < $1.uri.stringValue }, modules)
     }
 
     static func identifier(package: URL, target: String) throws -> BSPBuildTargetIdentifier {
@@ -311,5 +306,47 @@ struct SwiftPMGraphLoader: Sendable {
         case "mm": .objective_cpp
         default: nil
         }
+    }
+}
+
+private extension SwiftPMGraphLoader {
+    struct ResolvedProduct {
+        let package: SwiftPMLoadedPackage
+        let product: SwiftPMPackageDescription.Product
+        let reference: SwiftPMPackageDescription.Dependency
+    }
+
+    func dependencyModule(
+        product: String,
+        package: SwiftPMLoadedPackage,
+        reference: SwiftPMPackageDescription.Dependency,
+        pins: SwiftPackageResolvedFile
+    ) -> DependencyModule {
+        let pin = reference.type == "fileSystem" ? nil : pins.pin(identity: reference.identity)
+        var data: [String: LSPAny] = [
+            "uri": .string(URI(package.root).stringValue), "identity": .string(reference.identity)
+        ]
+        if let pin { data["repository"] = .string(pin.location) }
+        return DependencyModule(
+            name: product, version: pin?.version ?? "", dataKind: "swiftpm", data: .dictionary(data)
+        )
+    }
+
+    func dependencyRoot(
+        _ dependency: SwiftPMPackageDescription.Dependency,
+        in package: URL,
+        resolvedPaths: [String: URL]
+    ) throws -> URL {
+        if dependency.type == "fileSystem", let path = dependency.path {
+            return URL(fileURLWithPath: path, isDirectory: true, relativeTo: package)
+                .standardizedFileURL.resolvingSymlinksInPath()
+        }
+        guard let path = resolvedPaths[dependency.identity.lowercased()] else {
+            throw SwiftPMProjectError.invalidMetadata(
+                package: package.path,
+                details: "SwiftPM did not return a checkout path for dependency '\(dependency.identity)'."
+            )
+        }
+        return path
     }
 }

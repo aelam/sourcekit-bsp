@@ -129,7 +129,7 @@ struct SwiftPMProjectProviderTests {
         #expect(targets.filter { $0.capabilities.canTest == true }.map(\.id) == [tests.id])
         #expect(targets.allSatisfy { $0.capabilities.canDebug == false })
         #expect(targets.filter { $0.capabilities.canRun == true }.map(\.id) == [app.id])
-        #expect(await manager.capabilities == [.compile, .run, .test, .outputPaths])
+        #expect(await manager.capabilities == [.compile, .run, .test, .outputPaths, .dependencyModules])
         #expect(await manager.project?.name == "Root")
         let source = try await manager.getSourceFileList(targetIdentifiers: [core.id])
         #expect(

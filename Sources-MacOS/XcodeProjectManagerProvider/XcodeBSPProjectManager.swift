@@ -4,6 +4,10 @@ import XcodeProjectManagement
 
 /// Owns the BSP model and delegates execution to the Xcode backend.
 public actor XcodeBSPProjectManager: ProjectManager {
+    public var capabilities: ProjectManagerCapabilities {
+        [.compile, .test, .run, .debug, .prepare, .sourceKitOptions, .outputPaths, .cleanCache, .dependencyModules]
+    }
+
     let backend: XcodeProjectManager
     public var rootURL: URL {
         get async { await backend.rootURL }
@@ -28,7 +32,7 @@ public actor XcodeBSPProjectManager: ProjectManager {
         }
         let task = Task {
             try await backend.reloadProject()
-            guard let project = await backend.makeBSPProject() else {
+            guard let project = try await backend.makeBSPProject() else {
                 throw XcodeProjectError.invalidConfig("Project not initialized")
             }
             // Publish before any waiter returns from the shared reload task.

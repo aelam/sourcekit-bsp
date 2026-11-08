@@ -164,6 +164,7 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
                 .contains(.debug) ? DebugProvider(languageIds: supportedLanguages) : nil,
             inverseSourcesProvider: false,
             dependencySourcesProvider: false,
+            dependencyModulesProvider: projectCapabilities.contains(.dependencyModules),
             resourcesProvider: false,
             outputPathsProvider: projectCapabilities.contains(.outputPaths),
             buildTargetChangedProvider: true,
@@ -244,6 +245,9 @@ public struct BuildServerCapabilities: Codable, Hashable, Sendable {
     /// via method buildTarget/dependencySources
     public var dependencySourcesProvider: Bool?
 
+    /// The server provides external libraries via buildTarget/dependencyModules.
+    public var dependencyModulesProvider: Bool?
+
     /// The server provides all the resource dependencies
     /// via method buildTarget/resources
     public var resourcesProvider: Bool?
@@ -283,6 +287,7 @@ public struct BuildServerCapabilities: Codable, Hashable, Sendable {
         debugProvider: DebugProvider? = nil,
         inverseSourcesProvider: Bool? = nil,
         dependencySourcesProvider: Bool? = nil,
+        dependencyModulesProvider: Bool? = nil,
         resourcesProvider: Bool? = nil,
         outputPathsProvider: Bool? = nil,
         buildTargetChangedProvider: Bool? = nil,
@@ -298,6 +303,7 @@ public struct BuildServerCapabilities: Codable, Hashable, Sendable {
         self.debugProvider = debugProvider
         self.inverseSourcesProvider = inverseSourcesProvider
         self.dependencySourcesProvider = dependencySourcesProvider
+        self.dependencyModulesProvider = dependencyModulesProvider
         self.resourcesProvider = resourcesProvider
         self.outputPathsProvider = outputPathsProvider
         self.buildTargetChangedProvider = buildTargetChangedProvider

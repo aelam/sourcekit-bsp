@@ -227,7 +227,7 @@ The SwiftPM provider loads package metadata with `swift package describe --type 
 exposes targets, source files, dependencies, and workspace reloads without building
 package products. It loads local packages and uses `swift package show-dependencies`
 to locate resolved remote dependencies. Resolution can download packages. Plugins,
-macros, and binary targets are omitted with warnings. Dependency edges are not yet
+macros, and binary targets are omitted from the build target list with warnings. Dependency edges are not yet
 filtered by platform or build configuration.
 
 The Swift executable must be on `PATH`. If `SWIFT_EXEC` selects a `swiftc`
@@ -292,6 +292,30 @@ integration remains the option for SwiftPM code navigation.
 
 On macOS, an Xcode project takes precedence when the folder also contains
 `Package.swift`. Native Windows server support is not verified.
+
+## Dependency modules
+
+Both providers advertise `dependencyModulesProvider` and handle
+`buildTarget/dependencyModules`. The response contains one item per requested
+target, including an empty module list for targets without external libraries.
+Unknown targets return an invalid-parameters error. The query uses the loaded
+project snapshot and does not run a build or resolve packages.
+
+SwiftPM reports external package products, including binary products, and follows
+transitive dependencies in the loaded target graph. Xcode reports package products
+and linked external frameworks and libraries for each target and its workspace
+target dependencies. Xcode does not enumerate dependencies inside package products;
+SDK libraries and products of workspace targets are excluded.
+
+Package versions come from `Package.resolved` formats 1, 2, and 3. A revision is
+used when no version is available, followed by a branch name. Local packages,
+unresolved packages, and linked binaries have an empty version. Version constraints
+are not reported as resolved versions. Workspace reloads refresh the module list.
+
+The optional `data` field uses these server-specific kinds:
+
+- `swiftpm`: package `identity`, `repository`, and source-root `uri`, when available.
+- `xcode`: library `path`, `sourceTree`, and resolved file `uri`, when available.
 
 ## Try without an editor
 

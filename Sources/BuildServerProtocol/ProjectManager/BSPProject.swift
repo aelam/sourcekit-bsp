@@ -11,6 +11,7 @@ public struct BSPProject: Sendable {
     public let indexDatabaseURL: URL
 
     private let targetIndices: [BSPBuildTargetIdentifier: Int]
+    private let directDependencyModules: [BSPBuildTargetIdentifier: [DependencyModule]]
 
     public init(
         rootURL: URL,
@@ -18,13 +19,15 @@ public struct BSPProject: Sendable {
         targets: [BSPBuildTarget],
         buildRootURL: URL,
         indexStoreURL: URL,
-        indexDatabaseURL: URL
+        indexDatabaseURL: URL,
+        dependencyModules: [BSPBuildTargetIdentifier: [DependencyModule]] = [:]
     ) {
         self.rootURL = rootURL
         self.name = name
         self.buildRootURL = buildRootURL
         self.indexStoreURL = indexStoreURL
         self.indexDatabaseURL = indexDatabaseURL
+        self.directDependencyModules = dependencyModules
 
         // A workspace can reference the same project more than once.
         var seen = Set<BSPBuildTargetIdentifier>()
@@ -36,6 +39,18 @@ public struct BSPProject: Sendable {
     public func target(for identifier: BSPBuildTargetIdentifier) -> BSPBuildTarget? {
         guard let index = targetIndices[identifier] else { return nil }
         return targets[index]
+    }
+
+    /// Include external libraries from each target and its transitive build dependencies.
+    public func dependencyModules(for identifiers: [BSPBuildTargetIdentifier]) throws -> [DependencyModulesItem] {
+        try identifiers.map { identifier in
+            guard target(for: identifier) != nil else { throw DependencyModulesError.unknownTarget(identifier) }
+            var seen = Set<DependencyModule>()
+            let modules = dependencyClosure(for: [identifier])
+                .flatMap { directDependencyModules[$0] ?? [] }
+                .filter { seen.insert($0).inserted }
+            return DependencyModulesItem(target: identifier, modules: modules)
+        }
     }
 
     /// Include each requested target and its transitive dependencies once.

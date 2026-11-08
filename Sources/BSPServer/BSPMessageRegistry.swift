@@ -14,6 +14,7 @@ private let requestTypes: [any RequestType.Type] = [
     // buildTarget
     BuildTargetPrepareRequest.self, // buildTarget/prepare
     BuiltTargetSourcesRequest.self, // buildTarget/sources
+    BuildTargetDependencyModulesRequest.self, // buildTarget/dependencyModules
     BuildTargetCompileRequest.self, // buildTarget/compile
     BuildTargetRunRequest.self, // buildTarget/run
     BuildTargetTestRequest.self, // buildTarget/test
