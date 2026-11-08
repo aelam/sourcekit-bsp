@@ -18,6 +18,58 @@ private struct UnusedSimulatorLauncher: WaitForDebuggerLaunching {
 }
 
 struct DeviceDebugSessionTests {
+    @Test
+    func existingDeviceProcessIsNeverLaunchedOrTerminated() async throws {
+        let stopped = CrossPlatformLock(initialState: 0)
+        let adapter = DeviceTestAdapter(stopped: stopped)
+        let commands = DeviceCommandRunner { _, _ in
+            Issue.record("Attach must not launch or terminate the existing device process")
+            throw CancellationError()
+        }
+        let manager = DebugSessionManager(
+            adapter: adapter,
+            simulatorLauncher: UnusedSimulatorLauncher(),
+            deviceSession: DeviceDebugSession(commands: commands, adapter: adapter)
+        )
+        let identity = DeviceProcessIdentity(
+            deviceID: "PHONE",
+            bundleID: "test.Hello",
+            pid: 42,
+            executable: "/device/Hello.app/Hello",
+            localExecutable: "/local/Hello.app/Hello"
+        )
+        let connection = try await manager.makeDeviceAttachConnection(identity: identity)
+        #expect(connection.request == .attach)
+        #expect(connection.pid == 42)
+        #expect(connection.bundleId == "test.Hello")
+        await manager.stopConnection(uri: connection.uri)
+        await manager.terminateAll()
+        #expect(stopped.withLock { $0 } == 1)
+    }
+
+    @Test
+    func cancelledDeviceAttachClosesTheAdapterWithoutTerminatingTheApp() async throws {
+        let stopped = CrossPlatformLock(initialState: 0)
+        let session = DeviceDebugSession(
+            commands: DeviceCommandRunner { _, _ in
+                Issue.record("Cancelled Attach must not change device state")
+                throw CancellationError()
+            },
+            adapter: CancellingDeviceAdapter(stopped: stopped)
+        )
+        let task = Task {
+            try await session.attach(identity: .init(
+                deviceID: "PHONE",
+                bundleID: "test.Hello",
+                pid: 42,
+                executable: "/device/Hello.app/Hello",
+                localExecutable: "/local/Hello.app/Hello"
+            ))
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(stopped.withLock { $0 } == 1)
+    }
+
     @Test(arguments: [false, true])
     func deviceSessionKeepsTheWireContractAndWaitsForCleanup(cancel: Bool) async throws {
         let stopped = CrossPlatformLock(initialState: 0)
@@ -88,5 +140,13 @@ struct DeviceDebugSessionTests {
         )
         await #expect(throws: XcodeRunError.self) { try await session.start(product: product, progressHandler: nil) }
         #expect(stopped.withLock { $0 } == 1)
+    }
+}
+
+private struct CancellingDeviceAdapter: DebugAdapterServing {
+    let stopped: CrossPlatformLock<Int>
+    func start() async throws -> DebugAdapterEndpoint {
+        withUnsafeCurrentTask { $0?.cancel() }
+        return DebugAdapterEndpoint(uri: "tcp://127.0.0.1:1") { stopped.withLock { $0 += 1 } }
     }
 }

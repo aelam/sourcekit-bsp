@@ -204,6 +204,13 @@ public actor DebugSessionManager {
         }
     }
 
+    func makeDeviceAttachConnection(identity: DeviceProcessIdentity) async throws -> DebugSessionConnection {
+        guard let deviceSession else { throw DebugSessionError.unsupportedPlatform(.iOS) }
+        let (connection, endpoint) = try await deviceSession.attach(identity: identity)
+        liveEndpoints.append(endpoint)
+        return connection
+    }
+
     func didStartConnection(uri: String) {
         pendingSimulatorProcesses[uri] = nil
     }

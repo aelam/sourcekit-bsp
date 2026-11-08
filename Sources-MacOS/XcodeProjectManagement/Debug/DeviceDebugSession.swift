@@ -5,6 +5,31 @@ struct DeviceDebugSession: Sendable {
     let commands: DeviceCommandRunner
     let adapter: any DebugAdapterServing
 
+    func attach(identity: DeviceProcessIdentity) async throws -> (DebugSessionConnection, DebugAdapterEndpoint) {
+        try Task.checkCancellation()
+        let upstream = try await adapter.start()
+        let relay = DeviceDAPRelay(
+            upstream: upstream,
+            configuration: .device(id: identity.deviceID, pid: identity.pid, executable: identity.localExecutable)
+        ) {}
+        do {
+            let endpoint = try await relay.start()
+            try Task.checkCancellation()
+            return (
+                DebugSessionConnection(
+                    uri: endpoint.uri,
+                    request: .attach,
+                    pid: identity.pid,
+                    bundleId: identity.bundleID
+                ),
+                endpoint
+            )
+        } catch {
+            await relay.close(reason: error)
+            throw error
+        }
+    }
+
     func start(
         product: DebugProduct,
         progressHandler: (@Sendable (String) async -> Void)?

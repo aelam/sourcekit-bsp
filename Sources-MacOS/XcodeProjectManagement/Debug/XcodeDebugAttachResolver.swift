@@ -22,7 +22,7 @@ enum XcodeDebugAttachResolver {
             throw HostAttachError
                 .invalid(
                     "Attach does not support \(product.platform.rawValue). " +
-                        "Select an iOS simulator or macOS host. Physical device attach is not supported."
+                        "Select an iOS simulator or macOS host for local process lookup."
                 )
         }
         return try DebugAttachSelection.select(executable: executable, pid: pid, processes: processes(executable))

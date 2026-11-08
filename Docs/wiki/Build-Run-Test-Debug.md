@@ -148,8 +148,14 @@ DAP `attach` finds an existing process for the selected target and destination.
 It does not build, install, or launch the app. If exactly one process matches, the
 server uses it automatically. If several processes match, supply DAP `pid`; the
 PID must match the selected target. Attach requires a resolved debug Build Context
-and supports iOS simulator apps and macOS executables. Physical-device and test
-Attach are not supported.
+and supports iOS simulator apps, physical iOS devices, and macOS executables.
+Test Attach is not supported.
+
+For a physical iOS device, the server reads the installed app and running process
+reports from `devicectl`. It matches the exact bundle identifier and executable
+path, then rechecks the PID before attaching. The matching local build product is
+required for debug symbols. Attach does not install that product or launch the app.
+Disconnecting leaves the existing app running.
 
 Use `--destination platform=macOS` for a Mac app or `--destination id=DEVICE-UDID`
 for an iPhone. The server uses the project's signing settings through

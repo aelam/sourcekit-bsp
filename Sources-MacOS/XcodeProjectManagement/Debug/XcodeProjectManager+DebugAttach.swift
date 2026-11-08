@@ -16,6 +16,14 @@ public extension XcodeProjectManager {
         let product = try await resolveDebugProduct(
             xcodeTargetIdentifier: XcodeTargetIdentifier(rawValue: target.uri.stringValue), arguments: arguments
         )
+        if product.platform == .iOS {
+            return try await prepareDeviceAttach(
+                product: product,
+                pid: pid,
+                generation: generation,
+                commands: DeviceCommandRunner(developerDirectory: base.xcodeInstallation.developerDir)
+            )
+        }
         let simulatorExecutable = simulatorAttachExecutable
         let identity = try await XcodeDebugAttachResolver.identity(
             product: product,
@@ -52,10 +60,40 @@ public extension XcodeProjectManager {
 }
 
 extension XcodeProjectManager {
-    private func validateAttachIdentity(_ identity: HostProcessIdentity, generation: UUID) throws {
+    private func prepareDeviceAttach(
+        product: DebugProduct, pid: Int?, generation: UUID, commands: DeviceCommandRunner
+    ) async throws -> DebugSessionBackend {
+        let discovery = DeviceAttachDiscovery(commands: commands)
+        let identity = try await discovery.resolve(product: product, pid: pid)
+        try validateAttachGeneration(generation)
+        let manager = try getDebugSessionManager()
+        let connection = try await manager.makeDeviceAttachConnection(identity: identity)
+        do {
+            try Task.checkCancellation()
+            try validateAttachGeneration(generation)
+            return DebugSessionBackend(
+                connection: connection,
+                validate: {
+                    try await self.validateAttachGeneration(generation)
+                    try await discovery.validate(identity)
+                    try await self.validateAttachGeneration(generation)
+                },
+                stop: { await manager.stopConnection(uri: connection.uri) }
+            )
+        } catch {
+            await manager.stopConnection(uri: connection.uri)
+            throw error
+        }
+    }
+
+    private func validateAttachGeneration(_ generation: UUID) throws {
         guard !destinationDiscoveryStopped, buildGraphVersion == generation else {
             throw HostAttachError.invalid("The project changed. Start attach again.")
         }
+    }
+
+    private func validateAttachIdentity(_ identity: HostProcessIdentity, generation: UUID) throws {
+        try validateAttachGeneration(generation)
         try attachIdentityCheck(identity)
     }
 }

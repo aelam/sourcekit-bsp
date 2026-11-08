@@ -63,6 +63,34 @@ struct DeferredDAPSessionTests {
         #expect(state.withLock { $0.stops } == 1)
     }
 
+    @Test(arguments: [DebugSessionConnection.Request.launch, .attach])
+    func launchOnlyAllowsRestartForANativeLaunch(nativeRequest: DebugSessionConnection.Request) async throws {
+        let native = try DeferredFakeAdapter()
+        let relay = DeferredDAPSession { _, _ in
+            await DebugSessionBackend(connection: .init(
+                uri: native.start(), request: nativeRequest, program: "/tmp/Hello", pid: 42
+            )) { await native.stop() }
+        }
+        let client = try await DeferredTestClient(uri: relay.start())
+        try await client.send(request(1, "initialize"))
+        _ = try await client.response(1)
+        try await client.send(request(2, "launch"))
+        _ = try await client.response(2)
+        let capabilityEvent = try await object(client.event("capabilities"))
+        let body = try #require(capabilityEvent["body"] as? [String: Any])
+        let capabilities = try #require(body["capabilities"] as? [String: Any])
+        #expect(capabilities["supportsRestartRequest"] as? Bool == (nativeRequest == .launch))
+        try await client.send(request(3, "restart"))
+        #expect(try await object(client.response(3))["success"] as? Bool == (nativeRequest == .launch))
+        #expect(await native.hasCommand("restart") == (nativeRequest == .launch))
+        try await client.send(request(4, "threads"))
+        #expect(try await object(client.response(4))["success"] as? Bool == true)
+        try await client.send(request(5, "disconnect"))
+        _ = try await client.response(5)
+        await relay.stop()
+        await client.close()
+    }
+
     @Test(arguments: ["disconnect", "terminate", "eof", "shutdown"])
     func attachAlwaysDetaches(reason: String) async throws {
         let native = try DeferredFakeAdapter()
@@ -327,7 +355,8 @@ private actor DeferredFakeAdapter {
                                 "seq": 100, "type": "response", "request_seq": request["seq"] as? Int ?? 0,
                                 "command": command, "success": true,
                                 "body": command == "initialize" ? [
-                                    "supportsConfigurationDoneRequest": true, "supportsFunctionBreakpoints": true
+                                    "supportsConfigurationDoneRequest": true, "supportsFunctionBreakpoints": true,
+                                    "supportsRestartRequest": true
                                 ] : [:]
                             ]))
                             if holdStart && (command == "attach" || command == "launch") {

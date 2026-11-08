@@ -292,7 +292,7 @@ extension DeferredDAPSession {
         guard !stopping else { return }
         initialized = true
         if var capabilities = message["body"] as? [String: Any] {
-            if mode == .attach { capabilities["supportsRestartRequest"] = false }
+            if !canRestartNative { capabilities["supportsRestartRequest"] = false }
             try sendClient(["type": "event", "event": "capabilities", "body": ["capabilities": capabilities]])
         }
         try forward(Self.object(startRequest))
@@ -329,12 +329,20 @@ extension DeferredDAPSession {
         }
     }
 
+    private var canRestartNative: Bool {
+        mode == .launch && backend?.connection.request == .launch
+    }
+
     private func forward(_ original: [String: Any]) throws {
         var message = original
         guard let sequence = message["seq"] as? Int, let command = message["command"] as? String else {
             throw DebugAdapterRelayError.invalidFrame
         }
-        if mode == .attach, command == "restart" || command == "launch" {
+        if command == "restart", !canRestartNative {
+            try respond(original, error: "Restart requires a new debugSession/start connection.")
+            return
+        }
+        if mode == .attach, command == "launch" {
             try respond(original, error: "An attach session cannot launch or restart the application.")
             return
         }
