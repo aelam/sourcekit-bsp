@@ -14,14 +14,15 @@ struct XcodeFileChangeClassifier {
     let buildRootURL: URL
 
     private static let sourceExtensions: Set = ["swift", "c", "cc", "cpp", "cxx", "m", "mm", "h", "hpp", "hxx"]
-    private static let configurationExtensions: Set = ["pbxproj", "xcworkspace", "xcconfig", "xcscheme", "xcfilelist"]
+    private static let configurationExtensions: Set = [
+        "pbxproj", "xcworkspace", "xcconfig", "xcscheme", "xctestplan", "xcfilelist"
+    ]
 
     func requiresReload(for changes: [ProjectFileChange]) -> Bool {
         let derivedData = buildRootURL.standardizedFileURL.path
         let configuration = rootURL.appendingPathComponent(".sourcekit-bsp/project.json").standardizedFileURL
         return changes.contains { change in
-            guard let file = change.uri.fileURL?.standardizedFileURL,
-                  !isGeneratedBuildScheme(file) else { return false }
+            guard let file = change.uri.fileURL?.standardizedFileURL else { return false }
             let path = file.path
             guard path != derivedData, !path.hasPrefix(derivedData + "/"),
                   !file.pathComponents.contains(".build") else { return false }
@@ -33,15 +34,5 @@ struct XcodeFileChangeClassifier {
             }
             return change.kind != .changed && Self.sourceExtensions.contains(file.pathExtension)
         }
-    }
-
-    private func isGeneratedBuildScheme(_ file: URL) -> Bool {
-        // Helper schemes are build artifacts. Watching our own writes reloads every target.
-        let schemes = file.deletingLastPathComponent()
-        let sharedData = schemes.deletingLastPathComponent()
-        let project = sharedData.deletingLastPathComponent()
-        return file.pathExtension == "xcscheme" && file.lastPathComponent.hasPrefix("sourcekit-bsp-") &&
-            schemes.lastPathComponent == "xcschemes" && sharedData.lastPathComponent == "xcshareddata" &&
-            project.pathExtension == "xcodeproj"
     }
 }

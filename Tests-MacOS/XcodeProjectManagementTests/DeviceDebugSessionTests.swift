@@ -23,8 +23,10 @@ struct DeviceDebugSessionTests {
         let stopped = CrossPlatformLock(initialState: 0)
         let terminated = CrossPlatformLock(initialState: [Int]())
         let adapter = DeviceTestAdapter(stopped: stopped)
+        let launchedArguments = CrossPlatformLock(initialState: [String]())
         let commands = DeviceCommandRunner { arguments, _ in
             if arguments.contains("launch") {
+                launchedArguments.withLock { $0 = arguments }
                 let index = try #require(arguments.firstIndex(of: "--json-output"))
                 try #"{"info":{"outcome":"success"},"result":{"process":{"processIdentifier":42}}}"#
                     .write(toFile: arguments[index + 1], atomically: true, encoding: .utf8)
@@ -45,7 +47,8 @@ struct DeviceDebugSessionTests {
             binaryPath: "/tmp/Hello.app",
             bundleId: "com.hello.Hello",
             destinationID: "PHONE",
-            executablePath: "/bin/sleep"
+            executablePath: "/bin/sleep",
+            launchSettings: XcodeLaunchSettings(arguments: ["--message", "hello world"])
         )
         let operation = Task {
             try await manager.makeConnection(for: product) { message in
@@ -63,6 +66,7 @@ struct DeviceDebugSessionTests {
         }
         await manager.terminateAll()
         await manager.terminateAll()
+        #expect(launchedArguments.withLock { Array($0.suffix(3)) } == ["com.hello.Hello", "--message", "hello world"])
         #expect(terminated.withLock { $0 } == [42])
         #expect(stopped.withLock { $0 } == 1)
     }

@@ -59,9 +59,11 @@ If automatic project discovery is ambiguous, create `.sourcekit-bsp/project.json
 | `workspace` | Workspace path, absolute or relative to the root; takes precedence over `project` |
 | `project` | Xcode project path, absolute or relative to the root |
 | `configuration` | Default build configuration; defaults to `Debug` |
-| `scheme` | Parsed for compatibility; does not currently override target-based scheme selection |
+| `scheme` | Preferred existing scheme when it supports the requested target |
 
-The server creates `sourcekit-bsp-<Target>.xcscheme` files when a target needs a scheme.
+The server uses existing schemes and does not create scheme files. If a target has no
+matching scheme, create or share one in Xcode before building, running, testing, or
+debugging that target.
 
 ## Verify the connection
 

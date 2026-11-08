@@ -176,18 +176,22 @@ public actor XcodeToolchain {
             throw XcodeToolchainError.xcodeNotFound
         }
 
-        let result = try await processExecutor.executeXcodeBuild(
-            arguments: arguments,
-            workingDirectory: workingDirectory,
-            xcodeInstallationPath: installation.path,
-            xcodeBuildEnvironments: xcodeBuildEnvironments
-        )
-
-        return XcodeBuildResult(
-            output: result.output,
-            error: result.error,
-            exitCode: result.exitCode
-        )
+        let executor = processExecutor
+        let execute: @Sendable () async throws -> XcodeBuildResult = {
+            let result = try await executor.executeXcodeBuild(
+                arguments: arguments,
+                workingDirectory: workingDirectory,
+                xcodeInstallationPath: installation.path,
+                xcodeBuildEnvironments: xcodeBuildEnvironments
+            )
+            return XcodeBuildResult(output: result.output, error: result.error, exitCode: result.exitCode)
+        }
+        if let directory = try XcodeBuildScheduler.derivedDataDirectory(
+            command: arguments, workingDirectory: workingDirectory
+        ) {
+            return try await XcodeBuildScheduler.shared.withBuild(in: directory, operation: execute)
+        }
+        return try await execute()
     }
 
     public func getXcodeVersion() async throws -> String {

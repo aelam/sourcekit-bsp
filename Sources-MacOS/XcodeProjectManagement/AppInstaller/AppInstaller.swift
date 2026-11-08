@@ -26,13 +26,34 @@ struct DeviceInstaller: AppInstaller {
 }
 
 struct SimulatorCommandRunner: Sendable {
-    var execute: @Sendable ([String], TimeInterval) async throws -> ProcessExecutionResult = { arguments, timeout in
-        try await ProcessExecutor().execute(executable: "/usr/bin/xcrun", arguments: arguments, timeout: timeout)
+    var execute: @Sendable ([String], [String: String], TimeInterval) async throws -> ProcessExecutionResult
+
+    init(developerDirectory: URL? = nil) {
+        let selected = developerDirectory.map { ["DEVELOPER_DIR": $0.path] } ?? [:]
+        execute = { arguments, environment, timeout in
+            try await ProcessExecutor().execute(
+                executable: "/usr/bin/xcrun",
+                arguments: arguments,
+                environment: environment.merging(selected) { _, selected in selected },
+                timeout: timeout
+            )
+        }
     }
 
-    func run(arguments: [String], timeout: TimeInterval, phase: String) async throws -> ProcessExecutionResult {
+    init(execute: @escaping @Sendable ([String], TimeInterval) async throws -> ProcessExecutionResult) {
+        self.execute = { arguments, _, timeout in try await execute(arguments, timeout) }
+    }
+
+    init(executeWithEnvironment: @escaping @Sendable ([String], [String: String], TimeInterval) async throws
+        -> ProcessExecutionResult) {
+        execute = executeWithEnvironment
+    }
+
+    func run(
+        arguments: [String], environment: [String: String] = [:], timeout: TimeInterval, phase: String
+    ) async throws -> ProcessExecutionResult {
         do {
-            let result = try await execute(arguments, timeout)
+            let result = try await execute(arguments, environment, timeout)
             guard result.isSuccess else {
                 throw XcodeRunError.failedToLaunchApp("Exit \(result.exitCode): \(result.error ?? result.output)")
             }
@@ -45,11 +66,32 @@ struct SimulatorCommandRunner: Sendable {
     }
 
     func prepare(deviceID: String) async throws {
-        // bootstatus -b also boots a stopped device and accepts an already booted device.
+        // bootstatus -b accepts both stopped and booted devices.
         _ = try await run(
             arguments: ["simctl", "bootstatus", deviceID, "-b"],
             timeout: 90,
             phase: "Preparing simulator \(deviceID)"
+        )
+    }
+
+    func launch(
+        deviceID: String, appIdentifier: String, settings: XcodeLaunchSettings, stopped: Bool
+    ) async throws -> ProcessExecutionResult {
+        guard settings.workingDirectory == nil else {
+            throw XcodeRunError.failedToLaunchApp("Custom working directories are not supported for simulator launches")
+        }
+        var arguments = ["simctl", "launch"]
+        if stopped { arguments.append("--wait-for-debugger") }
+        arguments += [deviceID, appIdentifier] + settings.arguments
+        let environment = Dictionary(uniqueKeysWithValues: settings.environment.map { (
+            "SIMCTL_CHILD_" + $0.key,
+            $0.value
+        ) })
+        return try await run(
+            arguments: arguments,
+            environment: environment,
+            timeout: 60,
+            phase: "Launching \(appIdentifier) on simulator \(deviceID)"
         )
     }
 }
@@ -75,8 +117,7 @@ struct SimulatorInstaller: AppInstaller {
 
 protocol AppLauncher {
     func launchApp(
-        deviceID: String,
-        appIdentifier: String
+        deviceID: String, appIdentifier: String, settings: XcodeLaunchSettings
     ) async throws -> ProcessExecutionResult
 }
 
@@ -84,52 +125,70 @@ struct DeviceLauncher: AppLauncher {
     var commands = DeviceCommandRunner()
 
     func launchApp(
-        deviceID: String,
-        appIdentifier: String
+        deviceID: String, appIdentifier: String, settings: XcodeLaunchSettings = .init()
     ) async throws -> ProcessExecutionResult {
-        let pid = try await commands.launch(deviceID: deviceID, bundleID: appIdentifier, stopped: false)
+        let pid = try await commands.launch(
+            deviceID: deviceID,
+            bundleID: appIdentifier,
+            stopped: false,
+            settings: settings
+        )
         return ProcessExecutionResult(output: "Launched \(appIdentifier) (pid \(pid))", error: nil, exitCode: 0)
     }
 }
 
-/// Launch seam that spawns the app paused for the debugger and returns its PID.
 public protocol WaitForDebuggerLaunching: Sendable {
     func launchWaitingForDebugger(deviceID: String, appIdentifier: String) async throws -> Int
+    func launchWaitingForDebugger(deviceID: String, appIdentifier: String, settings: XcodeLaunchSettings) async throws
+        -> Int
+}
+
+public extension WaitForDebuggerLaunching {
+    func launchWaitingForDebugger(
+        deviceID: String,
+        appIdentifier: String,
+        settings: XcodeLaunchSettings
+    ) async throws -> Int {
+        guard settings == XcodeLaunchSettings() else {
+            throw XcodeRunError.failedToLaunchApp("This launcher does not support scheme launch settings")
+        }
+        return try await launchWaitingForDebugger(deviceID: deviceID, appIdentifier: appIdentifier)
+    }
 }
 
 public struct SimulatorDebugLauncher: WaitForDebuggerLaunching {
-    public init() {}
+    var commands: SimulatorCommandRunner
+
+    public init(developerDirectory: URL? = nil) {
+        commands = SimulatorCommandRunner(developerDirectory: developerDirectory)
+    }
+
+    init(commands: SimulatorCommandRunner) {
+        self.commands = commands
+    }
 
     public func launchWaitingForDebugger(deviceID: String, appIdentifier: String) async throws -> Int {
-        try await SimulatorCommandRunner().prepare(deviceID: deviceID)
+        try await launchWaitingForDebugger(deviceID: deviceID, appIdentifier: appIdentifier, settings: .init())
+    }
 
-        // Read stdout to EOF before parsing the launched process ID.
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        process.arguments = ["simctl", "launch", "--wait-for-debugger", deviceID, appIdentifier]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            throw XcodeRunError.failedToLaunchApp(
-                "Failed to launch \(appIdentifier) on simulator \(deviceID): \(error.localizedDescription)"
-            )
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        let output = String(data: data, encoding: .utf8) ?? ""
-
-        guard process.terminationStatus == 0, let pid = Self.parsePID(from: output) else {
-            throw XcodeRunError.failedToLaunchApp(
-                "Failed to launch \(appIdentifier) on simulator \(deviceID) for debugging"
-            )
+    public func launchWaitingForDebugger(
+        deviceID: String,
+        appIdentifier: String,
+        settings: XcodeLaunchSettings
+    ) async throws -> Int {
+        try await commands.prepare(deviceID: deviceID)
+        let result = try await commands.launch(
+            deviceID: deviceID,
+            appIdentifier: appIdentifier,
+            settings: settings,
+            stopped: true
+        )
+        guard let pid = Self.parsePID(from: result.output), pid > 0 else {
+            throw XcodeRunError.failedToLaunchApp("The simulator did not report a valid process ID")
         }
         return pid
     }
 
-    /// Parse the PID from `simctl launch` output "<bundleId>: <pid>".
     static func parsePID(from output: String) -> Int? {
         for line in output.split(whereSeparator: \.isNewline) {
             if let colon = line.lastIndex(of: ":") {
@@ -142,26 +201,12 @@ public struct SimulatorDebugLauncher: WaitForDebuggerLaunching {
 }
 
 struct SimulatorLauncher: AppLauncher {
-    func launchApp(
-        deviceID: String,
-        appIdentifier: String
-    ) async throws -> ProcessExecutionResult {
-        let executor = ProcessExecutor()
+    var commands = SimulatorCommandRunner()
 
-        // IMPORTANT: no `--console`. `--console` attaches to the app's stdout and
-        // blocks until the app exits, which hangs `run` forever for a GUI app.
-        // Launch detached and return immediately; the app keeps running in the
-        // simulator (its logs can be streamed separately via notifications).
-        let result = try await executor.execute(
-            executable: "/usr/bin/xcrun",
-            arguments: ["simctl", "launch", deviceID, appIdentifier]
-        )
-        guard result.exitCode == 0 else {
-            throw XcodeRunError.failedToLaunchApp(
-                "simctl launch failed for \(appIdentifier) on \(deviceID) " +
-                    "(exit \(result.exitCode)): \(result.error ?? result.output)"
-            )
-        }
-        return result
+    func launchApp(
+        deviceID: String, appIdentifier: String, settings: XcodeLaunchSettings = .init()
+    ) async throws -> ProcessExecutionResult {
+        // --console waits for the app to exit, so normal Run must launch detached.
+        try await commands.launch(deviceID: deviceID, appIdentifier: appIdentifier, settings: settings, stopped: false)
     }
 }

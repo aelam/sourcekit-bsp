@@ -33,45 +33,7 @@ struct CompileTests {
         try await manager.initialize()
         let base = try #require(await manager.projectSnapshot)
         let app = try #require(base.xcodeTargets.first { $0.name == "Hello" })
-        let renamedScheme = try #require(base.schemes.first { $0.name == "CustomApp" })
-        let selected = try await manager.findOrCreateScheme(
-            for: app,
-            in: [renamedScheme],
-            buildConfiguration: "Release"
-        )
-        #expect(selected.name == "CustomApp")
-        let disabled = try XCScheme(pathString: renamed.path)
-        disabled.name = "DevelopmentTests"
-        disabled.buildAction?.buildActionEntries.forEach { $0.buildFor = [] }
-        let disabledURL = schemesURL.appendingPathComponent("DevelopmentTests.xcscheme")
-        try disabled.write(path: .init(disabledURL.path), override: true)
-        let disabledScheme = XcodeScheme(
-            xcscheme: disabled, isInWorkspace: false, isUserScheme: false,
-            projectURL: projectURL, path: disabledURL
-        )
-        let alternate = try XCScheme(pathString: renamed.path)
-        alternate.name = "A-OtherApp"
-        let alternateURL = schemesURL.appendingPathComponent("A-OtherApp.xcscheme")
-        try alternate.write(path: .init(alternateURL.path), override: true)
-        let alternateScheme = XcodeScheme(
-            xcscheme: alternate, isInWorkspace: false, isUserScheme: false,
-            projectURL: projectURL, path: alternateURL
-        )
-        let preferred = try await manager.findOrCreateScheme(
-            for: app, in: [disabledScheme, alternateScheme, renamedScheme]
-        )
-        #expect(preferred.name == "CustomApp")
-        let fallback = try await manager.findOrCreateScheme(
-            for: app, in: [disabledScheme, alternateScheme]
-        )
-        #expect(fallback.name == "A-OtherApp")
-        let project = try await manager.buildConfiguration(for: app)
-        if case let .project(_, .scheme(name)) = project {
-            #expect(name == "CustomApp")
-            #expect(base.schemes.contains { $0.name == name })
-        } else {
-            Issue.record("Expected a project scheme")
-        }
+        try await verifySchemeSelection(manager: manager, base: base, app: app, renamed: renamed)
 
         let defaults = await manager.buildArguments(for: app, configuration: nil, arguments: nil)
         #expect(defaults.contains("generic/platform=iOS Simulator"))
@@ -127,12 +89,63 @@ struct CompileTests {
                 )
             }
         }
-        let generated = try await manager.findOrCreateScheme(for: testTarget, in: [])
-        let scheme = try XCScheme(pathString: generated.path.path)
-        let projectFile = try XcodeProj(pathString: projectURL.path)
-        let nativeTarget = try #require(projectFile.pbxproj.nativeTargets.first { $0.name == "HelloTests" })
-        #expect(scheme.testAction?.testables.first?.buildableReference.blueprintIdentifier == nativeTarget.uuid)
-        #expect(generated.primaryTarget == "HelloTests")
+        let schemeFiles = try FileManager.default.contentsOfDirectory(atPath: schemesURL.path).sorted()
+        await #expect(throws: XcodeProjectError.self) {
+            try await manager.findExistingScheme(for: testTarget, in: [])
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: schemesURL.path).sorted() == schemeFiles)
+    }
+
+    private func verifySchemeSelection(
+        manager: XcodeProjectManager, base: XcodeProjectSnapshot, app: XcodeTarget, renamed: URL
+    ) async throws {
+        let projectURL = app.projectURL
+        let schemesURL = renamed.deletingLastPathComponent()
+        let renamedScheme = try #require(base.schemes.first { $0.name == "CustomApp" })
+        let selected = try await manager.findExistingScheme(
+            for: app,
+            in: [renamedScheme],
+            buildConfiguration: "Release"
+        )
+        #expect(selected.name == "CustomApp")
+        let disabled = try XCScheme(pathString: renamed.path)
+        disabled.name = "DevelopmentTests"
+        disabled.buildAction?.buildActionEntries.forEach { $0.buildFor = [] }
+        let disabledURL = schemesURL.appendingPathComponent("DevelopmentTests.xcscheme")
+        try disabled.write(path: .init(disabledURL.path), override: true)
+        let disabledScheme = XcodeScheme(
+            xcscheme: disabled,
+            isInWorkspace: false,
+            isUserScheme: false,
+            projectURL: projectURL,
+            path: disabledURL
+        )
+        let alternate = try XCScheme(pathString: renamed.path)
+        alternate.name = "A-OtherApp"
+        let alternateURL = schemesURL.appendingPathComponent("A-OtherApp.xcscheme")
+        try alternate.write(path: .init(alternateURL.path), override: true)
+        let alternateScheme = XcodeScheme(
+            xcscheme: alternate,
+            isInWorkspace: false,
+            isUserScheme: false,
+            projectURL: projectURL,
+            path: alternateURL
+        )
+        let preferred = try await manager.findExistingScheme(
+            for: app, in: [disabledScheme, alternateScheme, renamedScheme]
+        )
+        #expect(preferred.name == "CustomApp")
+        let fallback = try await manager.findExistingScheme(
+            for: app, in: [disabledScheme, alternateScheme]
+        )
+        #expect(fallback.name == "A-OtherApp")
+        let project = try await manager.buildConfiguration(for: app)
+        if case let .project(_, .scheme(name)) = project {
+            #expect(name == "CustomApp")
+            #expect(base.schemes.contains { $0.name == name })
+        } else {
+            Issue.record("Expected a project scheme")
+        }
     }
 
     @Test
@@ -143,7 +156,9 @@ struct CompileTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let toolchain = XcodeToolchain(workingDirectory: root)
         let manager = XcodeProjectManager(
-            rootURL: root, toolchain: toolchain, projectLocator: XcodeProjectLocator(),
+            rootURL: root,
+            toolchain: toolchain,
+            projectLocator: XcodeProjectLocator(),
             settingsLoader: XcodeSettingsLoader(commandBuilder: XcodeBuildCommandBuilder(), toolchain: toolchain)
         )
         try await manager.initialize()

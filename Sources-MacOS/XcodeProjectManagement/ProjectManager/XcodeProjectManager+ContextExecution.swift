@@ -45,11 +45,21 @@ public extension XcodeProjectManager {
                 throw BuildContextError.invalid("Argument conflicts with the resolved context: \(argument)")
             }
         }
-        return [
+        var flags = [
             "-scheme", scheme.name, "-configuration", configuration,
             "-destination", destination.contains("platform=") ? destination : "id=\(destination)",
             "-derivedDataPath", base.xcodeGlobalSettings.derivedDataPath.path
-        ] + extra
+        ]
+        let plan = try contextScheme(
+            scheme,
+            operation: context.operation,
+            debugMode: context.selection["xcode.debugMode"],
+            requested: contextRequestedTargets(BuildContextScope(targets: context.targets))
+        )
+        if plan.buildsTests, let testPlan = try contextTestPlanName(scheme: scheme) {
+            flags += ["-testPlan", testPlan]
+        }
+        return flags + extra
     }
 
     func compileContext(
@@ -76,7 +86,10 @@ extension XcodeProjectManager {
             throw BuildContextError.invalid("The selected scheme no longer exists")
         }
         let plan = try contextScheme(
-            scheme, operation: context.operation, debugMode: context.selection["xcode.debugMode"], requested: targets
+            scheme,
+            operation: context.operation,
+            debugMode: context.selection["xcode.debugMode"],
+            requested: targets
         )
         var buildFlags = try argumentsWithoutScheme(flags)
         if plan.buildsTests {

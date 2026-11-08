@@ -1,3 +1,4 @@
+import Support
 import XCTest
 @testable import XcodeProjectManagement
 
@@ -39,10 +40,10 @@ final class DebugSessionManagerTests: XCTestCase {
             }
         }
         XCTAssertEqual(connected, 0)
-        let body = Data(
-            #"{"seq":1,"type":"request","command":"initialize","arguments":{"adapterID":"lldb","pathFormat":"path","linesStartAt1":true,"columnsStartAt1":true}}"#
-                .utf8
-        )
+        let body = try JSONSerialization.data(withJSONObject: [
+            "seq": 1, "type": "request", "command": "initialize",
+            "arguments": ["adapterID": "lldb", "pathFormat": "path", "linesStartAt1": true, "columnsStartAt1": true]
+        ])
         let request = Data("Content-Length: \(body.count)\r\n\r\n".utf8) + body
         let written = request.withUnsafeBytes { send(fd, $0.baseAddress, $0.count, 0) }
         XCTAssertEqual(written, request.count)
@@ -57,7 +58,7 @@ final class DebugSessionManagerTests: XCTestCase {
             }
             response.append(contentsOf: buffer.prefix(count))
             while let separator = response.range(of: Data("\r\n\r\n".utf8)) {
-                let headers = String(decoding: response[..<separator.lowerBound], as: UTF8.self)
+                let headers = try XCTUnwrap(String(data: response[..<separator.lowerBound], encoding: .utf8))
                 let length =
                     try XCTUnwrap(try Int(XCTUnwrap(headers.split(separator: ":").last?
                             .trimmingCharacters(in: .whitespacesAndNewlines))))
@@ -100,7 +101,7 @@ final class DebugSessionManagerTests: XCTestCase {
 
     private struct FakeAdapter: DebugAdapterServing {
         func start() async throws -> DebugAdapterEndpoint {
-            DebugAdapterEndpoint(uri: "tcp://127.0.0.1:9999", terminate: {})
+            DebugAdapterEndpoint(uri: "tcp://127.0.0.1:9999") {}
         }
     }
 
@@ -117,6 +118,65 @@ final class DebugSessionManagerTests: XCTestCase {
         XCTAssertEqual(conn.program, "/tmp/Hello.app/Contents/MacOS/Hello")
         XCTAssertNil(conn.pid)
         XCTAssertEqual(conn.uri, "tcp://127.0.0.1:9999")
+    }
+
+    func testMacOSPreservesSchemeLaunchArgumentsAndEnvironment() async throws {
+        let manager = DebugSessionManager(adapter: FakeAdapter(), simulatorLauncher: FakeLauncher(pid: 1))
+        let settings = XcodeLaunchSettings(
+            arguments: ["--message", "hello world", ""],
+            environment: ["MODE": "test", "EMPTY": ""],
+            workingDirectory: "/tmp/My Project"
+        )
+        let product = DebugProduct(
+            platform: .macOS,
+            binaryPath: "/tmp/App",
+            bundleId: "com.example.App",
+            simulatorUDID: nil,
+            launchSettings: settings
+        )
+        let connection = try await manager.makeConnection(for: product)
+        XCTAssertEqual(connection.args, settings.arguments)
+        XCTAssertEqual(connection.env, settings.environment)
+        XCTAssertEqual(connection.cwd, settings.workingDirectory)
+    }
+
+    private struct RecordingLauncher: WaitForDebuggerLaunching {
+        let received: CrossPlatformLock<XcodeLaunchSettings?>
+
+        func launchWaitingForDebugger(deviceID: String, appIdentifier: String) async throws -> Int {
+            XCTFail("The scheme launch settings were dropped")
+            return 1
+        }
+
+        func launchWaitingForDebugger(
+            deviceID: String, appIdentifier: String, settings: XcodeLaunchSettings
+        ) async throws -> Int {
+            XCTAssertEqual(deviceID, "SIM-UDID")
+            XCTAssertEqual(appIdentifier, "com.example.App")
+            received.withLock { $0 = settings }
+            return 4242
+        }
+    }
+
+    func testSimulatorAppliesSchemeSettingsBeforeAttaching() async throws {
+        let received = CrossPlatformLock<XcodeLaunchSettings?>(initialState: nil)
+        let manager = DebugSessionManager(
+            adapter: FakeAdapter(), simulatorLauncher: RecordingLauncher(received: received)
+        )
+        let settings = XcodeLaunchSettings(arguments: ["--feature"], environment: ["MODE": "test"])
+        let product = DebugProduct(
+            platform: .iOSSimulator,
+            binaryPath: "/tmp/App.app",
+            bundleId: "com.example.App",
+            simulatorUDID: "SIM-UDID",
+            launchSettings: settings
+        )
+        let connection = try await manager.makeConnection(for: product)
+        XCTAssertEqual(received.withLock { $0 }, settings)
+        XCTAssertEqual(connection.request, .attach)
+        XCTAssertEqual(connection.pid, 4242)
+        XCTAssertNil(connection.args)
+        XCTAssertNil(connection.env)
     }
 
     func testSimulatorProducesAttachConnection() async throws {

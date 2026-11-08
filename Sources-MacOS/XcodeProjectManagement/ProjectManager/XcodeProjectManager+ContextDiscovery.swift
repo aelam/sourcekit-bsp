@@ -15,13 +15,18 @@ public extension XcodeProjectManager {
         else { throw BuildContextError.invalid("Unknown Xcode selection key") }
         var related: [String: [XcodeTarget]] = [:]
         let schemes = base.schemes.sorted { $0.path.absoluteString < $1.path.absoluteString }
+        let nameCounts = Dictionary(grouping: schemes, by: \.name).mapValues(\.count)
+        var schemesByID: [String: XcodeScheme] = [:]
         var choices = schemes.map { scheme -> BuildContextOption in
             let id = scheme.path.resolvingSymlinksInPath().standardizedFileURL.absoluteString
+            schemesByID[id] = scheme
             do {
-                guard schemes.count(where: { $0.name == scheme.name }) == 1 else {
+                guard nameCounts[scheme.name] == 1 else {
                     throw BuildContextError.invalid("This scheme name has multiple definitions in the active container")
                 }
-                related[id] = try contextDiscoveryTargets(scheme: scheme, requested: requested)
+                related[id] = try contextDiscoveryRelatedTargets(
+                    scheme: scheme, requested: requested, selected: selection["xcode.scheme"] == id
+                )
                 return BuildContextOption(id: id, label: scheme.name, description: scheme.path.path, availability: true)
             } catch {
                 return BuildContextOption(
@@ -55,8 +60,7 @@ public extension XcodeProjectManager {
         )
         var dimensions = [schemeDimension]
         guard let id = selection["xcode.scheme"], let targets = related[id],
-              let scheme = schemes
-              .first(where: { $0.path.resolvingSymlinksInPath().standardizedFileURL.absoluteString == id }) else {
+              let scheme = schemesByID[id] else {
             dimensions += [
                 BuildContextDimension(
                     id: "xcode.configuration",
@@ -169,13 +173,23 @@ extension XcodeProjectManager {
         return dimensions
     }
 
+    private func contextDiscoveryRelatedTargets(
+        scheme: XcodeScheme, requested: [XcodeTarget]?, selected: Bool
+    ) throws -> [XcodeTarget]? {
+        guard FileManager.default.fileExists(atPath: scheme.path.path) else {
+            throw BuildContextError.invalid("This scheme is no longer available")
+        }
+        guard requested != nil || selected else { return nil }
+        return try contextDiscoveryTargets(scheme: scheme, requested: requested)
+    }
+
     private func contextDiscoveryTargets(scheme: XcodeScheme, requested: [XcodeTarget]?) throws -> [XcodeTarget] {
         let parsed = try XCScheme(pathString: scheme.path.path)
         let references = (parsed.buildAction?.buildActionEntries.map(\.buildableReference) ?? []) +
-            (parsed.testAction?.testables.filter { !$0.skipped }.map(\.buildableReference) ?? []) +
             [parsed.launchAction?.runnable?.buildableReference].compactMap(\.self)
         var seen = Set<XcodeTargetIdentifier>()
-        let targets = references.compactMap { try? contextTarget(for: $0, scheme: scheme) }
+        let tests = parsed.testAction.flatMap { try? contextTestTargets($0, scheme: scheme) } ?? []
+        let targets = (references.compactMap { try? contextTarget(for: $0, scheme: scheme) } + tests)
             .filter { seen.insert($0.targetIdentifier).inserted }
         if let requested {
             guard requested
@@ -191,10 +205,24 @@ extension XcodeProjectManager {
         scope: BuildContextScope?,
         selection: [String: String]
     ) -> [BuildContextOperation] {
-        BuildContextOperation.allCases.filter { operation in
-            var selection = selection
-            if operation != .debug { selection.removeValue(forKey: "xcode.debugMode") }
-            return (try? resolvedContext(.init(scope: scope, operation: operation, selection: selection))) != nil
+        guard let id = selection["xcode.scheme"], let scheme = projectSnapshot?.schemes.first(where: {
+            $0.path.resolvingSymlinksInPath().standardizedFileURL.absoluteString == id
+        }) else { return [] }
+        do {
+            let requested = try contextRequestedTargets(scope)
+            return BuildContextOperation.allCases.filter { operation in
+                let debugMode = operation == .debug
+                    ? selection["xcode.debugMode"] ?? (try? contextDefaultDebugMode(
+                        scheme: scheme,
+                        requested: requested
+                    ))
+                    : nil
+                return (try? contextScheme(
+                    scheme, operation: operation, debugMode: debugMode, requested: requested, validateExecution: false
+                )) != nil
+            }
+        } catch {
+            return []
         }
     }
 }

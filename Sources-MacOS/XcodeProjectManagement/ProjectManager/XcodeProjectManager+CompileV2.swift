@@ -102,12 +102,20 @@ public extension XcodeProjectManager {
             let references = (parsed.buildAction?.buildActionEntries.map(\.buildableReference) ?? []) +
                 (parsed.testAction?.testables.filter { !$0.skipped }.map(\.buildableReference) ?? []) +
                 [parsed.launchAction?.runnable?.buildableReference].compactMap(\.self)
-            guard references.contains(where: {
+            let directTarget = references.contains {
                 (try? contextTarget(for: $0, scheme: selected).targetIdentifier) == target.targetIdentifier
-            }) else { throw XcodeProjectError.invalidConfig("The selected scheme does not include \(target.name)") }
+            }
+            let planTarget = try !directTarget && parsed.testAction.map { action in
+                try contextTestTargets(action, scheme: selected).contains {
+                    $0.targetIdentifier == target.targetIdentifier
+                }
+            } == true
+            guard directTarget || planTarget else {
+                throw XcodeProjectError.invalidConfig("The selected scheme does not include \(target.name)")
+            }
             scheme = selected
         } else {
-            scheme = try findOrCreateScheme(for: target, in: base.schemes)
+            scheme = try findExistingScheme(for: target, in: base.schemes)
         }
         return try projectConfiguration(scheme: scheme)
     }

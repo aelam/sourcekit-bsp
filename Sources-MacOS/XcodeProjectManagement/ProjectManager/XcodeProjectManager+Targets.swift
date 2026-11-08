@@ -50,6 +50,7 @@ extension XcodeProjectManager {
             throw XcodeProjectError.invalidConfig("Cannot load project: \(projectURL.path)")
         }
         var targets = [XcodeTarget]()
+        var contextTargets: [String: XcodeTarget] = [:]
         for target in project.pbxproj.nativeTargets {
             let buildConfigurations = target.buildConfigurationList?.buildConfigurations
             let buildSettings = buildConfigurations?.first?.buildSettings
@@ -64,20 +65,21 @@ extension XcodeProjectManager {
             let configurationNames = target.buildConfigurationList?.buildConfigurations
                 .map(\.name) ?? []
 
-            targets.append(
-                XcodeTarget(
-                    targetIdentifier: targetIdentifier,
-                    name: target.name,
-                    projectURL: projectURL,
-                    productName: target.productName,
-                    isFromWorkspace: isFromWorkspace,
-                    xcodeTargetPlatform: platform,
-                    xcodeProductType: productType,
-                    buildConfigurations: configurationNames,
-                    destinations: loadDestinations(for: platform),
-                )
+            let loadedTarget = XcodeTarget(
+                targetIdentifier: targetIdentifier,
+                name: target.name,
+                projectURL: projectURL,
+                productName: target.productName,
+                isFromWorkspace: isFromWorkspace,
+                xcodeTargetPlatform: platform,
+                xcodeProductType: productType,
+                buildConfigurations: configurationNames,
+                destinations: loadDestinations(for: platform),
             )
+            targets.append(loadedTarget)
+            contextTargets[target.uuid] = loadedTarget
         }
+        store.registerContextTargets(contextTargets, projectURL: projectURL)
         return targets
     }
 

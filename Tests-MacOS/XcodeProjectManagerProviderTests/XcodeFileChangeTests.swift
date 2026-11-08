@@ -15,10 +15,10 @@ struct XcodeFileChangeTests {
     }
 
     @Test(arguments: [ProjectFileChange.Kind.created, .changed, .deleted])
-    func generatedSchemesDoNotInvalidateTheWorkspace(kind: ProjectFileChange.Kind) {
+    func savedSchemesInvalidateTheWorkspace(kind: ProjectFileChange.Kind) {
         let generated = event("App.xcodeproj/xcshareddata/xcschemes/sourcekit-bsp-App.xcscheme", kind: kind)
-        #expect(!classifier.requiresReload(for: [generated]))
-        #expect(!classifier.requiresReload(for: [
+        #expect(classifier.requiresReload(for: [generated]))
+        #expect(classifier.requiresReload(for: [
             event("Modules/Nested.xcodeproj/xcshareddata/xcschemes/sourcekit-bsp-Nested.xcscheme", kind: kind)
         ]))
         #expect(classifier.requiresReload(for: [
@@ -36,7 +36,7 @@ struct XcodeFileChangeTests {
         "App.xcodeproj/xcshareddata/xcschemes/sourcekit-bsp.xcscheme",
         "App.xcodeproj/xcshareddata/xcschemes/sourcekit-bsp-App.xcconfig"
     ])
-    func onlyStrictHelperPathsAreIgnored(path: String) {
+    func schemeNamesDoNotChangeReloadBehavior(path: String) {
         #expect(classifier.requiresReload(for: [event(path)]))
     }
 
@@ -61,7 +61,7 @@ struct XcodeFileChangeTests {
     @Test(arguments: [
         "App.xcodeproj/project.pbxproj", "App.xcworkspace", "App.xcworkspace/contents.xcworkspacedata",
         "Config/Debug.xcconfig", "App.xcodeproj/xcshareddata/xcschemes/App.xcscheme", "Config/Inputs.xcfilelist",
-        "Package.resolved", ".sourcekit-bsp/project.json"
+        "Package.resolved", ".sourcekit-bsp/project.json", "TestPlans/Default.xctestplan"
     ])
     func configurationChangesAlwaysReload(path: String) {
         for kind in [ProjectFileChange.Kind.created, .changed, .deleted] {

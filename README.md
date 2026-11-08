@@ -99,6 +99,11 @@ that provides build, run, test, and debug controls. The
 [Swift extension](https://github.com/swiftlang/vscode-swift) runs SourceKit-LSP
 for code completion and navigation. Each client uses its own BSP connection.
 
+Xcode builds from separate sourcekit-bsp processes coordinate access to the same
+DerivedData directory with a file lock. After upgrading, restart both clients'
+servers once older builds finish. Xcode GUI builds and manual `xcodebuild` commands
+do not participate in this lock. See [indexing and paths](Docs/wiki/Indexing-and-Paths.md).
+
 1. Install the server as described [above](#install) and follow the
    [vscode-bsp installation steps](https://github.com/aelam/vscode-bsp#installation).
    For Swift editing, also install the Swift extension.
@@ -481,6 +486,10 @@ needed. It does not supply a scheme. Unknown selection keys fail. Xcode discover
 can retain an invalid choice as unavailable with a reason so the user can change
 it. Resolution rejects incompatible selections. Discovery and resolution do not build targets, generate
 schemes, or change a global selection.
+Workspace discovery reads the selected scheme and uses loaded metadata for the
+other scheme options. Target lookups use the canonical project path and target
+identifier. Project reloads rebuild this lookup; selected scheme edits are read
+on the next query. Target-scoped discovery still checks scheme membership.
 
 Xcode destinations come from the local device inventory and platform build
 settings. These checks do not replace `xcodebuild -showdestinations` validation
@@ -495,12 +504,33 @@ so the next discovery query waits for a new scan and reports any failure. Contex
 resolution and execution always wait for a fresh scan or an in-flight refresh;
 a refresh failure prevents execution instead of using an older snapshot.
 
-The first Xcode implementation rejects test plans and ambiguous scheme names.
-It also rejects custom launch settings that the run/debug backend cannot apply,
-including enabled scheme arguments, environment variables, and action scripts.
+Xcode target operations only use existing schemes. If no matching scheme exists,
+the operation reports an error that asks the user to create or share a scheme in
+Xcode. The server does not generate scheme files in the project.
+
+Context operation buttons reflect the selected scheme's Build, Run, and Test
+actions and their target membership. Build-action checkboxes describe which
+targets participate in each build; they do not make a library runnable or create
+a test action. Configuration, destination, and backend execution constraints are
+checked when an operation is resolved, without hiding the scheme's actions.
+
+Xcode test contexts use the scheme's default Test Plan when one is configured.
+The server reads its enabled test targets to validate the requested scope and
+passes the plan name to `xcodebuild`. Xcode applies the plan's test settings,
+configurations, and test filters. Selecting a different Test Plan is not exposed
+as a context option yet. Ambiguous scheme or plan names are rejected.
+
+Application Run and Debug read enabled arguments and environment variables from
+the selected scheme and expand build-setting references. The server passes these
+values to the application launcher. The scheme's custom LLDB initialization file
+is not applied or used to determine which operations are available. Debugger
+initialization remains controlled by the existing debugger configuration.
+Unsupported launch settings, such as action scripts and custom working
+directories, still prevent context execution.
+
 Test debugging supports one app-hosted unit test target on an iOS simulator.
-Unavailable options include a reason. These restrictions apply to the new
-context path; they do not add support to the legacy execution path.
+It does not yet support Test Plans or custom test action settings. Unavailable
+options include a reason. These limits apply to the context path.
 
 The resolve response contains `id`, `operation`, `targets`, `buildPolicy`, and the effective
 `selection`. IDs belong to the current connection. They can be reused while valid;

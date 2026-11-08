@@ -9,17 +9,25 @@ public struct DebugProduct: Sendable {
     public let bundleId: String?
     public let destinationID: String?
     public let executablePath: String?
+    public let launchSettings: XcodeLaunchSettings
 
     public var simulatorUDID: String? {
         destinationID
     }
 
-    public init(platform: Platform, binaryPath: String, bundleId: String?, simulatorUDID: String?) {
+    public init(
+        platform: Platform,
+        binaryPath: String,
+        bundleId: String?,
+        simulatorUDID: String?,
+        launchSettings: XcodeLaunchSettings = .init()
+    ) {
         self.platform = platform
         self.binaryPath = binaryPath
         self.bundleId = bundleId
         self.destinationID = simulatorUDID
         self.executablePath = nil
+        self.launchSettings = launchSettings
     }
 
     public init(
@@ -27,13 +35,15 @@ public struct DebugProduct: Sendable {
         binaryPath: String,
         bundleId: String?,
         destinationID: String?,
-        executablePath: String?
+        executablePath: String?,
+        launchSettings: XcodeLaunchSettings = .init()
     ) {
         self.platform = platform
         self.binaryPath = binaryPath
         self.bundleId = bundleId
         self.destinationID = destinationID
         self.executablePath = executablePath
+        self.launchSettings = launchSettings
     }
 }
 
@@ -59,7 +69,8 @@ public enum DebugSessionError: Error, LocalizedError {
         case let .unsupportedPlatform(p): "Debugging is not supported for platform \(p.rawValue)"
         case let .unsupportedProduct(name): "Debugging requires an application target: \(name)"
         case let .productNotFound(path):
-            "Build product not found: \(path). Compile the target with the selected configuration and destination first."
+            "Build product not found: \(path). " +
+                "Compile the target with the selected configuration and destination first."
         }
     }
 }
@@ -131,13 +142,16 @@ public actor DebugSessionManager {
                 request: .launch,
                 program: product.binaryPath,
                 pid: nil,
-                bundleId: product.bundleId
+                bundleId: product.bundleId,
+                args: product.launchSettings.arguments.isEmpty ? nil : product.launchSettings.arguments,
+                env: product.launchSettings.environment.isEmpty ? nil : product.launchSettings.environment,
+                cwd: product.launchSettings.workingDirectory
             )
         case .iOSSimulator, .watchSimulator, .tvSimulator, .visionSimulator:
             guard let udid = product.simulatorUDID else { throw DebugSessionError.missingSimulatorUDID }
             guard let bundleId = product.bundleId else { throw DebugSessionError.missingBundleId }
             let pid = try await (launcher ?? simulatorLauncher).launchWaitingForDebugger(
-                deviceID: udid, appIdentifier: bundleId
+                deviceID: udid, appIdentifier: bundleId, settings: product.launchSettings
             )
             succeeded = true
             return DebugSessionConnection(

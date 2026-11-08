@@ -309,7 +309,7 @@ extension XcodeBuildContextTests {
         #expect(generic.selection["xcode.configuration"] == nil)
         #expect(generic.dimensions.last?.options.first { $0.id == "generic/platform=iOS Simulator" }?
             .availability == true)
-        #expect(generic.operations == [.compile])
+        #expect(generic.operations == [.compile, .test, .debug])
         let testOptions = try await fixture.manager.operationContextOptions(.init(
             scope: .init(targets: [id]), operation: .test, selection: generic.selection
         ))
@@ -421,7 +421,7 @@ extension XcodeBuildContextTests {
         let discovery = try await fixture.manager.contextOptions(.init())
         #expect(discovery.dimensions[0].options.allSatisfy { $0.availability == true })
         let selected = try await fixture.manager.contextOptions(.init(selection: ["xcode.scheme": fixture.schemeID]))
-        #expect(selected.operations == [.compile])
+        #expect(selected.operations == [.compile, .run, .debug])
         for operation in [BuildContextOperation.test, .run] {
             await #expect(throws: BuildContextError.self) {
                 try await fixture.manager.resolveContext(.init(
@@ -441,5 +441,78 @@ extension XcodeBuildContextTests {
             try await fixture.manager.resolveContext(.init(scope: .init(targets: [id]), operation: .compile))
         }
         #expect(try fixture.schemeFiles().isEmpty)
+    }
+}
+
+extension XcodeBuildContextTests {
+    @Test
+    func schemeCapabilitiesDoNotDependOnConfigurationOrDestination() async throws {
+        let fixture = try await ContextFixture.make()
+        defer { fixture.remove() }
+        let concrete = try await fixture.manager.contextOptions(.init(selection: [
+            "xcode.scheme": fixture.schemeID, "xcode.destination": "BSP-SIMULATOR"
+        ]))
+        #expect(concrete.operations == BuildContextOperation.allCases)
+        for selection in [
+            ["xcode.scheme": fixture.schemeID, "xcode.destination": "generic/platform=iOS Simulator"],
+            ["xcode.scheme": fixture.schemeID, "xcode.configuration": "Missing", "xcode.destination": "removed"]
+        ] {
+            let options = try await fixture.manager.contextOptions(.init(selection: selection))
+            #expect(options.operations == concrete.operations)
+            for operation in [BuildContextOperation.run, .test, .debug] {
+                await #expect(throws: BuildContextError.self) {
+                    try await fixture.manager.resolveContext(.init(operation: operation, selection: selection))
+                }
+            }
+        }
+    }
+
+    @Test
+    func schemeCapabilitiesKeepActionsWithUnsupportedExecutionSettings() async throws {
+        let fixture = try await ContextFixture.make { scheme, _ in
+            scheme.launchAction?.preActions = [.init(scriptText: "exit 0")]
+            scheme.launchAction?.commandlineArguments = .init(arguments: [.init(name: "--example", enabled: true)])
+            scheme.launchAction?.customLLDBInitFile = "$(SRCROOT)/.lldbinit"
+            scheme.testAction?.preActions = [.init(scriptText: "exit 0")]
+            scheme.testAction?.customLLDBInitFile = "$(SRCROOT)/.lldbinit"
+        }
+        defer { fixture.remove() }
+        let selection = ["xcode.scheme": fixture.schemeID, "xcode.destination": "BSP-SIMULATOR"]
+        let options = try await fixture.manager.contextOptions(.init(selection: selection))
+        #expect(options.operations == BuildContextOperation.allCases)
+        for operation in [BuildContextOperation.run, .test, .debug] {
+            await #expect(throws: BuildContextError.self) {
+                try await fixture.manager.resolveContext(.init(operation: operation, selection: selection))
+            }
+        }
+        let testDebug = selection.merging(["xcode.debugMode": "test"]) { _, new in new }
+        let tests = try await fixture.manager.contextOptions(.init(selection: testDebug))
+        #expect(tests.operations?.contains(.debug) == true)
+        await #expect(throws: BuildContextError.self) {
+            try await fixture.manager.resolveContext(.init(operation: .debug, selection: testDebug))
+        }
+    }
+
+    @Test
+    func schemeCapabilitiesUseBuildFlagsAndEnabledTestables() async throws {
+        let fixture = try await ContextFixture.make { scheme, _ in
+            scheme.buildAction?.buildActionEntries.forEach { $0.buildFor = [.testing] }
+        }
+        defer { fixture.remove() }
+        let selection = ["xcode.scheme": fixture.schemeID, "xcode.destination": "BSP-SIMULATOR"]
+        let initial = try await fixture.manager.contextOptions(.init(selection: selection))
+        #expect(initial.operations?.contains(.run) == false)
+        #expect(initial.operations?.contains(.test) == true)
+        let scheme = try XCScheme(pathString: fixture.schemeURL.path)
+        scheme.launchAction = nil
+        try scheme.write(path: .init(fixture.schemeURL.path), override: true)
+        let tests = try await fixture.manager.contextOptions(.init(selection: selection))
+        #expect(tests.operations?.contains(.test) == true)
+        #expect(tests.operations?.contains(.debug) == true)
+        scheme.testAction?.testables.forEach { $0.skipped = true }
+        try scheme.write(path: .init(fixture.schemeURL.path), override: true)
+        let disabled = try await fixture.manager.contextOptions(.init(selection: selection))
+        #expect(disabled.operations?.contains(.test) == false)
+        #expect(disabled.operations?.contains(.debug) == false)
     }
 }

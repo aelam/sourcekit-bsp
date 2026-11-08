@@ -21,7 +21,9 @@ struct DeviceDebugSession: Sendable {
         var relay: DeviceDAPRelay?
         do {
             await progressHandler?("Launching \(bundleID) on device \(deviceID), waiting for the debugger")
-            let pid = try await commands.launch(deviceID: deviceID, bundleID: bundleID, stopped: true)
+            let pid = try await commands.launch(
+                deviceID: deviceID, bundleID: bundleID, stopped: true, settings: product.launchSettings
+            )
             let launched = DeviceDebugProcess(commands: commands, deviceID: deviceID, pid: pid)
             process = launched
             try Task.checkCancellation()
