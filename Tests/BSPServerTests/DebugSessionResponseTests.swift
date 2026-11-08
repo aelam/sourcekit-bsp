@@ -4,6 +4,15 @@ import Testing
 @testable import BSPServer
 
 struct DebugSessionResponseTests {
+    @Test
+    func deferredEndpointEncodesOnlyTheStandardURI() throws {
+        let response = DebugSessionStartResponse(connection: .init(uri: "tcp://127.0.0.1:12345"))
+        let object = try #require(JSONSerialization
+            .jsonObject(with: JSONEncoder().encode(response.result)) as? [String: Any])
+        #expect(Set(object.keys) == ["uri"])
+        #expect(object["uri"] as? String == "tcp://127.0.0.1:12345")
+    }
+
     @Test(arguments: [false, true])
     func preservesOptionalLaunchConfiguration(configured: Bool) throws {
         let connection = DebugSessionConnection(

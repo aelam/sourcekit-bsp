@@ -321,7 +321,7 @@ extension SwiftPMProjectManager {
         return .init(id: reported, label: reported)
     }
 
-    private func validateContext(
+    func validateContext(
         _ context: BuildContext,
         operation: BuildContextOperation,
         targets: [BSPBuildTargetIdentifier]

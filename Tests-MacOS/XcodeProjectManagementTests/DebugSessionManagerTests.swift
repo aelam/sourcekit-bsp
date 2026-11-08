@@ -193,3 +193,30 @@ final class DebugSessionManagerTests: XCTestCase {
         XCTAssertNil(conn.program)
     }
 }
+
+extension DebugSessionManagerTests {
+    func testPendingSimulatorLaunchIsCleanedUpUntilDAPOwnsIt() async throws {
+        for didStart in [false, true] {
+            let stopped = CrossPlatformLock(initialState: [Int]())
+            let manager = DebugSessionManager(adapter: FakeAdapter(), simulatorLauncher: FakeLauncher(pid: 4242))
+            await manager.setPendingLaunchFixture(stopped: stopped)
+            let connection = try await manager.makeConnection(for: .init(
+                platform: .iOSSimulator,
+                binaryPath: "/build/Hello.app",
+                bundleId: "test.Hello",
+                simulatorUDID: "selected"
+            ))
+            if didStart { await manager.didStartConnection(uri: connection.uri) }
+            await manager.stopConnection(uri: connection.uri)
+            await manager.terminateAll()
+            XCTAssertEqual(stopped.withLock { $0 }, didStart ? [] : [4242])
+        }
+    }
+}
+
+private extension DebugSessionManager {
+    func setPendingLaunchFixture(stopped: CrossPlatformLock<[Int]>) {
+        captureLaunchedProcess = { pid, _ in .init(pid: pid, executable: "/fixture/Hello", startToken: "one") }
+        stopPendingProcess = { identity in stopped.withLock { $0.append(identity.pid) } }
+    }
+}

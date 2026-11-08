@@ -6,6 +6,7 @@ extension BSPTaskManager {
     func executeDebugWithProgress(
         originId: String?,
         buildContext: BuildOutputContext? = nil,
+        cancellationCleanup: @Sendable (DebugSessionConnection) async -> Void = { _ in },
         operation: @Sendable (
             @escaping @Sendable (String) async -> Void, @escaping @Sendable (String) -> Void
         ) async throws -> DebugSessionConnection
@@ -34,12 +35,15 @@ extension BSPTaskManager {
                     params: BuildLogMessageParams(type: 3, originId: originId, message: message)
                 ))
             }, { batcher.append($0) })
-            try Task.checkCancellation()
+            if Task.isCancelled {
+                await cancellationCleanup(result)
+                throw CancellationError()
+            }
             await stopStreaming()
             try? await finishTask(
                 taskId: task.taskId,
                 status: .ok,
-                message: "Debug adapter ready; waiting for DAP attach"
+                message: "Debug adapter ready"
             )
             return result
         } catch {

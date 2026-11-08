@@ -277,9 +277,10 @@ the selected module's test identifiers. XCTest and Swift Testing run in the same
 process, so source breakpoints work for both frameworks. The server supports
 SwiftPM's separate test bundles and native build system's combined test bundle.
 Test targets do not support ordinary Run. Test identifiers that contain commas
-cannot be passed to the XCTest selector and return an error. The client must
-forward the debug response's `args`, `env`, and `cwd` fields to DAP. This requires
-an updated client, such as [vscode-bsp PR #14](https://github.com/aelam/vscode-bsp/pull/14).
+cannot be passed to the XCTest selector and return an error. `debugSession/start`
+returns a DAP address. The client sends DAP `launch`; the server supplies the test
+runner, arguments, environment, and working directory to the native adapter.
+Use an updated [vscode-bsp](https://github.com/aelam/vscode-bsp) client.
 
 Build output paths come from `swift build --show-bin-path`; this query does not
 compile the package. After a successful build or test in the current connection,

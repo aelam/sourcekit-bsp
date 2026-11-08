@@ -12,6 +12,13 @@ struct HelloApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onAppear {
+                    willAppear()
+                }
         }
+    }
+
+    private func willAppear() {
+        print("HelloApp willAppear")
     }
 }

@@ -23,6 +23,7 @@ public actor BSPServerService: ProjectStateObserver, BSPNotificationService {
     var buildContexts: [String: BuildContext] = [:]
     var buildContextOrder: [String] = []
     var buildContextRevision = 0
+    var debugSessions: [UUID: DeferredDAPSession] = [:]
 
     /// Service state tracking
     public enum ServiceState {
@@ -78,6 +79,7 @@ public actor BSPServerService: ProjectStateObserver, BSPNotificationService {
 
         logger.debug("Stopping BSP server")
 
+        await stopDebugSessions()
         await jsonrpcConnection.close()
 
         serviceState = .stopped
