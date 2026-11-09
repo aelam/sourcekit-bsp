@@ -12,6 +12,7 @@ struct DeviceProcessIdentity: Sendable, Equatable {
 /// Matches an installed app to a running process on the selected device.
 struct DeviceAttachDiscovery: Sendable {
     let commands: DeviceCommandRunner
+    private let timing = AttachTiming.current ?? AttachTiming()
 
     func resolve(product: DebugProduct, pid: Int?) async throws -> DeviceProcessIdentity {
         try Task.checkCancellation()
@@ -71,6 +72,12 @@ struct DeviceAttachDiscovery: Sendable {
     }
 
     private func query<Result: Decodable>(_ subject: String, deviceID: String) async throws -> Result {
+        try await timing.measure("device.\(subject)") {
+            try await readReport(subject, deviceID: deviceID)
+        }
+    }
+
+    private func readReport<Result: Decodable>(_ subject: String, deviceID: String) async throws -> Result {
         try Task.checkCancellation()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
