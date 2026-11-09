@@ -2,6 +2,9 @@ import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
 import Logger
+#if os(macOS)
+import XcodeProjectManagement
+#endif
 
 extension BSPServerService {
     func startDebugSession(
@@ -24,7 +27,19 @@ extension BSPServerService {
                 guard let context else {
                     throw BuildContextError.invalid("Attach requires a resolved debug executionContext.")
                 }
+                #if os(macOS)
+                let report: @Sendable (String) async -> Void = { [weak self] message in
+                    try? await self?.sendNotification(ServerJSONRPCNotification(
+                        method: "build/logMessage",
+                        params: BuildLogMessageParams(type: 3, originId: originId, message: message)
+                    ))
+                }
+                return try await XcodeAttachTiming.$report.withValue(report) {
+                    try await projectManager.prepareDebugAttach(context: context, pid: pid)
+                }
+                #else
                 return try await projectManager.prepareDebugAttach(context: context, pid: pid)
+                #endif
             }
             let connection = try await self.prepareDebugLaunch(
                 projectManager: projectManager,

@@ -193,7 +193,8 @@ public actor DebugSessionManager {
     }
 
     func makeAttachConnection(identity: HostProcessIdentity) async throws -> DebugSessionConnection {
-        let endpoint = try await adapter.start()
+        let timing = AttachTiming.current ?? AttachTiming()
+        let endpoint = try await timing.measure("lldb.start") { try await adapter.start() }
         do {
             try Task.checkCancellation()
             liveEndpoints.append(endpoint)

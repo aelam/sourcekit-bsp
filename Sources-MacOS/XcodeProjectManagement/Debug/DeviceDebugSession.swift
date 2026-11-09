@@ -7,13 +7,15 @@ struct DeviceDebugSession: Sendable {
 
     func attach(identity: DeviceProcessIdentity) async throws -> (DebugSessionConnection, DebugAdapterEndpoint) {
         try Task.checkCancellation()
-        let upstream = try await adapter.start()
+        let timing = AttachTiming.current ?? AttachTiming()
+        let upstream = try await timing.measure("lldb.start") { try await adapter.start() }
         let relay = DeviceDAPRelay(
             upstream: upstream,
-            configuration: .device(id: identity.deviceID, pid: identity.pid, executable: identity.localExecutable)
+            configuration: .device(id: identity.deviceID, pid: identity.pid, executable: identity.localExecutable),
+            timing: timing
         ) {}
         do {
-            let endpoint = try await relay.start()
+            let endpoint = try await timing.measure("relay.listen") { try await relay.start() }
             try Task.checkCancellation()
             return (
                 DebugSessionConnection(

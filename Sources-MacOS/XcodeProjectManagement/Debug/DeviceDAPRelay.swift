@@ -6,6 +6,8 @@ import Network
 actor DeviceDAPRelay {
     private let upstream: DebugAdapterEndpoint
     private let configuration: DAPAttachConfiguration
+    private let timing: AttachTiming?
+    private var attachSpan: AttachTiming.Span?
     private let cleanup: @Sendable () async -> Void
     private let queue = DispatchQueue(label: "sourcekit-bsp.device-dap")
     private var listener: NWListener?
@@ -22,10 +24,12 @@ actor DeviceDAPRelay {
     init(
         upstream: DebugAdapterEndpoint,
         configuration: DAPAttachConfiguration,
+        timing: AttachTiming? = nil,
         cleanup: @escaping @Sendable () async -> Void
     ) {
         self.upstream = upstream
         self.configuration = configuration
+        self.timing = timing
         self.cleanup = cleanup
     }
 
@@ -117,6 +121,16 @@ actor DeviceDAPRelay {
             if let data, !data.isEmpty {
                 let bodies = try fromClient ? clientFrames.append(data) : adapterFrames.append(data)
                 for body in bodies {
+                    if fromClient, timing != nil, !attached,
+                       let message = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+                       message["type"] as? String == "request" {
+                        if message["command"] as? String == "attach", attachSpan == nil {
+                            attachSpan = timing?.start("lldb.attach")
+                        } else if message["command"] as? String == "disconnect" {
+                            attachSpan?.finish(.cancelled)
+                            attachSpan = nil
+                        }
+                    }
                     let outgoing = try fromClient ? configuration.configure(body) : body
                     let failedAttach = !fromClient && observe(body)
                     try await send(DAPFrameBuffer.frame(outgoing), to: destination)
@@ -139,7 +153,10 @@ actor DeviceDAPRelay {
     private func observe(_ body: Data) -> Bool {
         guard let message = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
               message["type"] as? String == "response", message["command"] as? String == "attach" else { return false }
-        guard message["success"] as? Bool == true else { return true }
+        let succeeded = message["success"] as? Bool == true
+        attachSpan?.finish(succeeded ? .ok : .failed)
+        attachSpan = nil
+        guard succeeded else { return true }
         attached = true
         deadline?.cancel()
         deadline = nil
@@ -160,6 +177,8 @@ actor DeviceDAPRelay {
             return
         }
         closed = true
+        attachSpan?.finish(reason.map { AttachTiming.Outcome.failure($0) } ?? .incomplete)
+        attachSpan = nil
         if let reason { logger.error("Device debug session: \(reason.localizedDescription)") }
         ready?.resume(throwing: reason ?? DAPRelayError.closed)
         ready = nil

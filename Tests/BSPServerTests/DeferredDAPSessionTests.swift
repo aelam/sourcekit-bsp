@@ -196,6 +196,36 @@ struct DeferredDAPSessionTests {
         #expect(stopped.withLock { $0 } == 1)
     }
 
+    @Test(arguments: [false, true])
+    func discardsUnusedEndpointWithoutPreparing(initialize: Bool) async throws {
+        let closed = CrossPlatformLock(initialState: 0)
+        let relay = DeferredDAPSession { _, _ in
+            Issue.record("Discarding an unused endpoint must not prepare a backend")
+            throw CancellationError()
+        } onClose: { closed.withLock { $0 += 1 } }
+        let uri = try await relay.start()
+        let client = try DeferredTestClient(uri: uri)
+        do {
+            if initialize {
+                try await client.send(request(1, "initialize", ["adapterID": "bsp-debug"]))
+                _ = try await client.response(1)
+            }
+            try await client.send(request(2, "disconnect", [
+                "terminateDebuggee": false, "suspendDebuggee": false, "restart": false
+            ]))
+            #expect(try await object(client.response(2))["success"] as? Bool == true)
+            try await eventually { closed.withLock { $0 } == 1 }
+        } catch {
+            await client.close()
+            await relay.stop()
+            throw error
+        }
+        await client.close()
+        await relay.stop()
+        #expect(closed.withLock { $0 } == 1)
+        #expect(throws: DebugAdapterRelayError.self) { try AttachDAPSocket.connectTo(uri) }
+    }
+
     @Test
     func idleSessionClosesItsListenerWithoutPreparing() async throws {
         let closed = CrossPlatformLock(initialState: false)
