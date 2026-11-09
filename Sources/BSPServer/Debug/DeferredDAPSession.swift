@@ -15,6 +15,7 @@ actor DeferredDAPSession {
     private let prepare: Prepare
     private let onClose: @Sendable () async -> Void
     private let idleTimeout: Duration
+    private let disconnectTimeout: Duration
     private var listener: Int32 = -1
     private var client: Int32 = -1
     private var adapter: Int32 = -1
@@ -44,10 +45,12 @@ actor DeferredDAPSession {
 
     init(
         idleTimeout: Duration = .seconds(60),
+        disconnectTimeout: Duration = .seconds(2),
         prepare: @escaping Prepare,
         onClose: @escaping @Sendable () async -> Void = {}
     ) {
         self.idleTimeout = idleTimeout
+        self.disconnectTimeout = disconnectTimeout
         self.prepare = prepare
         self.onClose = onClose
     }
@@ -356,7 +359,7 @@ extension DeferredDAPSession {
         requests[nativeSequence] = (sequence, command)
         if command == "disconnect" || command == "terminate" {
             disconnectSequence = nativeSequence
-            deadline = .now + .seconds(2)
+            deadline = .now + disconnectTimeout
         }
         try sendNative(message)
     }
@@ -399,7 +402,7 @@ extension DeferredDAPSession {
         guard disconnectSequence == nil else { return }
         nativeSequence += 1
         disconnectSequence = nativeSequence
-        deadline = .now + .seconds(2)
+        deadline = .now + disconnectTimeout
         let arguments: [String: Any] = mode == .attach ? Self.detachArguments : ["terminateDebuggee": true]
         try sendNative([
             "seq": nativeSequence, "type": "request", "command": "disconnect", "arguments": arguments
@@ -422,7 +425,7 @@ extension DeferredDAPSession {
         }
         stopping = true
         startup?.cancel()
-        deadline = .now + .seconds(2)
+        deadline = .now + disconnectTimeout
     }
 
     /// Wait for detach before stopping the adapter, including EOF and server shutdown.
@@ -442,7 +445,11 @@ extension DeferredDAPSession {
                     for body in try adapterFrames.append(bytes) {
                         let message = try Self.object(body)
                         if message["type"] as? String == "response",
-                           message["request_seq"] as? Int == disconnectSequence { return }
+                           message["request_seq"] as? Int == disconnectSequence {
+                            if let response = try await mappedResponse(message) {
+                                try sendClient(response)
+                            }
+                        }
                     }
                 }
             } catch { return }

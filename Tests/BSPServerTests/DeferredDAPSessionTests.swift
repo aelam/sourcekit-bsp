@@ -11,11 +11,11 @@ import Glibc
 
 @MainActor
 struct DeferredDAPSessionTests {
-    @Test
-    func initializeDefersPreparationAndLaunchKeepsItsResponseCommand() async throws {
+    @Test(arguments: [Duration.zero, .seconds(2)])
+    func initializeDefersPreparationAndLaunchKeepsItsResponseCommand(disconnectTimeout: Duration) async throws {
         let native = try DeferredFakeAdapter(holdStart: true)
         let state = CrossPlatformLock(initialState: (prepares: 0, stops: 0))
-        let relay = DeferredDAPSession { request, pid in
+        let relay = DeferredDAPSession(disconnectTimeout: disconnectTimeout) { request, pid in
             #expect(request == .launch)
             #expect(pid == nil)
             state.withLock { $0.prepares += 1 }
