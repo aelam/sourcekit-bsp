@@ -5,7 +5,7 @@ struct LanguageStandardProvider: CompileArgProvider, Sendable {
         if context.compiler == .swift {
             buildSwiftFlags(settings: context.buildSettings)
         } else {
-            buildClangFlags(settings: context.buildSettings)
+            buildClangFlags(settings: context.buildSettings, dialect: context.languageDialect)
         }
     }
 
@@ -36,16 +36,18 @@ struct LanguageStandardProvider: CompileArgProvider, Sendable {
         return String(majorVersion)
     }
 
-    private func buildClangFlags(settings: [String: String]) -> [String] {
-        var flags: [String] = []
-
-        if let std = settings["CLANG_CXX_LANGUAGE_STANDARD"] {
-            flags.append("-std=\(std)")
+    private func buildClangFlags(settings: [String: String], dialect: XcodeLanguageDialect) -> [String] {
+        let standard: String?
+        switch dialect {
+        case .c, .objc:
+            standard = settings["GCC_C_LANGUAGE_STANDARD"]
+        case .cpp, .objcCpp:
+            standard = settings["CLANG_CXX_LANGUAGE_STANDARD"]
+        default:
+            return []
         }
-        if let std = settings["CLANG_C_LANGUAGE_STANDARD"] {
-            flags.append("-std=\(std)")
-        }
-
-        return flags
+        guard let standard, !standard.isEmpty, standard != "compiler-default" else { return [] }
+        if standard == "ansi", dialect == .c || dialect == .objc { return ["-ansi"] }
+        return ["-std=\(standard)"]
     }
 }

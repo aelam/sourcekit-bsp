@@ -105,7 +105,9 @@ public extension XcodeLanguageDialect {
         switch fileExtension {
         case "swift":
             self = .swift
-        case "cpp":
+        case "c":
+            self = .c
+        case "cpp", "cc", "cxx", "C":
             self = .cpp
         case "m":
             self = .objc
@@ -133,7 +135,7 @@ public extension XcodeLanguageDialect {
 
     var isClang: Bool {
         switch self {
-        case .cpp, .objc, .objcCpp:
+        case .c, .cpp, .objc, .objcCpp:
             true
         default:
             false
