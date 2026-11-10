@@ -34,10 +34,9 @@
         }
       },
       "extensions": [
-        "sswg.swift-lang",
+        "swiftlang.swift-vscode",
         "ms-vscode.vscode-json",
-        "ms-vscode.cpptools",
-        "vadimcn.vscode-lldb" // CodeLLDB 插件
+        "ms-vscode.cpptools"
       ]
     }
   },
