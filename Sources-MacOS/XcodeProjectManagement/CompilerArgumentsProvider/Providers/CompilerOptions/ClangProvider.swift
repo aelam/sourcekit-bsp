@@ -26,7 +26,7 @@ struct ClangProvider: CompileArgProvider, Sendable {
         flags.append(contentsOf: ["-Xclang", "-fallow-pch-with-compiler-errors"])
         flags.append(contentsOf: buildPrecompiledHeaderFlags(settings: settings))
         flags.append(contentsOf: buildPreprocessorFlags(settings: settings))
-        flags.append(contentsOf: buildOtherFlags(settings: settings))
+        flags.append(contentsOf: buildOtherFlags(settings: settings, dialect: languageDialect))
         flags.append(contentsOf: buildOptimizationFlags(settings: settings))
 
         return flags
@@ -89,17 +89,17 @@ struct ClangProvider: CompileArgProvider, Sendable {
         return flags
     }
 
-    private func buildOtherFlags(settings: [String: String]) -> [String] {
-        var flags: [String] = []
-
-        if let otherCFlags = settings["OTHER_CFLAGS"] {
-            flags.append(contentsOf: otherCFlags.split(separator: " ").map { String($0) })
+    private func buildOtherFlags(settings: [String: String], dialect: XcodeLanguageDialect) -> [String] {
+        let flags: String?
+        switch dialect {
+        case .c, .objc:
+            flags = settings["OTHER_CFLAGS"]
+        case .cpp, .objcCpp:
+            // Xcode defaults to OTHER_CFLAGS only when OTHER_CPLUSPLUSFLAGS is unset.
+            flags = settings["OTHER_CPLUSPLUSFLAGS"] ?? settings["OTHER_CFLAGS"]
+        default:
+            return []
         }
-
-        if let otherCppFlags = settings["OTHER_CPLUSPLUSFLAGS"] {
-            flags.append(contentsOf: otherCppFlags.split(separator: " ").map { String($0) })
-        }
-
-        return flags
+        return flags?.split(separator: " ").map(String.init) ?? []
     }
 }
