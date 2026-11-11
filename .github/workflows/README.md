@@ -52,17 +52,50 @@ This directory contains all the GitHub Actions workflows for sourcekit-bsp. Each
 
 **Triggers:**
 - Tag pushes matching `v*.*.*` pattern
-- Manual runs from GitHub Actions with a release version input
+- Manual runs from GitHub Actions on `main` with a `patch`, `minor`, or `major` choice
 - Merges to `main` that update `SourceKitBSPVersion.current`
 
 **Features:**
-- Release pull request creation from a manual workflow run
-- Tag creation and asset upload after the release pull request is merged
+- Direct version commits from a manual workflow run using a dedicated Deploy Key
+- Tag creation and asset upload from the selected release commit
 - Universal binary builds (ARM64 + x86_64)
 - Multiple archive formats (tar.gz, zip)
 - SHA256 checksums generation
 - Automatic release notes
 - Pre-release detection
+
+**Manual release steps:**
+1. Open **Actions → Release → Run workflow**.
+2. Select `main` and choose the version increment.
+3. Run the workflow and check the build and release result.
+
+The workflow reads `SourceKitBSPVersion.current` from the commit selected for the
+run, increments it, and commits only that file to `main`. The same workflow builds
+that exact commit and publishes its assets. No version PR is created.
+
+`RELEASE_SSH_KEY` holds the private key for the repository's dedicated release
+Deploy Key. `MainProtection` requires PRs and the existing three CI checks for
+ordinary changes, with a Deploy Key exception for version commits. GitHub applies
+this exception to all repository Deploy Keys. The separate `main-integrity`
+ruleset blocks force pushes and deletion, with no bypass actors.
+
+The `Release-Run` commit marker identifies retries and prevents the version push
+from publishing twice. These skipped pushes use a separate concurrency group, so
+they cannot cancel a pending release. A retry uses its original version commit. A new manual run
+requests a new version. If `main` advances before preparation, start a new run.
+An existing tag must point to the release commit; tags are never moved. Start
+one release at a time, because GitHub can replace an older pending run.
+
+Changes to the version file merged through an ordinary PR and explicit tag pushes
+also use the build and release job. An unchanged version skips automatic publication.
+Changed versions must increase according to semantic version precedence, including
+prereleases. A change to build metadata alone does not create a new release.
+
+Release preparation tests run in the **Code Quality** job. To run them locally:
+
+```sh
+python3 -m unittest discover -s Scripts/tests -p 'test_prepare_release.py'
+```
 
 ### 🛡️ Security (`security.yml`)
 
@@ -86,7 +119,7 @@ This directory contains all the GitHub Actions workflows for sourcekit-bsp. Each
 | `CODECOV_TOKEN` | Code coverage reporting | CI |
 | `SEMGREP_APP_TOKEN` | Security scanning | Code Quality |
 | `FOSSA_API_KEY` | License compliance | Security |
-| `RELEASE_TOKEN` | Create release pull requests that trigger required checks | Manual release |
+| `RELEASE_SSH_KEY` | Push version commits through the Deploy Key exception | Manual release |
 
 ### Environment Variables
 
