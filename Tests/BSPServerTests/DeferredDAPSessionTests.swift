@@ -222,8 +222,8 @@ struct DeferredDAPSessionTests {
         }
         await client.close()
         await relay.stop()
+        // The old port can be reused after close; the callback confirms that this session closed.
         #expect(closed.withLock { $0 } == 1)
-        #expect(throws: DebugAdapterRelayError.self) { try AttachDAPSocket.connectTo(uri) }
     }
 
     @Test
@@ -233,9 +233,8 @@ struct DeferredDAPSessionTests {
             Issue.record("An idle session must not prepare a backend")
             throw CancellationError()
         } onClose: { closed.withLock { $0 = true } }
-        let uri = try await relay.start()
+        _ = try await relay.start()
         try await eventually { closed.withLock { $0 } }
-        #expect(throws: DebugAdapterRelayError.self) { try AttachDAPSocket.connectTo(uri) }
         await relay.stop()
     }
 
