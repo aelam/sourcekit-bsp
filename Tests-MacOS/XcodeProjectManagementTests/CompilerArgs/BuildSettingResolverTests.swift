@@ -34,8 +34,7 @@ struct BuildSettingResolverTests {
         }
 
         for key in BuildSettingKey.allCases {
-            let value = resolver.resolve(forKey: key.rawValue)
-            print("Resolved \(key.rawValue): \(value ?? "nil")")
+            _ = resolver.resolve(forKey: key.rawValue)
         }
     }
 }
