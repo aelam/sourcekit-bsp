@@ -70,15 +70,24 @@ Use the folder that contains the `.xcodeproj` or `.xcworkspace`.
 ## Release
 
 Use the **Release** workflow in GitHub Actions to prepare a release. Run it from
-`main` and enter the new version, for example `0.2.4`. The workflow creates a
-release pull request that updates `SourceKitBSPVersion.current`.
+`main` and choose `patch`, `minor`, or `major`. The workflow commits the update to
+`SourceKitBSPVersion.current` directly to `main`. For example, from `0.2.8`,
+the choices produce `0.2.9`, `0.3.0`, and `1.0.0`.
 
-After the release pull request is merged, the same workflow creates the matching
-`v*.*.*` tag and uploads the release assets.
+The same run builds the selected commit, creates the matching `v*.*.*` tag, and
+uploads the release assets. It does not create a version PR.
 
-Manual release preparation requires a `RELEASE_TOKEN` secret with permission to
-push branches and create pull requests. This lets the release pull request start
-the required checks before merge.
+Manual release preparation uses the dedicated Deploy Key in `RELEASE_SSH_KEY`.
+The key can bypass the PR and CI requirements for the version commit. Ordinary
+changes still require a PR and the required checks. Force pushes and deletion of
+`main` remain blocked for every actor, including the release key. GitHub applies
+the PR and CI exception to all Deploy Keys in the repository.
+
+The version comes from the commit selected when the run starts. Retrying that
+run reuses its version commit, even if `main` later advances. If `main` advances
+before preparation, start a new run from `main`. Existing tags are reused only
+when they point to the same release commit. The version commit still triggers
+normal CI, but its push skips duplicate publication through a `Release-Run` marker.
 
 Tag pushes are still supported. The tag must match `SourceKitBSPVersion.current`;
 otherwise the release workflow stops before it builds or uploads artifacts.

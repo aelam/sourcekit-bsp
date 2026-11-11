@@ -127,6 +127,9 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    - name: Test release version preparation
+      run: python3 -m unittest discover -s Scripts/tests -p 'test_prepare_release.py'
+
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
       with:
