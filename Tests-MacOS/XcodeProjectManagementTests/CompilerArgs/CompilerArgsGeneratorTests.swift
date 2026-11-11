@@ -54,9 +54,6 @@ struct CompilerArgsGeneratorTests {
         let flags = generator.compileArguments()
         let swiftVersionFlag = try #require(flags.firstIndex(of: "-swift-version"))
         #expect(flags[swiftVersionFlag + 1] == "5")
-        for flag in flags {
-            print(flag)
-        }
     }
 
     @Test
@@ -102,8 +99,7 @@ struct CompilerArgsGeneratorTests {
             sourceItems: sourceItems
         )
         let flags = generator.compileArguments()
-        for flag in flags {
-            print(flag)
-        }
+        #expect(flags.contains("-target"))
+        #expect(flags.contains("-sdk"))
     }
 }
