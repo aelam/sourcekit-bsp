@@ -1,5 +1,18 @@
 import Foundation
 
+public struct RunBuildOutput: Sendable {
+    public let onLine: @Sendable (String) -> Void
+    public let finish: @Sendable () async -> Void
+
+    public init(
+        onLine: @escaping @Sendable (String) -> Void,
+        finish: @escaping @Sendable () async -> Void
+    ) {
+        self.onLine = onLine
+        self.finish = finish
+    }
+}
+
 public extension ProjectManager {
     var supportsBuildContexts: Bool {
         get async { false }
@@ -36,6 +49,26 @@ public extension ProjectManager {
         context: BuildContext
     ) async throws -> StatusCode {
         throw BuildContextError.invalid("This provider does not support run contexts.")
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    func run(
+        targetIdentifier: BSPBuildTargetIdentifier,
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        progressHandler: (@Sendable (String) async -> Void)?,
+        buildOutput: RunBuildOutput?,
+        context: BuildContext
+    ) async throws -> StatusCode {
+        try await run(
+            targetIdentifier: targetIdentifier,
+            arguments: arguments,
+            environmentVariables: environmentVariables,
+            workingDirectory: workingDirectory,
+            progressHandler: progressHandler,
+            context: context
+        )
     }
 
     // swiftlint:disable:next function_parameter_count

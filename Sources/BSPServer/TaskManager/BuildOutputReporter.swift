@@ -8,6 +8,7 @@ actor BuildOutputReporter {
     private var parser: XcodeBuildOutputParser
     private var rawLog: FileHandle?
     private var rawURL: URL?
+    private var isFinished = false
 
     init(manager: BSPTaskManager, task: BSPTask, context: BuildOutputContext) {
         self.manager = manager
@@ -80,6 +81,8 @@ actor BuildOutputReporter {
     }
 
     func finish() async {
+        guard !isFinished else { return }
+        isFinished = true
         try? rawLog?.close()
         rawLog = nil
         await manager.diagnostics.end(taskId: task.taskId)

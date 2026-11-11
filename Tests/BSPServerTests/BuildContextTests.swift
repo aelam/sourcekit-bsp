@@ -229,6 +229,22 @@ struct BuildContextTests {
     }
 
     @Test
+    func runWithBuildOutputUsesTheExistingProviderMethod() async throws {
+        let harness = try await setup()
+        let resolved = try await harness.service.resolveContext(.init(operation: .run, buildPolicy: .reuse))
+        let status = try await harness.service.run(
+            targetIdentifier: harness.manager.target,
+            originId: "context-run",
+            arguments: nil,
+            environmentVariables: nil,
+            workingDirectory: nil,
+            executionContext: .init(id: resolved.id)
+        )
+        #expect(status == .ok)
+        #expect(await harness.manager.executions == ["context-run"])
+    }
+
+    @Test
     func contextsAreReusableBoundToTargetsAndOperationsAndRevalidated() async throws {
         let harness = try await setup()
         let target = harness.manager.target
@@ -445,6 +461,19 @@ private actor ContextTestManager: ProjectManager {
         logHandler: (@Sendable (String) -> Void)?
     ) async throws -> StatusCode {
         executions.append("legacy-compile")
+        return .ok
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    func run(
+        targetIdentifier: BSPBuildTargetIdentifier,
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        progressHandler: (@Sendable (String) async -> Void)?,
+        context: BuildContext
+    ) async throws -> StatusCode {
+        executions.append("context-run")
         return .ok
     }
 

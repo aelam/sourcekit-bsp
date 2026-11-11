@@ -41,6 +41,16 @@ public protocol ProjectManager: AnyObject, Sendable {
         context: BuildContext
     ) async throws -> StatusCode
     // swiftlint:disable:next function_parameter_count
+    func run(
+        targetIdentifier: BSPBuildTargetIdentifier,
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        progressHandler: (@Sendable (String) async -> Void)?,
+        buildOutput: RunBuildOutput?,
+        context: BuildContext
+    ) async throws -> StatusCode
+    // swiftlint:disable:next function_parameter_count
     func test(
         targetIdentifiers: [BSPBuildTargetIdentifier],
         arguments: [String]?,
