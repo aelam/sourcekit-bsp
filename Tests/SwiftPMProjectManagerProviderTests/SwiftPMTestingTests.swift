@@ -178,7 +178,7 @@ struct SwiftPMTestingTests {
         let output = TestOutput()
         #expect(try await manager.test(
             targetIdentifiers: [selected.id],
-            arguments: nil,
+            arguments: ["--jobs", "1"],
             environmentVariables: ["PROBE": "世界"],
             workingDirectory: nil
         ) { output.append($0) } == .ok)
@@ -248,7 +248,7 @@ struct SwiftPMSingleTestTests {
         let manager = try await SwiftPMProjectManagerProvider().createProjectManager(rootURL: fixture.root, config: nil)
         try await manager.initialize()
         let selected = try #require(await manager.getTargetList().first { $0.displayName == "Selected-Tests" })
-        let options = parallel ? ["--parallel", "--quiet"] : ["--quiet"]
+        let options = ["--jobs", "1"] + (parallel ? ["--parallel", "--quiet"] : ["--quiet"])
         let output = TestOutput()
         let events = TestEvents()
         for (index, specification) in [
