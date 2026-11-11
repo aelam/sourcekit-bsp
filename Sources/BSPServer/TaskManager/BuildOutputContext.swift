@@ -22,28 +22,4 @@ struct BuildOutputContext: Sendable {
             affectedTargets: affected
         )
     }
-
-    func target(for file: URL, named name: String?, project: String?) -> BSPBuildTargetIdentifier? {
-        let owners = sources.filter { item in
-            item.sources.contains { source in
-                guard let url = source.uri.fileURL?.standardizedFileURL else { return false }
-                return url == file || (source.kind == .directory && file.path.hasPrefix(url.path + "/"))
-            }
-        }
-        .map(\.target)
-        if let name {
-            let matches = targets.filter { target in
-                guard affectedTargets.contains(target.id), target.displayName == name else { return false }
-                guard let project, target.id.uri.scheme == "xcode" else { return true }
-                let url = target.id.uri.arbitrarySchemeURL.deletingLastPathComponent()
-                return url.deletingPathExtension().lastPathComponent == project
-            }
-            .map(\.id)
-            if matches.count == 1 { return matches.first }
-            let common = matches.filter { owners.contains($0) }
-            return common.count == 1 ? common.first : nil
-        }
-        // Parallel compiler jobs can interleave. Do not infer ownership from the previous log line.
-        return owners.count == 1 ? owners.first : nil
-    }
 }

@@ -16,11 +16,13 @@ struct ParsedBuildLine {
 
 struct XcodeBuildOutputParser {
     let context: BuildOutputContext
+    private let targetIndex: BuildOutputTargetIndex
     private(set) var steps = 0
     private var sourceLines: [URL: [String]] = [:]
 
     init(context: BuildOutputContext) {
         self.context = context
+        self.targetIndex = BuildOutputTargetIndex(context: context)
     }
 
     mutating func parse(_ raw: String) -> ParsedBuildLine {
@@ -66,7 +68,7 @@ struct XcodeBuildOutputParser {
                 .standardizedFileURL
         }
         let targetFields = captures(#"\s+\(in target '(.+)' from project '(.+)'\)$"#, in: fields[4])
-        guard let target = context.target(for: file, named: targetFields?.first, project: targetFields?.last) else {
+        guard let target = targetIndex.target(for: file, named: targetFields?.first, project: targetFields?.last) else {
             return result
         }
         let line = max(0, (Int(fields[1]) ?? 1) - 1)
