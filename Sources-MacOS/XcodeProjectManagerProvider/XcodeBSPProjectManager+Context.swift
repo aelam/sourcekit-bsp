@@ -41,6 +41,27 @@ public extension XcodeBSPProjectManager {
         progressHandler: (@Sendable (String) async -> Void)?,
         context: BuildContext
     ) async throws -> StatusCode {
+        try await run(
+            targetIdentifier: targetIdentifier,
+            arguments: arguments,
+            environmentVariables: environmentVariables,
+            workingDirectory: workingDirectory,
+            progressHandler: progressHandler,
+            buildOutput: nil,
+            context: context
+        )
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    func run(
+        targetIdentifier: BSPBuildTargetIdentifier,
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        progressHandler: (@Sendable (String) async -> Void)?,
+        buildOutput: RunBuildOutput?,
+        context: BuildContext
+    ) async throws -> StatusCode {
         try checkContextScope(context, operation: .run, targets: [targetIdentifier])
         try checkContextRuntimeArguments(
             arguments,
@@ -50,7 +71,19 @@ public extension XcodeBSPProjectManager {
         let flags = try await backend.contextArguments(context, arguments: nil)
         if context.buildPolicy == .build {
             await progressHandler?("Building the selected scheme before launch")
-            guard try await backend.compileContext(context, arguments: nil) == 0 else { return .error }
+            let result: XcodeBuildExitCode
+            do {
+                result = try await backend.compileContext(
+                    context,
+                    arguments: nil,
+                    outputHandler: buildOutput.map { ClosureOutputHandler(onLine: $0.onLine) }
+                )
+            } catch {
+                await buildOutput?.finish()
+                throw error
+            }
+            await buildOutput?.finish()
+            guard result == 0 else { return .error }
         }
         return try await run(
             targetIdentifier: targetIdentifier,

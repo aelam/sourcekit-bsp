@@ -17,7 +17,24 @@ extension BSPServerService {
         }
 
         let context = try await executionContext(reference, operation: .run, targets: [targetIdentifier])
-        return try await taskManager.executeRunWithProgress(originId: originId) { progress in
+        let buildContext: BuildOutputContext?
+        if context?.buildPolicy == .build {
+            let root = await projectManager.rootURL
+            let project = await projectManager.project
+            let directory = project?.buildRootURL ?? root.appendingPathComponent(".sourcekit-bsp")
+            buildContext = BuildOutputContext(
+                rootURL: root,
+                logDirectory: directory.appendingPathComponent("Logs/sourcekit-bsp"),
+                targets: project?.targets ?? [],
+                affectedTargets: project?.dependencyClosure(for: [targetIdentifier]) ?? [targetIdentifier]
+            )
+        } else {
+            buildContext = nil
+        }
+        return try await taskManager.executeRunWithProgress(
+            originId: originId,
+            buildContext: buildContext
+        ) { progress, buildOutput in
             if let context {
                 return try await projectManager.run(
                     targetIdentifier: targetIdentifier,
@@ -25,6 +42,7 @@ extension BSPServerService {
                     environmentVariables: environmentVariables,
                     workingDirectory: workingDirectory,
                     progressHandler: progress,
+                    buildOutput: buildOutput,
                     context: context
                 )
             }

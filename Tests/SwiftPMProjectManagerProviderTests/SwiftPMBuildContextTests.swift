@@ -1,5 +1,6 @@
 import BuildServerProtocol
 import Foundation
+import Support
 import Testing
 @testable import SwiftPMProjectManagerProvider
 
@@ -290,6 +291,37 @@ struct SwiftPMBuildContextTests {
 }
 
 extension SwiftPMBuildContextTests {
+    @Test
+    func runBuildForwardsOutputAndFinishesBeforeReturning() async throws {
+        let fixture = try TemporarySwiftPMPackage()
+        let recorder = try ContextCommandRecorder(fixture: fixture)
+        let manager = fixture.manager(executor: recorder)
+        try await manager.initialize()
+        let context = try await manager.resolveContext(.init(operation: .run, selection: [
+            "swiftpm.configuration": "debug"
+        ]))
+        let target = try #require(context.targets.first)
+        let lines = CrossPlatformLock(initialState: [String]())
+        let finishCount = CrossPlatformLock(initialState: 0)
+        let output = RunBuildOutput(
+            onLine: { line in lines.withLock { $0.append(line) } },
+            finish: { finishCount.withLock { $0 += 1 } }
+        )
+
+        #expect(try await manager.run(
+            targetIdentifier: target,
+            arguments: nil,
+            environmentVariables: nil,
+            workingDirectory: nil,
+            progressHandler: nil,
+            buildOutput: output,
+            context: context
+        ) == .ok)
+        #expect(lines.withLock { $0 } == ["Building app-tool"])
+        #expect(finishCount.withLock { $0 } == 1)
+        await manager.shutdown()
+    }
+
     @Test(arguments: BuildContextBuildPolicy.allCases)
     func debugBuildsAndLocatesTheSelectedConfiguration(policy: BuildContextBuildPolicy) async throws {
         let fixture = try TemporarySwiftPMPackage()
@@ -503,6 +535,9 @@ actor ContextCommandRecorder: SwiftPMCommandExecuting {
             let configuration = arguments.contains("release") ? "release" : "debug"
             data = Data(root.appendingPathComponent("bin/\(configuration)").path.utf8)
         } else { data = Data() }
+        if arguments.first == "build", !arguments.contains("--show-bin-path") {
+            outputHandler?("Building app-tool")
+        }
         let failed = buildFails && arguments.first == "build" && !arguments.contains("--show-bin-path")
         return .init(standardOutput: data, standardError: Data(), exitCode: failed ? 1 : 0)
     }
