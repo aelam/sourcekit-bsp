@@ -43,9 +43,22 @@ struct SourceFileListerTests {
             try "".write(to: file, atomically: true, encoding: .utf8)
         }
         let identifier = XcodeTargetIdentifier(projectFilePath: projectURL.path, targetName: "Hello")
-        let sources = try #require(SourceFileLister
-            .loadSourceFiles(for: project, targets: ["Hello"])[identifier.rawValue])
+        let item = try #require(SourceFileLister
+            .loadSourcesItems(for: project, targets: ["Hello"])[identifier.rawValue])
+        let sources = item.sources
         #expect(sources.allSatisfy { $0.itemKind == .file })
         #expect(sources.map(\.path.lastPathComponent) == ["ContentView.swift", "HelloApp.swift", "Extra.swift"])
+        #expect(item.roots?.map(\.path) == [root.appendingPathComponent("Hello").path])
+        excluded.membershipExceptions = [
+            "ContentView.swift",
+            "HelloApp.swift",
+            "Nested",
+            "Excluded.swift",
+            "ExcludedFolder"
+        ]
+        let empty = try #require(SourceFileLister
+            .loadSourcesItems(for: project, targets: ["Hello"])[identifier.rawValue])
+        #expect(empty.sources.isEmpty)
+        #expect(empty.roots == [])
     }
 }

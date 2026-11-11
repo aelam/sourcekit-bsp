@@ -56,6 +56,14 @@ Unsupported operations return an error.
 | `build/logMessage`, `build/taskStart`, `build/taskProgress`, `build/taskFinish` | Server notifications | Stream compile/test/index stages and readable output; retain raw logs in DerivedData |
 | `build/publishDiagnostics` | Server notification | Publish compiler diagnostics by file and target; clear stale diagnostics on the next build |
 
+`buildTarget/sources` includes `roots` for source path display and navigation.
+For Xcode, synchronized groups supply their directories when they contain sources
+for the requested target. Explicit file references use the outermost containing
+group with a physical path other than the project directory, or the file's parent
+directory when no such group exists. Virtual group names do not become paths.
+Roots are deduplicated per target; explicit source files still determine target
+membership. Shared files and roots can appear under several targets or projects.
+
 ## Refresh and cancellation
 
 Clients must register the advertised watchers and send file notifications.
