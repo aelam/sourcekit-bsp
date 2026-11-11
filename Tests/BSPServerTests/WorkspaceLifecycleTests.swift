@@ -11,6 +11,7 @@ private actor RefreshProjectManager: WorkspaceProjectManagerStub {
     nonisolated let projectType = "test"
     var revision = 0
     var inputInvalidations = 0
+    var indexPreparations = 0
     var capabilities = Set(ProjectManagerCapability.allCases)
     var watchedFileRoots: [URL] {
         [rootURL, rootURL.deletingLastPathComponent().appendingPathComponent("SharedPackage")]
@@ -22,6 +23,11 @@ private actor RefreshProjectManager: WorkspaceProjectManagerStub {
 
     func invalidateIndexInputs() {
         inputInvalidations += 1
+    }
+
+    func buildIndex(for targetIdentifiers: [BSPBuildTargetIdentifier]) async throws -> [BSPBuildTargetIdentifier] {
+        indexPreparations += 1
+        return targetIdentifiers
     }
 
     var failReload = false
@@ -226,6 +232,20 @@ struct WorkspaceLifecycleTests {
         await service.useTestManager(manager)
         handler.setBSPServerService(service)
         return Harness(service: service, handler: handler, manager: manager, transport: transport)
+    }
+
+    @Test
+    func preparationUsesExistingBuildProducts() async throws {
+        let harness = await setup()
+        let target = try BSPBuildTargetIdentifier(uri: URI(string: "file:///tmp/BSPWorkspace/Keep"))
+        let request = BuildTargetPrepareRequest(id: .int(12), jsonrpc: "2.0", params: .init(targets: [target]))
+        let response = try #require(await request.handle(
+            contextualHandler: harness.handler, id: .int(12)
+        ) as? BuildTargetPrepareResponse)
+        #expect(response.id == .int(12))
+        #expect(response.result != nil)
+        #expect(await harness.manager.indexPreparations == 0)
+        #expect(await harness.transport.sent.isEmpty)
     }
 
     @Test(.timeLimit(.minutes(1)))

@@ -9,8 +9,37 @@ import Darwin
 import Glibc
 #endif
 
+/// Allow for scheduling delays while other suites build fixture projects in CI.
+private let deferredTestTimeout: Duration = .seconds(30)
+
+private enum DeferredTestError: Error {
+    case timedOut(String)
+}
+
 @MainActor
 struct DeferredDAPSessionTests {
+    @Test
+    func bufferedResponsesSurviveExpiredWait() async throws {
+        let relay = DeferredDAPSession { _, _ in
+            Issue.record("Initialize must not prepare a backend")
+            throw CancellationError()
+        }
+        let client = try await DeferredTestClient(uri: relay.start())
+        do {
+            try await client.send(request(1, "initialize"))
+            try await client.send(request(2, "initialize"))
+            #expect(try await object(client.response(2))["success"] as? Bool == false)
+            // Response 1 arrived before response 2 and must already be buffered.
+            #expect(try await object(client.response(1, timeout: .zero))["success"] as? Bool == true)
+        } catch {
+            await client.close()
+            await relay.stop()
+            throw error
+        }
+        await client.close()
+        await relay.stop()
+    }
+
     @Test(arguments: [Duration.zero, .seconds(2)])
     func initializeDefersPreparationAndLaunchKeepsItsResponseCommand(disconnectTimeout: Duration) async throws {
         let native = try DeferredFakeAdapter(holdStart: true)
@@ -259,9 +288,9 @@ struct DeferredDAPSessionTests {
     }
 
     private func eventually(_ condition: () async -> Bool) async throws {
-        let end = ContinuousClock.now + .seconds(5)
+        let end = ContinuousClock.now + deferredTestTimeout
         while await !condition() {
-            guard end > .now else { throw DebugAdapterRelayError.timedOut }
+            guard end > .now else { throw DeferredTestError.timedOut("waiting for a test condition") }
             try await Task.sleep(for: .milliseconds(5))
         }
     }
@@ -301,33 +330,43 @@ private actor DeferredTestClient {
 
     func send(_ body: Data) async throws {
         var pending = DebugAdapterFrameBuffer.frame(body)
-        let end = ContinuousClock.now + .seconds(5)
+        let end = ContinuousClock.now + deferredTestTimeout
         while !pending.isEmpty {
-            guard end > .now else { throw DebugAdapterRelayError.timedOut }
             try AttachDAPSocket.flush(&pending, to: fd)
-            if !pending.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+            guard !pending.isEmpty else { return }
+            guard end > .now else { throw DeferredTestError.timedOut("sending a DAP message") }
+            try await Task.sleep(for: .milliseconds(5))
         }
     }
 
-    func response(_ sequence: Int) async throws -> Data {
-        try await receive(sequence: sequence, event: nil)
+    func response(_ sequence: Int, timeout: Duration = deferredTestTimeout) async throws -> Data {
+        try await receive(sequence: sequence, event: nil, timeout: timeout)
     }
 
     func event(_ event: String) async throws -> Data {
-        try await receive(sequence: nil, event: event)
+        try await receive(sequence: nil, event: event, timeout: deferredTestTimeout)
     }
 
-    private func receive(sequence: Int?, event: String?) async throws -> Data {
-        let end = ContinuousClock.now + .seconds(5)
-        while end > .now {
-            if let index = buffered.firstIndex(where: { data in
-                let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-                return sequence.map { message?["request_seq"] as? Int == $0 } ?? (message?["event"] as? String == event)
-            }) { return buffered.remove(at: index) }
+    private func receive(sequence: Int?, event: String?, timeout: Duration) async throws -> Data {
+        let end = ContinuousClock.now + timeout
+        while true {
+            if let message = bufferedMessage(sequence: sequence, event: event) { return message }
             if let data = try AttachDAPSocket.read(fd) { try buffered.append(contentsOf: parser.append(data)) }
+            if let message = bufferedMessage(sequence: sequence, event: event) { return message }
+            guard end > .now else {
+                let expected = sequence.map { "response to request \($0)" } ?? "event \(event ?? "unknown")"
+                throw DeferredTestError.timedOut("waiting for DAP \(expected)")
+            }
             try await Task.sleep(for: .milliseconds(5))
         }
-        throw DebugAdapterRelayError.timedOut
+    }
+
+    private func bufferedMessage(sequence: Int?, event: String?) -> Data? {
+        guard let index = buffered.firstIndex(where: { data in
+            let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            return sequence.map { message?["request_seq"] as? Int == $0 } ?? (message?["event"] as? String == event)
+        }) else { return nil }
+        return buffered.remove(at: index)
     }
 }
 
