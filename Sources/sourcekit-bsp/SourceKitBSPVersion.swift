@@ -1,3 +1,3 @@
 enum SourceKitBSPVersion {
-    static let current = "0.2.8"
+    static let current = "0.2.9"
 }
