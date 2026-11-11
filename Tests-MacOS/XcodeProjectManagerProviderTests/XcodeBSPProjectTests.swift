@@ -107,6 +107,7 @@ struct XcodeBSPProjectTests {
         let added = root.appendingPathComponent("Hello/AfterInitialize.swift")
         try Data("struct AfterInitialize {}".utf8).write(to: added)
         let sources = try await manager.getSourceFileList(targetIdentifiers: [app.id])
+        #expect(sources.first?.roots?.compactMap { $0.fileURL?.path } == [root.appendingPathComponent("Hello").path])
         #expect(sources.first?.sources
             .contains { $0.uri.fileURL?.lastPathComponent == "AfterInitialize.swift" } == true)
 

@@ -12,8 +12,8 @@ extension XcodeProjectManagement.SourcesItem {
     func asBSPSourcesItems() -> BuildServerProtocol.SourcesItem {
         BuildServerProtocol.SourcesItem(
             target: self.target.bspIdentifier,
-            sources: sources.map { $0.asBSPSourceItem()
-            }
+            sources: sources.map { $0.asBSPSourceItem() },
+            roots: roots?.map { URI($0) }
         )
     }
 }

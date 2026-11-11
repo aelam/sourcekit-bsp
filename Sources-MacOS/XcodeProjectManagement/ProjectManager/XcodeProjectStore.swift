@@ -5,7 +5,7 @@ import XcodeProj
 struct XcodeProjectStore {
     private var projects: [URL: XcodeProj] = [:]
     private var contextTargets: [String: [String: XcodeTarget]] = [:]
-    private var sourceFiles: [XcodeTargetIdentifier: [SourceItem]] = [:]
+    private var sourceItems: [XcodeTargetIdentifier: SourcesItem] = [:]
     var compilerSettings = CompilerSettingsCache()
 
     mutating func project(at url: URL) -> XcodeProj? {
@@ -46,7 +46,7 @@ struct XcodeProjectStore {
     }
 
     mutating func invalidateSources() {
-        sourceFiles.removeAll()
+        sourceItems.removeAll()
         compilerSettings.invalidate()
     }
 
@@ -55,20 +55,23 @@ struct XcodeProjectStore {
             let url = URL(fileURLWithPath: identifier.projectFilePath).resolvingSymlinksInPath().standardizedFileURL
             return XcodeTargetIdentifier(projectFilePath: url.path, targetName: identifier.targetName)
         }
-        let missing = Set(keys).filter { sourceFiles[$0] == nil }
+        let missing = Set(keys).filter { sourceItems[$0] == nil }
         let grouped = Dictionary(grouping: missing) { URL(fileURLWithPath: $0.projectFilePath) }
         for (url, targets) in grouped {
             // Only projects loaded into this workspace can supply source files.
             guard let project = projects[url], let projectPath = project.path?.string else { continue }
-            let loaded = SourceFileLister.loadSourceFiles(for: project, targets: Set(targets.map(\.targetName)))
+            let loaded = SourceFileLister.loadSourcesItems(for: project, targets: Set(targets.map(\.targetName)))
             for target in targets {
                 let parsedIdentifier = XcodeTargetIdentifier(
                     projectFilePath: projectPath,
                     targetName: target.targetName
                 )
-                sourceFiles[target] = loaded[parsedIdentifier.rawValue]
+                sourceItems[target] = loaded[parsedIdentifier.rawValue]
             }
         }
-        return zip(identifiers, keys).map { SourcesItem(target: $0, sources: sourceFiles[$1] ?? []) }
+        return zip(identifiers, keys).map { identifier, key in
+            let cached = sourceItems[key]
+            return SourcesItem(target: identifier, sources: cached?.sources ?? [], roots: cached?.roots)
+        }
     }
 }
