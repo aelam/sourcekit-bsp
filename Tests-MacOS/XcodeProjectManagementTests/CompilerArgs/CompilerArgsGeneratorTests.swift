@@ -99,7 +99,9 @@ struct CompilerArgsGeneratorTests {
             sourceItems: sourceItems
         )
         let flags = generator.compileArguments()
-        #expect(flags.contains("-target"))
-        #expect(flags.contains("-sdk"))
+        let hasTarget = flags.contains("-target")
+        let hasSDKRoot = flags.contains("-isysroot")
+        #expect(hasTarget)
+        #expect(hasSDKRoot)
     }
 }
