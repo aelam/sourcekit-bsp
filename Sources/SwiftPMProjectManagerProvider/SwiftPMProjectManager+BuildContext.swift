@@ -57,15 +57,43 @@ public extension SwiftPMProjectManager {
         progressHandler: (@Sendable (String) async -> Void)?,
         context: BuildContext
     ) async throws -> StatusCode {
+        try await run(
+            targetIdentifier: targetIdentifier,
+            arguments: arguments,
+            environmentVariables: environmentVariables,
+            workingDirectory: workingDirectory,
+            progressHandler: progressHandler,
+            buildOutput: nil,
+            context: context
+        )
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    func run(
+        targetIdentifier: BSPBuildTargetIdentifier,
+        arguments: [String]?,
+        environmentVariables: [String: String]?,
+        workingDirectory: URI?,
+        progressHandler: (@Sendable (String) async -> Void)?,
+        buildOutput: RunBuildOutput?,
+        context: BuildContext
+    ) async throws -> StatusCode {
         try await validateContext(context, operation: .run, targets: [targetIdentifier])
         let options = try contextBuildArguments(nil, context: context)
         if context.buildPolicy == .build {
             await progressHandler?("Building the selected configuration")
-            let status = try await startBuild(
-                targetIdentifiers: [targetIdentifier],
-                arguments: options,
-                logHandler: nil
-            )
+            let status: StatusCode
+            do {
+                status = try await startBuild(
+                    targetIdentifiers: [targetIdentifier],
+                    arguments: options,
+                    logHandler: buildOutput?.onLine
+                )
+            } catch {
+                await buildOutput?.finish()
+                throw error
+            }
+            await buildOutput?.finish()
             guard status == .ok else { return status }
         }
         let program = try await builtExecutable(for: targetIdentifier, arguments: options)
