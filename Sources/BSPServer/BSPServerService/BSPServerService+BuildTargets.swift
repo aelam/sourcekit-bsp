@@ -22,26 +22,13 @@ extension BSPServerService {
         return await projectManager.getTargetList()
     }
 
-    /// 为索引构建目标（BSP 协议适配）
-    func buildTargetForIndex(targets: [BSPBuildTargetIdentifier]) async throws {
-        guard let projectManager else {
+    /// Acknowledge preparation without building dependencies.
+    func buildTargetForIndex(targets _: [BSPBuildTargetIdentifier]) async throws {
+        guard projectManager != nil else {
             throw BuildServerError.invalidConfiguration("Project not initialized")
         }
 
-        let context = await BuildOutputContext.load(using: projectManager, targets: targets)
-        let changedTargets = try await getTaskManager().executeTask(
-            originId: nil, message: "Prepare indexing", context: context
-        ) { _, log in
-            try await (projectManager.buildIndex(for: targets, logHandler: log), StatusCode.ok)
-        }
-        if !changedTargets.isEmpty {
-            try await sendNotification(ServerJSONRPCNotification(
-                method: BuildTargetDidChangeNotification.method(),
-                params: BuildTargetDidChangeNotification.Params(changes: changedTargets.map {
-                    BuildTargetEvent(target: $0, kind: .changed, dataKind: nil, data: nil)
-                })
-            ))
-        }
+        // Background indexing uses existing build products. Build dependencies explicitly when they change.
     }
 
     func outputPaths(

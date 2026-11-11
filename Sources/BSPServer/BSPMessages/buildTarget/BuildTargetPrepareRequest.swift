@@ -35,9 +35,6 @@ public struct BuildTargetPrepareRequest: ContextualRequestType, Sendable {
         id: RequestID
     ) async -> ResponseType? where Handler.Context == BSPServerService {
         await contextualHandler.withContext { context in
-            logger.debug("Completed build preparation for targets")
-            return BuildTargetPrepareResponse(jsonrpc: jsonrpc, id: id)
-            #if false
             let targetURIs = params.targets.map(\.uri.stringValue)
             logger.debug("Preparing build targets for background indexing: \(targetURIs)")
             do {
@@ -53,7 +50,6 @@ public struct BuildTargetPrepareRequest: ContextualRequestType, Sendable {
                 ))
                 return JSONRPCErrorResponse(id: id, error: JSONRPCError(code: -32603, message: message))
             }
-            #endif
         }
     }
 }
