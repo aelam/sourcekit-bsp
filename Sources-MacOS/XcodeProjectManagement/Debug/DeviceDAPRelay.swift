@@ -203,11 +203,12 @@ actor DeviceDAPRelay {
     private func sendOutput(_ output: ApplicationOutput) async {
         guard !closed, let client else { return }
         do {
+            sequence += 1
             let body = try JSONSerialization.data(withJSONObject: [
-                "type": "event", "event": "output",
+                "seq": sequence, "type": "event", "event": "output",
                 "body": ["category": output.channel.rawValue, "output": output.text]
             ])
-            try await send(DAPFrameBuffer.frame(adapterMessage(body)), to: client)
+            try await send(DAPFrameBuffer.frame(body), to: client)
         } catch {
             Task { await self.close(reason: error) }
         }

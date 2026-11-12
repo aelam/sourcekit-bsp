@@ -89,8 +89,10 @@ public actor XcodeProjectManager {
     public private(set) var projectSnapshot: XcodeProjectSnapshot?
 
     var projectStore = XcodeProjectStore()
+    let resolvedSettingsCache = ResolvedBuildSettingsCache()
 
     func invalidateSourceFileCache() {
+        resolvedSettingsCache.invalidate()
         projectStore.invalidateSources()
         invalidateIndexInputs()
     }
@@ -123,10 +125,15 @@ public actor XcodeProjectManager {
 
     /// Cancel this manager's builds and reject further build requests.
     public func shutdownBuilds() async {
+        let settingsTasks = resolvedSettingsCache.invalidate()
         await buildExecutor.shutdown()
+        for task in settingsTasks {
+            await task.value
+        }
     }
 
     public func initialize() async throws {
+        resolvedSettingsCache.invalidate()
         invalidateContextDestinationDiscovery()
         let configURL = rootURL.appendingPathComponent(".sourcekit-bsp/project.json")
         let reference = if let xcodeProjectReference {
@@ -180,6 +187,7 @@ public actor XcodeProjectManager {
         self.currentProjectReference = reference
         self.projectStore = store
         self.projectSnapshot = projectSnapshot
+        resolvedSettingsCache.invalidate()
         self.buildGraphVersion = UUID()
         invalidateIndexInputs()
         logger.info(

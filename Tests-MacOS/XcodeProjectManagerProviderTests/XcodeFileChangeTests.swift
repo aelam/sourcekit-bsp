@@ -61,7 +61,7 @@ struct XcodeFileChangeTests {
     @Test(arguments: [
         "App.xcodeproj/project.pbxproj", "App.xcworkspace", "App.xcworkspace/contents.xcworkspacedata",
         "Config/Debug.xcconfig", "App.xcodeproj/xcshareddata/xcschemes/App.xcscheme", "Config/Inputs.xcfilelist",
-        "Package.resolved", ".sourcekit-bsp/project.json", "TestPlans/Default.xctestplan"
+        "Package.resolved", "Package.swift", ".sourcekit-bsp/project.json", "TestPlans/Default.xctestplan"
     ])
     func configurationChangesAlwaysReload(path: String) {
         for kind in [ProjectFileChange.Kind.created, .changed, .deleted] {

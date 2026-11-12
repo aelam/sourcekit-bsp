@@ -42,6 +42,10 @@ actor DeferredDAPSession {
     private var adapterFrames = DebugAdapterFrameBuffer()
     private var toClient = Data()
     private var toAdapter = Data()
+    private let activity = SocketReadiness()
+    private var clientReadBuffer = [UInt8](repeating: 0, count: 65536)
+    private var adapterReadBuffer = [UInt8](repeating: 0, count: 65536)
+    private var droppedOutput = false
 
     init(
         idleTimeout: Duration = .seconds(60),
@@ -67,6 +71,7 @@ actor DeferredDAPSession {
     func stop() async {
         stopping = true
         startup?.cancel()
+        activity.signal()
         await loop?.value
     }
 
@@ -77,11 +82,22 @@ actor DeferredDAPSession {
                 try readClient()
                 try await readAdapter()
                 if client >= 0, clientAlive { try AttachDAPSocket.flush(&toClient, to: client) }
+                if droppedOutput, toClient.count < 2 * 1024 * 1024 {
+                    droppedOutput = false
+                    try sendClient([
+                        "type": "event", "event": "output",
+                        "body": [
+                            "category": "console",
+                            "output": "Some application output exceeded the debug console buffer.\n"
+                        ]
+                    ])
+                }
                 guard toClient.count <= Self.bufferLimit, toAdapter.count <= Self.bufferLimit,
                       queued.reduce(0, { $0 + $1.count }) <= Self.bufferLimit else {
                     throw DebugAdapterRelayError.invalidFrame
                 }
-                try await Task.sleep(for: .milliseconds(10))
+                guard try shouldRun() else { break }
+                try await waitForActivity(until: deadline)
             }
         } catch {
             try? failStart(error)
@@ -90,6 +106,7 @@ actor DeferredDAPSession {
         await startup?.value
         startup = nil
         await detachAndClose()
+        activity.finish()
         await backend?.stop()
         backend = nil
         for fd in [listener, client, adapter] where fd >= 0 {
@@ -117,7 +134,7 @@ actor DeferredDAPSession {
     private func readClient() throws {
         guard client >= 0, clientAlive, !stopping else { return }
         do {
-            if let bytes = try AttachDAPSocket.read(client) {
+            if let bytes = try AttachDAPSocket.read(client, buffer: &clientReadBuffer) {
                 for body in try clientFrames.append(bytes) {
                     try clientMessage(body)
                 }
@@ -131,7 +148,7 @@ actor DeferredDAPSession {
 
     private func readAdapter() async throws {
         guard adapter >= 0 else { return }
-        if let bytes = try AttachDAPSocket.read(adapter) {
+        if let bytes = try AttachDAPSocket.read(adapter, buffer: &adapterReadBuffer) {
             for body in try adapterFrames.append(bytes) {
                 try await adapterMessage(body)
             }
@@ -140,6 +157,17 @@ actor DeferredDAPSession {
     }
 
     private static let bufferLimit = 64 * 1024 * 1024
+
+    private func waitForActivity(until deadline: ContinuousClock.Instant?) async throws {
+        var read: [Int32] = []
+        if listener >= 0, !stopping { read.append(listener) }
+        if clientAlive, !stopping { read.append(client) }
+        if !disconnectAcknowledged { read.append(adapter) }
+        var write: [Int32] = []
+        if clientAlive, !toClient.isEmpty { write.append(client) }
+        if !toAdapter.isEmpty { write.append(adapter) }
+        try await activity.wait(read: read, write: write, until: deadline)
+    }
 
     private func acceptClient() throws {
         let fd = accept(listener, nil, nil)
@@ -153,6 +181,7 @@ actor DeferredDAPSession {
         var enabled: Int32 = 1
         _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &enabled, socklen_t(MemoryLayout<Int32>.size))
         #endif
+        activity.remove(fd: listener)
         close(listener)
         listener = -1
     }
@@ -245,6 +274,7 @@ extension DeferredDAPSession {
             nativeInitialize["seq"] = nativeSequence
             try sendNative(nativeInitialize)
             deadline = .now + idleTimeout
+            activity.signal()
         } catch {
             try? failStart(error)
         }
@@ -272,6 +302,13 @@ extension DeferredDAPSession {
     private func adapterMessage(_ body: Data) async throws {
         var message = try Self.object(body)
         let type = message["type"] as? String
+        if type == "event", message["event"] as? String == "output",
+           let output = message["body"] as? [String: Any],
+           let category = output["category"] as? String, ["stdout", "stderr"].contains(category),
+           toClient.count + body.count > 4 * 1024 * 1024 {
+            droppedOutput = true
+            return
+        }
         if type == "response", message["command"] as? String == "initialize",
            message["request_seq"] as? Int == initializeSequence, !initialized {
             try await completeInitialization(message)
@@ -403,6 +440,7 @@ extension DeferredDAPSession {
         nativeSequence += 1
         disconnectSequence = nativeSequence
         deadline = .now + disconnectTimeout
+        activity.signal()
         let arguments: [String: Any] = mode == .attach ? Self.detachArguments : ["terminateDebuggee": true]
         try sendNative([
             "seq": nativeSequence, "type": "request", "command": "disconnect", "arguments": arguments
@@ -426,6 +464,7 @@ extension DeferredDAPSession {
         stopping = true
         startup?.cancel()
         deadline = .now + disconnectTimeout
+        activity.signal()
     }
 
     /// Wait for detach before stopping the adapter, including EOF and server shutdown.
@@ -436,24 +475,28 @@ extension DeferredDAPSession {
             if client >= 0, clientAlive { try? AttachDAPSocket.flush(&toClient, to: client) }
             guard adapter >= 0, !disconnectAcknowledged else {
                 if toClient.isEmpty || !clientAlive { return }
-                try? await Task.sleep(for: .milliseconds(10))
+                try? await waitForActivity(until: end)
                 continue
             }
             do {
                 try AttachDAPSocket.flush(&toAdapter, to: adapter)
-                if let bytes = try AttachDAPSocket.read(adapter) {
-                    for body in try adapterFrames.append(bytes) {
-                        let message = try Self.object(body)
-                        if message["type"] as? String == "response",
-                           message["request_seq"] as? Int == disconnectSequence {
-                            if let response = try await mappedResponse(message) {
-                                try sendClient(response)
-                            }
-                        }
-                    }
-                }
+                try await readDisconnectResponses()
             } catch { return }
-            try? await Task.sleep(for: .milliseconds(10))
+            if disconnectAcknowledged, toClient.isEmpty || !clientAlive { return }
+            try? await waitForActivity(until: end)
+        }
+    }
+
+    private func readDisconnectResponses() async throws {
+        if let bytes = try AttachDAPSocket.read(adapter, buffer: &adapterReadBuffer) {
+            for body in try adapterFrames.append(bytes) {
+                let message = try Self.object(body)
+                if message["type"] as? String == "response",
+                   message["request_seq"] as? Int == disconnectSequence,
+                   let response = try await mappedResponse(message) {
+                    try sendClient(response)
+                }
+            }
         }
     }
 

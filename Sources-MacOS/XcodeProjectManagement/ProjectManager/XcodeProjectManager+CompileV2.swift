@@ -68,17 +68,26 @@ public extension XcodeProjectManager {
         if target.xcodeProductType.isTestBundle {
             settingsArguments.append("build-for-testing")
         }
-        let settings = try await settingsLoader.loadBuildSettings(
-            rootURL: rootURL,
-            project: buildConfiguration(for: target, arguments: arguments),
-            sdk: nil,
-            configuration: nil,
-            customFlags: argumentsWithoutScheme(settingsArguments)
+        guard let installation = projectSnapshot?.xcodeInstallation
+        else { throw XcodeProjectError.buildSettingsNotFound }
+        let project = try buildConfiguration(for: target, arguments: arguments)
+        let flags = try argumentsWithoutScheme(settingsArguments)
+        let key = ResolvedBuildSettingsCache.Key(
+            target: target.targetIdentifier, arguments: settingsArguments,
+            developerDirectory: installation.developerDir, buildVersion: installation.buildVersion
         )
-        guard let buildSettings = settings.first(where: { $0.target == target.name })?.buildSettings else {
-            throw XcodeProjectError.buildSettingsNotFound
+        // External xcconfig includes may be outside the client's watched workspace.
+        let reuse = !settingsArguments.contains { $0 == "-xcconfig" || $0.hasPrefix("XCODE_XCCONFIG_FILE=") }
+            && ProcessInfo.processInfo.environment["XCODE_XCCONFIG_FILE"] == nil
+        return try await resolvedSettingsCache.settings(for: key, reuse: reuse) { [settingsLoader, rootURL] in
+            let settings = try await settingsLoader.loadBuildSettings(
+                rootURL: rootURL, project: project, sdk: nil, configuration: nil, customFlags: flags
+            )
+            guard let buildSettings = settings.first(where: { $0.target == target.name })?.buildSettings else {
+                throw XcodeProjectError.buildSettingsNotFound
+            }
+            return buildSettings
         }
-        return buildSettings
     }
 
     internal func buildConfiguration(

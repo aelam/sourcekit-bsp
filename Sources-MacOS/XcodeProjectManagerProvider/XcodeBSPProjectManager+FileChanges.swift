@@ -29,6 +29,7 @@ struct XcodeFileChangeClassifier {
             if Self.configurationExtensions.contains(file.pathExtension)
                 || file.lastPathComponent == "contents.xcworkspacedata"
                 || file.lastPathComponent == "Package.resolved"
+                || file.lastPathComponent == "Package.swift"
                 || file == configuration {
                 return true
             }

@@ -320,6 +320,50 @@ struct DeferredDAPSessionTests {
     }
 }
 
+extension DeferredDAPSessionTests {
+    @Test
+    func oversizedApplicationOutputDoesNotDisconnectTheDebugger() async throws {
+        let native = try DeferredFakeAdapter(emittedOutput: (
+            category: "stdout",
+            text: String(repeating: "x", count: 5 * 1024 * 1024)
+        ))
+        let relay = DeferredDAPSession { _, _ in
+            await DebugSessionBackend(connection: .init(uri: native.start(), request: .launch, program: "/tmp/Hello")) {
+                await native.stop()
+            }
+        }
+        let client = try await DeferredTestClient(uri: relay.start())
+        try await client.send(request(1, "initialize"))
+        _ = try await client.response(1)
+        try await client.send(request(2, "launch"))
+        _ = try await client.response(2)
+        let output = try await object(client.event("output"))
+        let body = try #require(output["body"] as? [String: Any])
+        #expect(body["category"] as? String == "console")
+        #expect((body["output"] as? String)?.contains("exceeded") == true)
+        try await client.send(request(3, "threads"))
+        #expect(try await object(client.response(3))["success"] as? Bool == true)
+        try await client.send(request(4, "disconnect"))
+        _ = try await client.response(4)
+        await relay.stop()
+        await client.close()
+    }
+
+    @Test
+    func preparationFailureWakesAnIdleRelay() async throws {
+        let relay = DeferredDAPSession { _, _ in throw HostAttachError.invalid("Preparation failed") }
+        let client = try await DeferredTestClient(uri: relay.start())
+        try await client.send(request(1, "initialize"))
+        _ = try await client.response(1)
+        try await client.send(request(2, "launch"))
+        let response = try await object(client.response(2))
+        #expect(response["success"] as? Bool == false)
+        #expect((response["message"] as? String)?.contains("Preparation failed") == true)
+        await relay.stop()
+        await client.close()
+    }
+}
+
 private actor DeferredPreparationGate {
     var entered = false
     var continuation: CheckedContinuation<Void, Never>?

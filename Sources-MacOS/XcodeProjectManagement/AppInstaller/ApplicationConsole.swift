@@ -11,77 +11,6 @@ struct ApplicationOutput: Sendable, Equatable {
     }
 }
 
-/// Retains startup output until the debug client completes initialization.
-actor ApplicationOutputBuffer {
-    typealias Handler = @Sendable (ApplicationOutput) async -> Void
-    private let maxBufferedBytes: Int
-    private var handler: Handler?
-    private var pending: ArraySlice<ApplicationOutput> = []
-    private var size = 0
-    private var dropped = false
-    private var closed = false
-    private var drainTask: Task<Void, Never>?
-    private(set) var simulatorPID: Int?
-    private(set) var recentText = ""
-
-    init(maxBufferedBytes: Int = 4 * 1024 * 1024) {
-        self.maxBufferedBytes = maxBufferedBytes
-    }
-
-    func append(_ output: ApplicationOutput) {
-        guard !closed else { return }
-        recentText = String((recentText + output.text).suffix(8192))
-        if size + output.text.utf8.count <= maxBufferedBytes {
-            pending.append(output)
-            size += output.text.utf8.count
-        } else {
-            dropped = true
-        }
-        startDraining()
-    }
-
-    func recordSimulatorPID(_ pid: Int) {
-        simulatorPID = pid
-    }
-
-    func connect(_ handler: @escaping Handler) {
-        guard !closed else { return }
-        self.handler = handler
-        startDraining()
-    }
-
-    private func startDraining() {
-        guard handler != nil, drainTask == nil, !pending.isEmpty || dropped else { return }
-        drainTask = Task { await drain() }
-    }
-
-    private func drain() async {
-        while !closed, let handler {
-            if !pending.isEmpty {
-                let output = pending.removeFirst()
-                size -= output.text.utf8.count
-                if pending.isEmpty { pending = [] }
-                await handler(output)
-            } else if dropped {
-                dropped = false
-                await handler(.init(channel: .console, text: "Some application output exceeded the console buffer.\n"))
-            } else {
-                break
-            }
-        }
-        drainTask = nil
-    }
-
-    func close() {
-        closed = true
-        handler = nil
-        pending = []
-        size = 0
-        drainTask?.cancel()
-        drainTask = nil
-    }
-}
-
 /// Owns the console process and drains both streams before reporting exit.
 final class ApplicationConsole: Sendable {
     let output: ApplicationOutputBuffer
@@ -128,20 +57,23 @@ final class ApplicationConsole: Sendable {
             await withTaskGroup(of: Void.self) { group in
                 for (handle, channel) in [(stdout, ApplicationOutput.Channel.stdout), (stderr, .stderr)] {
                     group.addTask {
-                        await StreamingFileHandleReader.streamPipe(handle) { line in
+                        await ApplicationConsoleReader.stream(handle, text: { batch in
+                            var text = batch
                             if channel == .stdout, let bundle = simulatorBundleID,
-                               await output.simulatorPID == nil, line.hasPrefix(bundle + ": "),
-                               let pid = SimulatorDebugLauncher.parsePID(from: line), pid > 0 {
+                               await output.simulatorPID == nil, text.hasPrefix(bundle + ": "),
+                               let newline = text.firstIndex(of: "\n"),
+                               let pid = SimulatorDebugLauncher.parsePID(from: String(text[..<newline])), pid > 0 {
                                 await output.recordSimulatorPID(pid)
-                            } else {
-                                await output.append(.init(channel: channel, text: line + "\n"))
+                                text = String(text[text.index(after: newline)...])
                             }
-                        }
+                            await output.append(.init(channel: channel, text: text))
+                        }, overflow: { await output.reportOverflow() })
                     }
                 }
             }
             try? stdout.close()
             try? stderr.close()
+            await output.finish()
             for await code in termination.stream {
                 return code
             }
@@ -172,6 +104,7 @@ final class ApplicationConsole: Sendable {
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
         }
         _ = await completion.value
+        await output.flush()
         await output.close()
     }
 
