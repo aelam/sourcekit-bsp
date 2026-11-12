@@ -283,7 +283,6 @@ extension XcodeProjectManager {
         }
         await console.output.connect { await progressHandler?($0.runMessage) }
         do {
-            if isSimulator { _ = try await console.waitForSimulatorLaunch() }
             return try await console.wait()
         } catch {
             let pid = devicePID
