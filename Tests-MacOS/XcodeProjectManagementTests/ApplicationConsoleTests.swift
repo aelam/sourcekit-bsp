@@ -5,15 +5,17 @@ import Testing
 
 struct ApplicationConsoleTests {
     @Test
-    func runMessageRemovesOnlyTheAppleMirrorTimestamp() {
+    func runMessageRemovesAppleMirrorTimestampAndFinalNewline() {
         let original = "2026-11-12 16:51:50.715363+0900 LINE-Dev[23851:967083] [main] Invalid superset key name\n"
         let output = ApplicationOutput(channel: .stderr, text: original)
-        #expect(output.runMessage == "LINE-Dev[23851:967083] [main] Invalid superset key name\n")
+        #expect(output.runMessage == "LINE-Dev[23851:967083] [main] Invalid superset key name")
         #expect(output.text == original)
-        #expect(ApplicationOutput(channel: .stdout, text: original).runMessage == original)
+        #expect(ApplicationOutput(channel: .stdout, text: original).runMessage == String(original.dropLast()))
         #expect(ApplicationOutput(channel: .stderr, text: "2026-11-12 16:51:50 user message\n").runMessage
-            == "2026-11-12 16:51:50 user message\n")
-        #expect(ApplicationOutput(channel: .stderr, text: "plain stderr\n").runMessage == "plain stderr\n")
+            == "2026-11-12 16:51:50 user message")
+        #expect(ApplicationOutput(channel: .stderr, text: "plain stderr\n").runMessage == "plain stderr")
+        #expect(ApplicationOutput(channel: .stdout, text: "first\nsecond\n").runMessage == "first\nsecond")
+        #expect(ApplicationOutput(channel: .stderr, text: "no final newline").runMessage == "no final newline")
     }
 
     @Test
