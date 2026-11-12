@@ -76,18 +76,30 @@ struct DeviceDebugSessionTests {
         let terminated = CrossPlatformLock(initialState: [Int]())
         let adapter = DeviceTestAdapter(stopped: stopped)
         let launchedArguments = CrossPlatformLock(initialState: [String]())
-        let commands = DeviceCommandRunner { arguments, _ in
-            if arguments.contains("launch") {
-                launchedArguments.withLock { $0 = arguments }
-                let index = try #require(arguments.firstIndex(of: "--json-output"))
-                try #"{"info":{"outcome":"success"},"result":{"process":{"processIdentifier":42}}}"#
-                    .write(toFile: arguments[index + 1], atomically: true, encoding: .utf8)
-            } else if arguments.contains("terminate") {
+        let launched = CrossPlatformLock(initialState: false)
+        var commands = DeviceCommandRunner { arguments, _ in
+            if arguments.contains("terminate") {
                 let index = try #require(arguments.firstIndex(of: "--pid"))
                 let pid = try #require(Int(arguments[index + 1]))
                 terminated.withLock { $0.append(pid) }
+            } else {
+                let index = try #require(arguments.firstIndex(of: "--json-output"))
+                let result = if arguments.contains("apps") {
+                    #"{"apps":[{"bundleIdentifier":"com.hello.Hello","url":"file:///device/Hello.app"}]}"#
+                } else if launched.withLock({ $0 }) {
+                    #"{"runningProcesses":[{"processIdentifier":42,"executable":"/device/Hello.app/sleep"}]}"#
+                } else {
+                    #"{"runningProcesses":[]}"#
+                }
+                try "{\"info\":{\"outcome\":\"success\"},\"result\":\(result)}"
+                    .write(toFile: arguments[index + 1], atomically: true, encoding: .utf8)
             }
             return ProcessExecutionResult(output: "", error: nil, exitCode: 0)
+        }
+        commands.startConsole = { arguments in
+            launchedArguments.withLock { $0 = arguments }
+            launched.withLock { $0 = true }
+            return try ApplicationConsole(executable: "/bin/sleep", arguments: ["30"])
         }
         let manager = DebugSessionManager(
             adapter: adapter,
@@ -118,7 +130,12 @@ struct DeviceDebugSessionTests {
         }
         await manager.terminateAll()
         await manager.terminateAll()
-        #expect(launchedArguments.withLock { Array($0.suffix(3)) } == ["com.hello.Hello", "--message", "hello world"])
+        #expect(launchedArguments.withLock { Array($0.suffix(4)) } == [
+            "com.hello.Hello",
+            "--",
+            "--message",
+            "hello world"
+        ])
         #expect(terminated.withLock { $0 } == [42])
         #expect(stopped.withLock { $0 } == 1)
     }

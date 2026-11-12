@@ -13,6 +13,7 @@ actor DeferredDAPSession {
     typealias Prepare = @Sendable (DebugSessionConnection.Request, Int?) async throws -> DebugSessionBackend
 
     private let prepare: Prepare
+    private let onOutput: @Sendable (String) async -> Void
     private let onClose: @Sendable () async -> Void
     private let idleTimeout: Duration
     private let disconnectTimeout: Duration
@@ -46,12 +47,14 @@ actor DeferredDAPSession {
     init(
         idleTimeout: Duration = .seconds(60),
         disconnectTimeout: Duration = .seconds(2),
+        onOutput: @escaping @Sendable (String) async -> Void = { _ in },
         prepare: @escaping Prepare,
         onClose: @escaping @Sendable () async -> Void = {}
     ) {
         self.idleTimeout = idleTimeout
         self.disconnectTimeout = disconnectTimeout
         self.prepare = prepare
+        self.onOutput = onOutput
         self.onClose = onClose
     }
 
@@ -284,6 +287,13 @@ extension DeferredDAPSession {
             reverseRequests[clientSequence + 1] = sequence
         }
         try sendClient(message)
+        if type == "event", message["event"] as? String == "output",
+           let body = message["body"] as? [String: Any],
+           let category = body["category"] as? String,
+           ["stdout", "stderr", "console"].contains(category),
+           let output = body["output"] as? String {
+            await onOutput(ApplicationLogText.forBuildLog(output, stripMirrorTimestamp: category == "stderr"))
+        }
     }
 
     private func completeInitialization(_ message: [String: Any]) async throws {

@@ -49,6 +49,35 @@ struct DeviceDAPRelayTests {
     }
 
     @Test
+    func applicationOutputReachesAPlainDAPClientBeforeTheAppExits() async throws {
+        let console = try ApplicationConsole(
+            executable: "/bin/sh", arguments: [
+                "-c",
+                "printf 'app stdout\\n'; printf 'app stderr\\n' >&2; exec sleep 30"
+            ]
+        )
+        let upstream = try await LLDBDAPServer().start()
+        let relay = DeviceDAPRelay(
+            upstream: upstream,
+            configuration: .init(
+                pid: 2_147_483_647,
+                program: "/bin/sleep",
+                commands: ["!bsp_test_missing_attach_command"]
+            ),
+            console: console
+        ) {}
+        let endpoint = try await relay.start()
+        defer { endpoint.terminate() }
+        let exchange = try await DAPTestSocket.exchange(uri: endpoint.uri, waitForConsole: true)
+        #expect(exchange.output.contains("app stdout\n"))
+        #expect(exchange.output.contains("app stderr\n"))
+        #expect(exchange.stdoutSeen)
+        #expect(exchange.stderrSeen)
+        await relay.close(reason: nil)
+        #expect(console.exitCode != nil)
+    }
+
+    @Test
     func idleSessionCleansUpWithoutAClient() async throws {
         let cleaned = AsyncStream<Void>.makeStream()
         let stopped = CrossPlatformLock(initialState: 0)
@@ -87,15 +116,20 @@ private struct DAPTestSocket {
     var parser = DAPFrameBuffer()
     var pending: [Data] = []
     var output = ""
+    var sequence = 0
+    var stdoutSeen = false
+    var stderrSeen = false
 
     struct Exchange: Sendable {
         let initialized: Bool
         let attached: Bool
         let output: String
+        let stdoutSeen: Bool
+        let stderrSeen: Bool
     }
 
     /// Blocking socket calls must not occupy the relay's cooperative executor.
-    static func exchange(uri: String) async throws -> Exchange {
+    static func exchange(uri: String, waitForConsole: Bool = false) async throws -> Exchange {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue(label: "sourcekit-bsp.test-dap-client").async {
                 do {
@@ -107,6 +141,11 @@ private struct DAPTestSocket {
                     }}
                     """#)
                     let initialized = try client.response(sequence: 1)
+                    if waitForConsole {
+                        while !client.stdoutSeen || !client.stderrSeen {
+                            _ = try client.nextMessage()
+                        }
+                    }
                     try client.send(#"""
                     {"seq":2,"type":"request","command":"attach","arguments":{"pid":2147483647}}
                     """#)
@@ -114,7 +153,8 @@ private struct DAPTestSocket {
                     guard let initialized = initialized["success"] as? Bool,
                           let attached = attached["success"] as? Bool else { throw DAPRelayError.invalidFrame }
                     continuation.resume(returning: Exchange(
-                        initialized: initialized, attached: attached, output: client.output
+                        initialized: initialized, attached: attached, output: client.output,
+                        stdoutSeen: client.stdoutSeen, stderrSeen: client.stderrSeen
                     ))
                 } catch {
                     continuation.resume(throwing: error)
@@ -167,15 +207,26 @@ private struct DAPTestSocket {
 
     mutating func response(sequence: Int) throws -> [String: Any] {
         while true {
-            while !pending.isEmpty {
+            let message = try nextMessage()
+            if message["request_seq"] as? Int == sequence { return message }
+        }
+    }
+
+    mutating func nextMessage() throws -> [String: Any] {
+        while true {
+            if !pending.isEmpty {
                 let body = pending.removeFirst()
-                guard let message = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+                guard let message = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+                      let next = message["seq"] as? Int, next > sequence else {
                     throw DAPRelayError.invalidFrame
                 }
+                sequence = next
                 if message["event"] as? String == "output", let event = message["body"] as? [String: Any] {
                     output += event["output"] as? String ?? ""
+                    stdoutSeen = stdoutSeen || event["category"] as? String == "stdout"
+                    stderrSeen = stderrSeen || event["category"] as? String == "stderr"
                 }
-                if message["request_seq"] as? Int == sequence { return message }
+                return message
             }
             var bytes = [UInt8](repeating: 0, count: 65536)
             let count = recv(fd, &bytes, bytes.count, 0)

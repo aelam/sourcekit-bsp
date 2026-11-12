@@ -40,6 +40,32 @@ struct DeferredDAPSessionTests {
         await relay.stop()
     }
 
+    @Test
+    func forwardsApplicationOutputToBuildLogWithoutChangingDAPOutput() async throws {
+        let original = "2026-11-12 16:51:50.715363+0900 LINE-Dev[23851:967083] [main] Message\n"
+        let native = try DeferredFakeAdapter(emittedOutput: (category: "stderr", text: original))
+        let logs = CrossPlatformLock(initialState: [String]())
+        let relay = DeferredDAPSession(onOutput: { message in
+            logs.withLock { $0.append(message) }
+        }, prepare: { _, _ in
+            await DebugSessionBackend(connection: .init(uri: native.start(), request: .launch, program: "/tmp/Hello")) {
+                await native.stop()
+            }
+        })
+        let client = try await DeferredTestClient(uri: relay.start())
+        try await client.send(request(1, "initialize"))
+        _ = try await client.response(1)
+        try await client.send(request(2, "launch"))
+        _ = try await client.response(2)
+        let output = try await object(client.event("output"))
+        #expect((output["body"] as? [String: Any])?["output"] as? String == original)
+        #expect(logs.withLock { $0 } == ["LINE-Dev[23851:967083] [main] Message"])
+        try await client.send(request(3, "disconnect"))
+        _ = try await client.response(3)
+        await relay.stop()
+        await client.close()
+    }
+
     @Test(arguments: [Duration.zero, .seconds(2)])
     func initializeDefersPreparationAndLaunchKeepsItsResponseCommand(disconnectTimeout: Duration) async throws {
         let native = try DeferredFakeAdapter(holdStart: true)
@@ -377,8 +403,10 @@ private actor DeferredFakeAdapter {
     var task: Task<Void, Never>?
     var messages: [Data] = []
     let holdStart: Bool
-    init(holdStart: Bool = false) throws {
+    let emittedOutput: (category: String, text: String)?
+    init(holdStart: Bool = false, emittedOutput: (category: String, text: String)? = nil) throws {
         self.holdStart = holdStart
+        self.emittedOutput = emittedOutput
         (listener, port) = try AttachDAPSocket.listener()
     }
 
@@ -443,6 +471,7 @@ private actor DeferredFakeAdapter {
                                         "type": "event",
                                         "event": "initialized"
                                     ])))
+                                try appendEmittedOutput(to: &pending)
                             }
                         }
                     }
@@ -451,5 +480,15 @@ private actor DeferredFakeAdapter {
                 try await Task.sleep(for: .milliseconds(5))
             }
         } catch {}
+    }
+
+    private func appendEmittedOutput(to pending: inout Data) throws {
+        guard let emittedOutput else { return }
+        try pending.append(DebugAdapterFrameBuffer.frame(JSONSerialization.data(withJSONObject: [
+            "seq": 101,
+            "type": "event",
+            "event": "output",
+            "body": ["category": emittedOutput.category, "output": emittedOutput.text]
+        ])))
     }
 }

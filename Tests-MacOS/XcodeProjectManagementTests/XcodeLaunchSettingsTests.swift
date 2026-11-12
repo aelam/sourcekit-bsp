@@ -76,7 +76,7 @@ struct XcodeLaunchSettingsTests {
     func deviceReceivesArgumentsAndJSONEnvironment(stopped: Bool) async throws {
         let commands = DeviceCommandRunner { arguments, _ in
             #expect(arguments.contains("--start-stopped") == stopped)
-            #expect(arguments.suffix(3) == ["com.example.App", "--message", "hello world"])
+            #expect(arguments.suffix(4) == ["com.example.App", "--", "--message", "hello world"])
             let environmentIndex = try #require(arguments.firstIndex(of: "--environment-variables"))
             let environment = try JSONDecoder().decode(
                 [String: String].self,
