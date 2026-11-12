@@ -121,6 +121,14 @@ final class AttachTiming: Sendable {
                 await backend.didStart()
                 await handshake.finish(.ok)
             },
+            recordRequestTiming: { command, duration, success in
+                backend.recordRequestTiming(command, duration, success)
+                self.record(
+                    "dap.\(command)",
+                    duration: duration,
+                    outcome: success.map { $0 ? .ok : .failed } ?? .incomplete
+                )
+            },
             stop: {
                 await backend.stop()
                 await handshake.finish(Task.isCancelled ? .cancelled : .incomplete)

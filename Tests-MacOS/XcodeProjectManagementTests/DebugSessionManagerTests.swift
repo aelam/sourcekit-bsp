@@ -105,6 +105,16 @@ final class DebugSessionManagerTests: XCTestCase {
         }
     }
 
+    func testHostAttachUsesVerifiedPIDWithoutPreloadingFileDependencies() async throws {
+        let manager = DebugSessionManager(adapter: FakeAdapter(), simulatorLauncher: FakeLauncher(pid: 1))
+        let identity = HostProcessIdentity(pid: 42, executable: "/Applications/Hello.app/Hello", startToken: "one")
+        let connection = try await manager.makeAttachConnection(identity: identity)
+        XCTAssertEqual(connection.request, .attach)
+        XCTAssertEqual(connection.pid, identity.pid)
+        XCTAssertNil(connection.program)
+        await manager.stopConnection(uri: connection.uri)
+    }
+
     func testMacOSProducesLaunchConnection() async throws {
         let manager = DebugSessionManager(adapter: FakeAdapter(), simulatorLauncher: FakeLauncher(pid: 1))
         let product = DebugProduct(

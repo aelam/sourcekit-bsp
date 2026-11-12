@@ -160,6 +160,17 @@ PID must match the selected target. Attach requires a resolved debug Build Conte
 and supports iOS simulator apps, physical iOS devices, and macOS executables.
 Test Attach is not supported.
 
+On macOS and iOS simulators, Attach passes the verified PID to LLDB without a
+`program` path. LLDB discovers the executable and loaded modules from the process.
+This avoids loading file dependencies before attachment; debug symbols remain
+available. Physical device Attach still supplies the matching local executable.
+
+The `Attach[...]` log summary separates `dap.initialize` from `dap.attach`.
+Each measures elapsed time from queuing the native request to receiving its
+response, including transport and adapter work. `dap.handshake` includes both
+requests and identity checks, so these durations must not be added together.
+An unanswered request records elapsed time when the session closes.
+
 For a physical iOS device, the server reads the installed app and running process
 reports from `devicectl`. It matches the exact bundle identifier and executable
 path, then rechecks the PID before attaching. The matching local build product is

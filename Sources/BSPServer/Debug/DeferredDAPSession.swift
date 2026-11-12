@@ -12,6 +12,12 @@ import Glibc
 actor DeferredDAPSession {
     typealias Prepare = @Sendable (DebugSessionConnection.Request, Int?) async throws -> DebugSessionBackend
 
+    private struct StartupRequestTiming {
+        let sequence: Int
+        let command: String
+        let started = ContinuousClock.now
+    }
+
     private let prepare: Prepare
     private let onClose: @Sendable () async -> Void
     private let idleTimeout: Duration
@@ -33,6 +39,7 @@ actor DeferredDAPSession {
     private var deadline: ContinuousClock.Instant?
     private var disconnectSequence: Int?
     private var initializeSequence: Int?
+    private var startupRequestTiming: StartupRequestTiming?
     private var nativeSequence = 0
     private var clientSequence = 0
     private var requests: [Int: (sequence: Int, command: String)] = [:]
@@ -105,6 +112,7 @@ actor DeferredDAPSession {
         startup?.cancel()
         await startup?.value
         startup = nil
+        finishRequestTiming(success: nil)
         await detachAndClose()
         activity.finish()
         await backend?.stop()
@@ -302,6 +310,10 @@ extension DeferredDAPSession {
     private func adapterMessage(_ body: Data) async throws {
         var message = try Self.object(body)
         let type = message["type"] as? String
+        if type == "response", let pending = startupRequestTiming,
+           message["request_seq"] as? Int == pending.sequence {
+            finishRequestTiming(success: message["success"] as? Bool)
+        }
         if type == "event", message["event"] as? String == "output",
            let output = message["body"] as? [String: Any],
            let category = output["category"] as? String, ["stdout", "stderr"].contains(category),
@@ -518,6 +530,17 @@ extension DeferredDAPSession {
 
     private func sendNative(_ message: [String: Any]) throws {
         try toAdapter.append(DebugAdapterFrameBuffer.frame(JSONSerialization.data(withJSONObject: message)))
+        if !startAnswered, message["type"] as? String == "request",
+           let command = message["command"] as? String, ["initialize", "attach", "launch"].contains(command),
+           let sequence = message["seq"] as? Int {
+            startupRequestTiming = StartupRequestTiming(sequence: sequence, command: command)
+        }
+    }
+
+    private func finishRequestTiming(success: Bool?) {
+        guard let pending = startupRequestTiming else { return }
+        startupRequestTiming = nil
+        backend?.recordRequestTiming(pending.command, pending.started.duration(to: .now), success)
     }
 
     private static func object(_ data: Data) throws -> [String: Any] {
