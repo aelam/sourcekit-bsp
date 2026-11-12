@@ -225,7 +225,7 @@ extension XcodeProjectManager {
                 environment: settings.consoleEnvironment,
                 workingDirectory: settings.workingDirectory.map { URL(fileURLWithPath: $0) }
             )
-            await console.output.connect { await progressHandler?($0.text) }
+            await console.output.connect { await progressHandler?($0.runMessage) }
             let code = try await console.wait()
             await progressHandler?("App exited with code \(code)")
             return XcodeRunResult(
@@ -276,12 +276,12 @@ extension XcodeProjectManager {
         } else {
             let launched = try await commands.launchConsole(
                 deviceID: deviceID, bundleID: appIdentifier, localExecutable: executableName,
-                settings: settings, stopped: false, outputHandler: { await progressHandler?($0.text) }
+                settings: settings, stopped: false, outputHandler: { await progressHandler?($0.runMessage) }
             )
             console = launched.console
             devicePID = launched.pid
         }
-        await console.output.connect { await progressHandler?($0.text) }
+        await console.output.connect { await progressHandler?($0.runMessage) }
         do {
             if isSimulator { _ = try await console.waitForSimulatorLaunch() }
             return try await console.wait()

@@ -5,6 +5,16 @@ struct ApplicationOutput: Sendable, Equatable {
     enum Channel: String, Sendable { case stdout, stderr, console }
     let channel: Channel
     let text: String
+
+    var runMessage: String {
+        // Build logs can add a receive timestamp. Remove Apple's mirrored timestamp only for Run.
+        guard channel == .stderr,
+              let range = text.range(
+                  of: #"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3,9}(?:[+-]\d{4})? (?=[^\s\[]+\[\d+:[^\]]+\] )"#,
+                  options: .regularExpression
+              ) else { return text }
+        return String(text[range.upperBound...])
+    }
 }
 
 /// Retains startup output until the debug client completes initialization.

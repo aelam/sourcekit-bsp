@@ -5,6 +5,18 @@ import Testing
 
 struct ApplicationConsoleTests {
     @Test
+    func runMessageRemovesOnlyTheAppleMirrorTimestamp() {
+        let original = "2026-11-12 16:51:50.715363+0900 LINE-Dev[23851:967083] [main] Invalid superset key name\n"
+        let output = ApplicationOutput(channel: .stderr, text: original)
+        #expect(output.runMessage == "LINE-Dev[23851:967083] [main] Invalid superset key name\n")
+        #expect(output.text == original)
+        #expect(ApplicationOutput(channel: .stdout, text: original).runMessage == original)
+        #expect(ApplicationOutput(channel: .stderr, text: "2026-11-12 16:51:50 user message\n").runMessage
+            == "2026-11-12 16:51:50 user message\n")
+        #expect(ApplicationOutput(channel: .stderr, text: "plain stderr\n").runMessage == "plain stderr\n")
+    }
+
+    @Test
     func streamsBothChannelsBeforeExitAndDrainsTheFinalLine() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
