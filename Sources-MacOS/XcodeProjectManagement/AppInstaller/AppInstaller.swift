@@ -64,8 +64,8 @@ struct SimulatorCommandRunner: Sendable {
         guard settings.workingDirectory == nil else {
             throw XcodeRunError.failedToLaunchApp("Custom working directories are not supported for simulator launches")
         }
-        // Run uses a PTY because the pipe console can stop draining app stderr.
-        var arguments = ["simctl", "launch", stopped ? "--console" : "--console-pty", "--terminate-running-process"]
+        // A PTY keeps app stderr writable when the pipe console stops draining it.
+        var arguments = ["simctl", "launch", "--console-pty", "--terminate-running-process"]
         if stopped { arguments.append("--wait-for-debugger") }
         arguments += [deviceID, appIdentifier] + settings.arguments
         let environment = Dictionary(uniqueKeysWithValues: settings.consoleEnvironment.map {
@@ -97,6 +97,35 @@ struct SimulatorCommandRunner: Sendable {
             timeout: 90,
             phase: "Preparing simulator \(deviceID)"
         )
+    }
+
+    func applicationPID(
+        deviceID: String,
+        appIdentifier: String,
+        excluding previousPID: Int? = nil
+    ) async throws -> Int? {
+        let result = try await run(
+            arguments: ["simctl", "spawn", deviceID, "launchctl", "list"],
+            timeout: 5,
+            phase: "Finding \(appIdentifier) on simulator \(deviceID)"
+        )
+        return Self.parseApplicationPID(from: result.output, appIdentifier: appIdentifier, excluding: previousPID)
+    }
+
+    static func parseApplicationPID(
+        from output: String,
+        appIdentifier: String,
+        excluding previousPID: Int? = nil
+    ) -> Int? {
+        let applicationLabel = "UIKitApplication:\(appIdentifier)"
+        for line in output.split(whereSeparator: \.isNewline) {
+            let fields = line.split(whereSeparator: \.isWhitespace)
+            guard fields.count == 3,
+                  fields[2] == applicationLabel || fields[2].hasPrefix(applicationLabel + "["),
+                  let pid = Int(fields[0]), pid > 0, pid != previousPID else { continue }
+            return pid
+        }
+        return nil
     }
 
     func launch(

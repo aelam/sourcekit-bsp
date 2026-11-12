@@ -40,10 +40,10 @@ struct DeferredDAPSessionTests {
         await relay.stop()
     }
 
-    @Test
-    func forwardsApplicationOutputToBuildLogWithoutChangingDAPOutput() async throws {
+    @Test(arguments: ["stdout", "stderr", "console"])
+    func forwardsApplicationOutputToBuildLogWithoutChangingDAPOutput(category: String) async throws {
         let original = "2026-11-12 16:51:50.715363+0900 LINE-Dev[23851:967083] [main] Message\n"
-        let native = try DeferredFakeAdapter(emittedOutput: (category: "stderr", text: original))
+        let native = try DeferredFakeAdapter(emittedOutput: (category: category, text: original))
         let logs = CrossPlatformLock(initialState: [String]())
         let relay = DeferredDAPSession(onOutput: { message in
             logs.withLock { $0.append(message) }

@@ -11,11 +11,14 @@ extension SimulatorDebugLauncher: ConsoleDebuggerLaunching {
         deviceID: String, appIdentifier: String, settings: XcodeLaunchSettings
     ) async throws -> (Int, ApplicationConsole) {
         try await commands.prepare(deviceID: deviceID)
+        let previousPID = try await commands.applicationPID(deviceID: deviceID, appIdentifier: appIdentifier)
         let console = try commands.launchConsole(
             deviceID: deviceID, appIdentifier: appIdentifier, settings: settings, stopped: true
         )
         do {
-            guard let pid = try await console.waitForSimulatorLaunch() else {
+            guard let pid = try await console.waitForSimulatorLaunch(
+                commands: commands, deviceID: deviceID, appIdentifier: appIdentifier, previousPID: previousPID
+            ) else {
                 _ = try await console.wait()
                 let text = await console.output.recentText
                 throw XcodeRunError.failedToLaunchApp("The simulator exited before the debugger could attach: \(text)")
@@ -29,13 +32,18 @@ extension SimulatorDebugLauncher: ConsoleDebuggerLaunching {
 }
 
 extension ApplicationConsole {
-    func waitForSimulatorLaunch() async throws -> Int? {
+    func waitForSimulatorLaunch(
+        commands: SimulatorCommandRunner, deviceID: String, appIdentifier: String, previousPID: Int?
+    ) async throws -> Int? {
         let deadline = ContinuousClock.now + .seconds(60)
         while ContinuousClock.now < deadline {
             try Task.checkCancellation()
-            if let pid = await output.simulatorPID { return pid }
+            if let pid = await output.simulatorPID, pid != previousPID { return pid }
             if exitCode != nil { return nil }
-            try await Task.sleep(for: .milliseconds(50))
+            if let pid = try? await commands.applicationPID(
+                deviceID: deviceID, appIdentifier: appIdentifier, excluding: previousPID
+            ) { return pid }
+            try await Task.sleep(for: .milliseconds(250))
         }
         throw XcodeRunError.failedToLaunchApp("Timed out waiting for the simulator application to launch")
     }
