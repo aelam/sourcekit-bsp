@@ -37,7 +37,7 @@ with the request's `originId`. In vscode-bsp, these messages appear in the run
 task output and Build Output. Run completes when the application exits. Cancel
 the request to stop the application and close its console connection.
 
-The server keeps `simctl launch --console` or `devicectl device process launch
+The server keeps `simctl launch --console-pty` or `devicectl device process launch
 --console` connected for the application lifetime. The launch deadline does not
 limit how long the application can run. macOS applications use local pipes.
 
@@ -180,8 +180,9 @@ An Attach session detaches from its existing process during cleanup.
 
 Debug launches stream application output through standard DAP `output` events,
 which appear in the client's Debug Console. The server captures output from
-launch onward, including output written before the debugger connects. It keeps
-up to 256 KiB of startup output and reports overflow. Disconnecting closes the
+launch onward, including output written before the debugger connects. Build and
+launch progress remains in BSP `build/logMessage` notifications. The server keeps
+up to 4 MiB of startup output and reports overflow. Disconnecting closes the
 console helper; it does not signal an application that the debugger detached from.
 
 For applications launched by the server, the default environment includes
