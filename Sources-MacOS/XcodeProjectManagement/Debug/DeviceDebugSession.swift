@@ -45,18 +45,23 @@ struct DeviceDebugSession: Sendable {
         await progressHandler?("Starting LLDB for device \(deviceID)")
         let upstream = try await adapter.start()
         var process: DeviceDebugProcess?
+        var console: ApplicationConsole?
         var relay: DeviceDAPRelay?
         do {
             await progressHandler?("Launching \(bundleID) on device \(deviceID), waiting for the debugger")
-            let pid = try await commands.launch(
-                deviceID: deviceID, bundleID: bundleID, stopped: true, settings: product.launchSettings
+            let launchedConsole = try await commands.launchConsole(
+                deviceID: deviceID, bundleID: bundleID, localExecutable: executable,
+                settings: product.launchSettings, stopped: true
             )
+            console = launchedConsole.console
+            guard let pid = launchedConsole.pid else { throw DebugSessionError.missingExecutable }
             let launched = DeviceDebugProcess(commands: commands, deviceID: deviceID, pid: pid)
             process = launched
             try Task.checkCancellation()
             let preparedRelay = DeviceDAPRelay(
                 upstream: upstream,
-                configuration: .device(id: deviceID, pid: pid, executable: executable)
+                configuration: .device(id: deviceID, pid: pid, executable: executable),
+                console: launchedConsole.console
             ) {
                 await launched.stop()
             }
@@ -75,6 +80,7 @@ struct DeviceDebugSession: Sendable {
                 upstream.terminate()
             }
             await process?.stop()
+            await console?.stop(terminateApp: false)
             throw error
         }
     }

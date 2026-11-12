@@ -137,6 +137,10 @@ public actor DebugSessionManager {
             liveEndpoints.append(endpoint)
             return connection
         }
+        if product.platform.isSimulator,
+           let consoleLauncher = (launcher ?? simulatorLauncher) as? any ConsoleDebuggerLaunching {
+            return try await makeSimulatorConsoleConnection(product: product, launcher: consoleLauncher)
+        }
         let endpoint = try await adapter.start()
         var succeeded = false
         defer {
@@ -157,7 +161,7 @@ public actor DebugSessionManager {
                 pid: nil,
                 bundleId: product.bundleId,
                 args: product.launchSettings.arguments.isEmpty ? nil : product.launchSettings.arguments,
-                env: product.launchSettings.environment.isEmpty ? nil : product.launchSettings.environment,
+                env: product.launchSettings.consoleEnvironment,
                 cwd: product.launchSettings.workingDirectory
             )
         case .iOSSimulator, .watchSimulator, .tvSimulator, .visionSimulator:
@@ -177,6 +181,41 @@ public actor DebugSessionManager {
             )
         default:
             throw DebugSessionError.unsupportedPlatform(product.platform)
+        }
+    }
+
+    private func makeSimulatorConsoleConnection(
+        product: DebugProduct, launcher: any ConsoleDebuggerLaunching
+    ) async throws -> DebugSessionConnection {
+        guard let device = product.destinationID, let bundle = product.bundleId else {
+            throw DebugSessionError.missingSimulatorUDID
+        }
+        let upstream = try await adapter.start()
+        var console: ApplicationConsole?
+        var relay: DeviceDAPRelay?
+        do {
+            let (pid, launched) = try await launcher.launchConsoleWaitingForDebugger(
+                deviceID: device, appIdentifier: bundle, settings: product.launchSettings
+            )
+            console = launched
+            let identity = captureLaunchedProcess(pid, device)
+            let stop = stopPendingProcess
+            let prepared = DeviceDAPRelay(upstream: upstream, console: launched) {
+                if let identity { stop(identity) }
+            }
+            relay = prepared
+            let endpoint = try await prepared.start()
+            try Task.checkCancellation()
+            liveEndpoints.append(endpoint)
+            return .init(uri: endpoint.uri, request: .attach, pid: pid, bundleId: bundle)
+        } catch {
+            if let relay {
+                await relay.close(reason: error, terminateDebuggee: true)
+            } else {
+                upstream.terminate()
+                await console?.stop(terminateApp: true)
+            }
+            throw error
         }
     }
 

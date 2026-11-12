@@ -24,14 +24,7 @@ struct DeviceAttachDiscovery: Sendable {
         guard FileManager.default.fileExists(atPath: local) else {
             throw DebugSessionError.productNotFound(local)
         }
-        let apps: DeviceApps = try await query("apps", deviceID: device)
-        let installed = apps.apps.filter { $0.bundleIdentifier == bundle }
-        guard installed.count == 1, let appURL = installed[0].url,
-              let appPath = Self.devicePath(appURL), appPath.hasSuffix(".app") else {
-            throw HostAttachError
-                .invalid("App \(bundle) is not installed on device \(device). Install a development build first.")
-        }
-        let executable = appPath + "/" + URL(fileURLWithPath: local).lastPathComponent
+        let executable = try await installedExecutable(deviceID: device, bundleID: bundle, localExecutable: local)
         let processes: DeviceProcesses = try await query("processes", deviceID: device)
         let matches = processes.runningProcesses.filter {
             $0.processIdentifier > 0 && $0.executable.flatMap(Self.devicePath) == executable
@@ -69,6 +62,23 @@ struct DeviceAttachDiscovery: Sendable {
         }) else {
             throw HostAttachError.invalid("The selected device process exited or changed. Start Attach again.")
         }
+    }
+
+    func installedExecutable(deviceID: String, bundleID: String, localExecutable: String) async throws -> String {
+        let apps: DeviceApps = try await query("apps", deviceID: deviceID)
+        let installed = apps.apps.filter { $0.bundleIdentifier == bundleID }
+        guard installed.count == 1, let appURL = installed[0].url,
+              let appPath = Self.devicePath(appURL), appPath.hasSuffix(".app") else {
+            throw HostAttachError.invalid("App \(bundleID) is not installed on device \(deviceID).")
+        }
+        return appPath + "/" + URL(fileURLWithPath: localExecutable).lastPathComponent
+    }
+
+    func processIDs(deviceID: String, executable: String) async throws -> Set<Int> {
+        let processes: DeviceProcesses = try await query("processes", deviceID: deviceID)
+        return Set(processes.runningProcesses.filter {
+            $0.processIdentifier > 0 && $0.executable.flatMap(Self.devicePath) == executable
+        }.map(\.processIdentifier))
     }
 
     private func query<Result: Decodable>(_ subject: String, deviceID: String) async throws -> Result {

@@ -136,7 +136,7 @@ final class DebugSessionManagerTests: XCTestCase {
         )
         let connection = try await manager.makeConnection(for: product)
         XCTAssertEqual(connection.args, settings.arguments)
-        XCTAssertEqual(connection.env, settings.environment)
+        XCTAssertEqual(connection.env, settings.consoleEnvironment)
         XCTAssertEqual(connection.cwd, settings.workingDirectory)
     }
 

@@ -5,7 +5,11 @@ import Network
 /// Forwards one DAP session and supplies the device attach commands to LLDB.
 actor DeviceDAPRelay {
     private let upstream: DebugAdapterEndpoint
-    private let configuration: DAPAttachConfiguration
+    private let configuration: DAPAttachConfiguration?
+    private let console: ApplicationConsole?
+    private var consoleTask: Task<Void, Never>?
+    private var sequence = 0
+    private var reverseRequests: [Int: Int] = [:]
     private let timing: AttachTiming?
     private var attachSpan: AttachTiming.Span?
     private let cleanup: @Sendable () async -> Void
@@ -19,16 +23,19 @@ actor DeviceDAPRelay {
     private var adapterFrames = DAPFrameBuffer()
     private var cleanupTask: Task<Void, Never>?
     private var attached = false
+    private var detachRequested = false
     private var closed = false
 
     init(
         upstream: DebugAdapterEndpoint,
-        configuration: DAPAttachConfiguration,
+        configuration: DAPAttachConfiguration? = nil,
+        console: ApplicationConsole? = nil,
         timing: AttachTiming? = nil,
         cleanup: @escaping @Sendable () async -> Void
     ) {
         self.upstream = upstream
         self.configuration = configuration
+        self.console = console
         self.timing = timing
         self.cleanup = cleanup
     }
@@ -121,6 +128,11 @@ actor DeviceDAPRelay {
             if let data, !data.isEmpty {
                 let bodies = try fromClient ? clientFrames.append(data) : adapterFrames.append(data)
                 for body in bodies {
+                    if !fromClient,
+                       let message = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+                       message["type"] as? String == "event", message["event"] as? String == "terminated" {
+                        await console?.finishOutput()
+                    }
                     if fromClient, timing != nil, !attached,
                        let message = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
                        message["type"] as? String == "request" {
@@ -131,9 +143,10 @@ actor DeviceDAPRelay {
                             attachSpan = nil
                         }
                     }
-                    let outgoing = try fromClient ? configuration.configure(body) : body
+                    let outgoing = try fromClient ? clientMessage(body) : adapterMessage(body)
                     let failedAttach = !fromClient && observe(body)
                     try await send(DAPFrameBuffer.frame(outgoing), to: destination)
+                    if !fromClient { connectConsole(after: body) }
                     if failedAttach {
                         await close(reason: nil)
                         return
@@ -147,6 +160,56 @@ actor DeviceDAPRelay {
             }
         } catch {
             await close(reason: error)
+        }
+    }
+
+    private func clientMessage(_ body: Data) throws -> Data {
+        let body = try configuration?.configure(body) ?? body
+        guard var message = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            throw DAPRelayError.invalidFrame
+        }
+        if attached, message["type"] as? String == "request", message["command"] as? String == "disconnect",
+           let arguments = message["arguments"] as? [String: Any], arguments["terminateDebuggee"] as? Bool == false {
+            detachRequested = true
+        }
+        if message["type"] as? String == "response", let request = message["request_seq"] as? Int {
+            message["request_seq"] = reverseRequests.removeValue(forKey: request) ?? request
+        }
+        return try JSONSerialization.data(withJSONObject: message)
+    }
+
+    private func adapterMessage(_ body: Data) throws -> Data {
+        guard var message = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            throw DAPRelayError.invalidFrame
+        }
+        sequence += 1
+        if message["type"] as? String == "request", let original = message["seq"] as? Int {
+            reverseRequests[sequence] = original
+        }
+        message["seq"] = sequence
+        return try JSONSerialization.data(withJSONObject: message)
+    }
+
+    private func connectConsole(after body: Data) {
+        guard consoleTask == nil, let console,
+              let message = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              message["type"] as? String == "response", message["command"] as? String == "initialize",
+              message["success"] as? Bool == true else { return }
+        consoleTask = Task { [weak self] in
+            await console.output.connect { [weak self] output in await self?.sendOutput(output) }
+        }
+    }
+
+    private func sendOutput(_ output: ApplicationOutput) async {
+        guard !closed, let client else { return }
+        do {
+            let body = try JSONSerialization.data(withJSONObject: [
+                "type": "event", "event": "output",
+                "body": ["category": output.channel.rawValue, "output": output.text]
+            ])
+            try await send(DAPFrameBuffer.frame(adapterMessage(body)), to: client)
+        } catch {
+            Task { await self.close(reason: error) }
         }
     }
 
@@ -195,11 +258,16 @@ actor DeviceDAPRelay {
         client = nil
         adapter = nil
         upstream.terminate()
-        if !attached || terminateDebuggee {
-            let cleanup = cleanup
-            let task = Task.detached { await cleanup() }
-            cleanupTask = task
-            await task.value
+        consoleTask?.cancel()
+        consoleTask = nil
+        let cleanup = cleanup
+        let console = console
+        let stopApp = !attached || (terminateDebuggee && !detachRequested)
+        let task = Task.detached {
+            if stopApp { await cleanup() }
+            await console?.stop(terminateApp: false)
         }
+        cleanupTask = task
+        await task.value
     }
 }

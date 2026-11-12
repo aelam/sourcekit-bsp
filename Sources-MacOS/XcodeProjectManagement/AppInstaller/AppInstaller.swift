@@ -27,9 +27,16 @@ struct DeviceInstaller: AppInstaller {
 
 struct SimulatorCommandRunner: Sendable {
     var execute: @Sendable ([String], [String: String], TimeInterval) async throws -> ProcessExecutionResult
+    var startConsole: @Sendable ([String], [String: String], String) throws -> ApplicationConsole
 
     init(developerDirectory: URL? = nil) {
         let selected = developerDirectory.map { ["DEVELOPER_DIR": $0.path] } ?? [:]
+        startConsole = { arguments, environment, bundle in
+            try ApplicationConsole(
+                arguments: arguments, environment: environment.merging(selected) { _, selected in selected },
+                simulatorBundleID: bundle
+            )
+        }
         execute = { arguments, environment, timeout in
             try await ProcessExecutor().execute(
                 executable: "/usr/bin/xcrun",
@@ -42,11 +49,28 @@ struct SimulatorCommandRunner: Sendable {
 
     init(execute: @escaping @Sendable ([String], TimeInterval) async throws -> ProcessExecutionResult) {
         self.execute = { arguments, _, timeout in try await execute(arguments, timeout) }
+        startConsole = { _, _, _ in throw XcodeRunError.failedToLaunchApp("A console launcher was not supplied") }
     }
 
     init(executeWithEnvironment: @escaping @Sendable ([String], [String: String], TimeInterval) async throws
         -> ProcessExecutionResult) {
         execute = executeWithEnvironment
+        startConsole = { _, _, _ in throw XcodeRunError.failedToLaunchApp("A console launcher was not supplied") }
+    }
+
+    func launchConsole(
+        deviceID: String, appIdentifier: String, settings: XcodeLaunchSettings, stopped: Bool = false
+    ) throws -> ApplicationConsole {
+        guard settings.workingDirectory == nil else {
+            throw XcodeRunError.failedToLaunchApp("Custom working directories are not supported for simulator launches")
+        }
+        var arguments = ["simctl", "launch", "--console", "--terminate-running-process"]
+        if stopped { arguments.append("--wait-for-debugger") }
+        arguments += [deviceID, appIdentifier] + settings.arguments
+        let environment = Dictionary(uniqueKeysWithValues: settings.consoleEnvironment.map {
+            ("SIMCTL_CHILD_" + $0.key, $0.value)
+        })
+        return try startConsole(arguments, environment, appIdentifier)
     }
 
     func run(

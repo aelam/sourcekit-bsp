@@ -133,14 +133,17 @@ extension XcodeProjectManager {
                 progressHandler: progressHandler
             )
             await progressHandler?("Launching \(target.name) on \(destinationKind) \(destinationID)")
-            try await launchAppOnNonMac(
+            let code = try await runAppOnNonMac(
                 isSimulator: isSimulator,
                 deviceID: destinationID,
                 appIdentifier: appIdentifier,
-                settings: settings
+                executableName: buildSettings["EXECUTABLE_NAME"] ?? URL(fileURLWithPath: binaryPath)
+                    .deletingPathExtension().lastPathComponent,
+                settings: settings,
+                progressHandler: progressHandler
             )
-            await progressHandler?("App launched on \(destinationKind) \(destinationID)")
-            return XcodeRunResult(statusCode: .success, message: "App launched on \(destinationKind) \(destinationID)")
+            await progressHandler?("App exited with code \(code)")
+            return XcodeRunResult(statusCode: code == 0 ? .success : .error, message: "App exited with code \(code)")
         } catch {
             return XcodeRunResult(
                 statusCode: .error,
@@ -216,16 +219,18 @@ extension XcodeProjectManager {
     ) async -> XcodeRunResult {
         do {
             await progressHandler?("Running \(targetName) on macOS; waiting for the app to exit")
-            let result = try await ProcessExecutor().execute(
+            let console = try ApplicationConsole(
                 executable: binaryPath,
                 arguments: settings.arguments,
-                workingDirectory: settings.workingDirectory.map { URL(fileURLWithPath: $0) },
-                environment: settings.environment
+                environment: settings.consoleEnvironment,
+                workingDirectory: settings.workingDirectory.map { URL(fileURLWithPath: $0) }
             )
-            await progressHandler?("App exited with code \(result.exitCode)")
+            await console.output.connect { await progressHandler?($0.text) }
+            let code = try await console.wait()
+            await progressHandler?("App exited with code \(code)")
             return XcodeRunResult(
-                statusCode: .init(rawValue: Int(result.exitCode)) ?? .error,
-                message: result.output
+                statusCode: code == 0 ? .success : .error,
+                message: "App exited with code \(code)"
             )
         } catch {
             return XcodeRunResult(
@@ -256,19 +261,37 @@ extension XcodeProjectManager {
         )
     }
 
-    private func launchAppOnNonMac(
-        isSimulator: Bool, deviceID: String, appIdentifier: String, settings: XcodeLaunchSettings
-    ) async throws {
-        let commands = DeviceCommandRunner(developerDirectory: projectSnapshot?.xcodeInstallation.developerDir)
-        let launcher: AppLauncher = isSimulator
-            ?
-            SimulatorLauncher(commands: SimulatorCommandRunner(developerDirectory: projectSnapshot?
-                    .xcodeInstallation.developerDir))
-            : DeviceLauncher(commands: commands)
-        _ = try await launcher.launchApp(
-            deviceID: deviceID,
-            appIdentifier: appIdentifier,
-            settings: settings
-        )
+    private func runAppOnNonMac(
+        isSimulator: Bool, deviceID: String, appIdentifier: String, executableName: String,
+        settings: XcodeLaunchSettings,
+        progressHandler: (@Sendable (String) async -> Void)?
+    ) async throws -> Int32 {
+        let developerDirectory = projectSnapshot?.xcodeInstallation.developerDir
+        let console: ApplicationConsole
+        let commands = DeviceCommandRunner(developerDirectory: developerDirectory)
+        var devicePID: Int?
+        if isSimulator {
+            let commands = SimulatorCommandRunner(developerDirectory: developerDirectory)
+            console = try commands.launchConsole(deviceID: deviceID, appIdentifier: appIdentifier, settings: settings)
+        } else {
+            let launched = try await commands.launchConsole(
+                deviceID: deviceID, bundleID: appIdentifier, localExecutable: executableName,
+                settings: settings, stopped: false, outputHandler: { await progressHandler?($0.text) }
+            )
+            console = launched.console
+            devicePID = launched.pid
+        }
+        await console.output.connect { await progressHandler?($0.text) }
+        do {
+            if isSimulator { _ = try await console.waitForSimulatorLaunch() }
+            return try await console.wait()
+        } catch {
+            let pid = devicePID
+            await Task.detached {
+                if let pid { await commands.terminate(deviceID: deviceID, pid: pid) }
+                await console.stop(terminateApp: true)
+            }.value
+            throw error
+        }
     }
 }

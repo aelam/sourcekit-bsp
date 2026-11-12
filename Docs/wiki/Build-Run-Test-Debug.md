@@ -32,10 +32,14 @@ through `build/taskStart`, `build/taskProgress`, and `build/taskFinish`. Each
 stage also appears in `build/logMessage`. Notifications and the result preserve
 the request's `originId`.
 
-In vscode-bsp, the Run notification shows the current stage. The
-`vscode-bsp-log` output channel keeps the stage history and final status.
-Simulator success means that the app launched; the server does not monitor
-its lifetime or stream app logs. A macOS Run completes when the app exits.
+Run streams application output through standard `build/logMessage` notifications
+with the request's `originId`. In vscode-bsp, these messages appear in the run
+task output and Build Output. Run completes when the application exits. Cancel
+the request to stop the application and close its console connection.
+
+The server keeps `simctl launch --console` or `devicectl device process launch
+--console` connected for the application lifetime. The launch deadline does not
+limit how long the application can run. macOS applications use local pipes.
 
 ## Test
 
@@ -171,6 +175,27 @@ Launch preparation emits BSP task and log notifications. Preparation errors and
 debugger output also arrive through DAP. Unused endpoints expire. If launch
 preparation created a suspended app, cleanup stops that app when attachment fails.
 An Attach session detaches from its existing process during cleanup.
+
+### Application console
+
+Debug launches stream application output through standard DAP `output` events,
+which appear in the client's Debug Console. The server captures output from
+launch onward, including output written before the debugger connects. It keeps
+up to 256 KiB of startup output and reports overflow. Disconnecting closes the
+console helper; it does not signal an application that the debugger detached from.
+
+For applications launched by the server, the default environment includes
+`OS_ACTIVITY_DT_MODE=enable` and `OS_ACTIVITY_MODE=debug`. These are the Darwin
+logging settings used by LLDB to mirror `NSLog`, `Logger`, and `os_log` messages
+to standard error, including debug-level messages. `NSUnbufferedIO=YES` reduces
+standard-stream buffering. Explicit scheme and request environment values take
+precedence; `IDE_DISABLED_OS_ACTIVITY_DT_MODE` disables the default mirror setting.
+
+Unified logs appear as text. Structured subsystem/category filtering and exact
+Xcode Console parity are not provided. An Attach request for an application
+started elsewhere cannot retroactively connect its standard streams or change
+its launch environment. Device log delivery still needs validation on hardware
+with the selected Xcode and iOS versions.
 
 The iPhone path has automated command, protocol, and cleanup tests. Breakpoints,
 stepping, and variables still need validation on a physical device. Other physical
