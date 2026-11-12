@@ -15,6 +15,7 @@ struct SimulatorConsoleLaunchTests {
                 "simctl", "launch", "--console", "--terminate-running-process", "--wait-for-debugger",
                 "SIM", "test.App", "--flag"
             ])
+            #expect(!arguments.contains("--console-pty"))
             #expect(environment["SIMCTL_CHILD_FEATURE"] == "enabled")
             #expect(environment["SIMCTL_CHILD_OS_ACTIVITY_DT_MODE"] == "enable")
             return try ApplicationConsole(
@@ -43,7 +44,8 @@ struct SimulatorConsoleLaunchTests {
             throw CancellationError()
         }
         commands.startConsole = { arguments, _, _ in
-            #expect(arguments.contains("--console"))
+            #expect(arguments.contains("--console-pty"))
+            #expect(!arguments.contains("--console"))
             #expect(!arguments.contains("--wait-for-debugger"))
             throw CancellationError()
         }

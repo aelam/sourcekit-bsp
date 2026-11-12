@@ -292,7 +292,7 @@ extension DeferredDAPSession {
            let category = body["category"] as? String,
            ["stdout", "stderr", "console"].contains(category),
            let output = body["output"] as? String {
-            await onOutput(ApplicationLogText.forBuildLog(output, standardError: category == "stderr"))
+            await onOutput(ApplicationLogText.forBuildLog(output, stripMirrorTimestamp: category == "stderr"))
         }
     }
 

@@ -10,7 +10,8 @@ struct ApplicationConsoleTests {
         let output = ApplicationOutput(channel: .stderr, text: original)
         #expect(output.runMessage == "LINE-Dev[23851:967083] [main] Invalid superset key name")
         #expect(output.text == original)
-        #expect(ApplicationOutput(channel: .stdout, text: original).runMessage == String(original.dropLast()))
+        #expect(ApplicationOutput(channel: .stdout, text: original).runMessage
+            == "LINE-Dev[23851:967083] [main] Invalid superset key name")
         #expect(ApplicationOutput(channel: .stderr, text: "2026-11-12 16:51:50 user message\n").runMessage
             == "2026-11-12 16:51:50 user message")
         #expect(ApplicationOutput(channel: .stderr, text: "plain stderr\n").runMessage == "plain stderr")
@@ -25,8 +26,8 @@ struct ApplicationConsoleTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let console = try ApplicationConsole(
             executable: "/bin/sh", arguments: ["-c", """
-            printf 'ready\\n'
-            printf 'error\\n' >&2
+            printf 'ready\\r\\n'
+            printf 'error\\r\\n' >&2
             while [ ! -f release ]; do sleep 0.05; done
             printf 'last line'
             """], workingDirectory: directory
@@ -102,9 +103,9 @@ struct ApplicationConsoleTests {
 
     @Test
     func startupBufferReportsTruncationAndContinuesStreaming() async throws {
-        let buffer = ApplicationOutputBuffer()
+        let buffer = ApplicationOutputBuffer(maxBufferedBytes: 16)
         await buffer.append(.init(channel: .stdout, text: "first\n"))
-        await buffer.append(.init(channel: .stdout, text: String(repeating: "x", count: 256 * 1024)))
+        await buffer.append(.init(channel: .stdout, text: String(repeating: "x", count: 16)))
         let received = CrossPlatformLock(initialState: [ApplicationOutput]())
         await buffer.connect { output in received.withLock { $0.append(output) } }
         await buffer.append(.init(channel: .stderr, text: "live\n"))

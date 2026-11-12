@@ -7,13 +7,14 @@ struct ApplicationOutput: Sendable, Equatable {
     let text: String
 
     var runMessage: String {
-        ApplicationLogText.forBuildLog(text, standardError: channel == .stderr)
+        ApplicationLogText.forBuildLog(text, stripMirrorTimestamp: true)
     }
 }
 
 /// Retains startup output until the debug client completes initialization.
 actor ApplicationOutputBuffer {
     typealias Handler = @Sendable (ApplicationOutput) async -> Void
+    private let maxBufferedBytes: Int
     private var handler: Handler?
     private var pending: ArraySlice<ApplicationOutput> = []
     private var size = 0
@@ -23,10 +24,14 @@ actor ApplicationOutputBuffer {
     private(set) var simulatorPID: Int?
     private(set) var recentText = ""
 
+    init(maxBufferedBytes: Int = 4 * 1024 * 1024) {
+        self.maxBufferedBytes = maxBufferedBytes
+    }
+
     func append(_ output: ApplicationOutput) {
         guard !closed else { return }
         recentText = String((recentText + output.text).suffix(8192))
-        if size + output.text.utf8.count <= 256 * 1024 {
+        if size + output.text.utf8.count <= maxBufferedBytes {
             pending.append(output)
             size += output.text.utf8.count
         } else {

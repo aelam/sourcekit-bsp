@@ -64,7 +64,8 @@ struct SimulatorCommandRunner: Sendable {
         guard settings.workingDirectory == nil else {
             throw XcodeRunError.failedToLaunchApp("Custom working directories are not supported for simulator launches")
         }
-        var arguments = ["simctl", "launch", "--console", "--terminate-running-process"]
+        // Run uses a PTY because the pipe console can stop draining app stderr.
+        var arguments = ["simctl", "launch", stopped ? "--console" : "--console-pty", "--terminate-running-process"]
         if stopped { arguments.append("--wait-for-debugger") }
         arguments += [deviceID, appIdentifier] + settings.arguments
         let environment = Dictionary(uniqueKeysWithValues: settings.consoleEnvironment.map {
