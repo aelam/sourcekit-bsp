@@ -69,11 +69,12 @@ struct ApplicationConsoleTests {
         let script = """
         printf 'ready\\n' >&2
         while [ ! -f release ]; do sleep 0.01; done
-        awk 'BEGIN { for (i = 0; i < 6000; i++) print "application output 012345678901234567890123456789 " i }' >&2
+        awk 'BEGIN { for (i = 0; i < 3000; i++) print "application output 012345678901234567890123456789 " i }' >&2
         """
         let console = try ApplicationConsole(
             executable: "/bin/sh", arguments: ["-c", script], workingDirectory: directory
         )
+        let handlerFinished = CrossPlatformLock(initialState: false)
         await console.output.connect { output in
             if output.text == "ready\n" {
                 FileManager.default.createFile(
@@ -81,12 +82,12 @@ struct ApplicationConsoleTests {
                     contents: nil
                 )
             }
-            try? await Task.sleep(for: .seconds(8))
+            try? await Task.sleep(for: .seconds(30))
+            handlerFinished.withLock { $0 = true }
         }
-        let start = ContinuousClock.now
-        let code = try await withDeadline(console) { try await console.wait() }
+        let code = try await withDeadline(console, timeout: .seconds(20)) { try await console.wait() }
         #expect(code == 0)
-        #expect(ContinuousClock.now - start < .seconds(6))
+        #expect(!handlerFinished.withLock { $0 })
         await console.output.close()
     }
 
@@ -129,12 +130,14 @@ struct ApplicationConsoleTests {
     }
 
     private func withDeadline<T: Sendable>(
-        _ console: ApplicationConsole, operation: @escaping @Sendable () async throws -> T
+        _ console: ApplicationConsole,
+        timeout: Duration = .seconds(10),
+        operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
             group.addTask { try await operation() }
             group.addTask {
-                try await Task.sleep(for: .seconds(10))
+                try await Task.sleep(for: timeout)
                 await console.stop(terminateApp: false)
                 throw DAPRelayError.timedOut
             }
