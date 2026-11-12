@@ -16,24 +16,10 @@ public enum StreamingFileHandleReader {
                 let source = DispatchSource.makeReadSource(fileDescriptor: fileHandle.fileDescriptor)
 
                 source.setEventHandler {
-                    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
-                    defer { buffer.deallocate() }
-
                     // A Linux hangup can include unread bytes with no later EOF event.
-                    let drainToEOF = source.data == 0
-                    repeat {
-                        let bytesRead = read(fileHandle.fileDescriptor, buffer, bufferSize)
-                        if bytesRead > 0 {
-                            let data = Data(bytes: buffer, count: bytesRead)
-                            continuation.yield(data)
-                        } else if bytesRead == 0 {
-                            continuation.finish()
-                            return
-                        } else {
-                            continuation.finish(throwing: POSIXError(.EIO))
-                            return
-                        }
-                    } while drainToEOF
+                    Self.readAvailable(
+                        fileHandle, continuation: continuation, drainToEOF: source.data == 0, bufferSize: bufferSize
+                    )
                 }
 
                 source.setCancelHandler {
@@ -72,5 +58,30 @@ public enum StreamingFileHandleReader {
                 logger.error("Error reading pipe: \(error)")
             }
         }
+    }
+
+    private static func readAvailable(
+        _ fileHandle: FileHandle,
+        continuation: AsyncThrowingStream<Data, Error>.Continuation,
+        drainToEOF: Bool,
+        bufferSize: Int
+    ) {
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
+        repeat {
+            let bytesRead = read(fileHandle.fileDescriptor, buffer, bufferSize)
+            if bytesRead > 0 {
+                continuation.yield(Data(bytes: buffer, count: bytesRead))
+            } else if bytesRead == 0 {
+                continuation.finish()
+                return
+            } else {
+                let readError = errno
+                if readError == EINTR { continue }
+                if readError == EAGAIN || readError == EWOULDBLOCK { return }
+                continuation.finish(throwing: POSIXError(POSIXErrorCode(rawValue: readError) ?? .EIO))
+                return
+            }
+        } while drainToEOF
     }
 }

@@ -15,54 +15,65 @@ struct ApplicationOutput: Sendable, Equatable {
 actor ApplicationOutputBuffer {
     typealias Handler = @Sendable (ApplicationOutput) async -> Void
     private var handler: Handler?
-    private var pending: [ApplicationOutput] = []
+    private var pending: ArraySlice<ApplicationOutput> = []
     private var size = 0
     private var dropped = false
     private var closed = false
+    private var drainTask: Task<Void, Never>?
     private(set) var simulatorPID: Int?
     private(set) var recentText = ""
 
-    func append(_ output: ApplicationOutput) async {
+    func append(_ output: ApplicationOutput) {
         guard !closed else { return }
         recentText = String((recentText + output.text).suffix(8192))
-        if let handler {
-            await handler(output)
-        } else if size + output.text.utf8.count <= 256 * 1024 {
+        if size + output.text.utf8.count <= 256 * 1024 {
             pending.append(output)
             size += output.text.utf8.count
         } else {
             dropped = true
         }
+        startDraining()
     }
 
     func recordSimulatorPID(_ pid: Int) {
         simulatorPID = pid
     }
 
-    func connect(_ handler: @escaping Handler) async {
+    func connect(_ handler: @escaping Handler) {
         guard !closed else { return }
-        while !pending.isEmpty || dropped {
-            let batch = pending
-            let lost = dropped
-            pending.removeAll()
-            size = 0
-            dropped = false
-            for output in batch {
-                await handler(output)
-            }
-            if lost {
-                await handler(.init(channel: .console, text: "Some startup output exceeded the console buffer.\n"))
-            }
-            guard !closed else { return }
-        }
         self.handler = handler
+        startDraining()
+    }
+
+    private func startDraining() {
+        guard handler != nil, drainTask == nil, !pending.isEmpty || dropped else { return }
+        drainTask = Task { await drain() }
+    }
+
+    private func drain() async {
+        while !closed, let handler {
+            if !pending.isEmpty {
+                let output = pending.removeFirst()
+                size -= output.text.utf8.count
+                if pending.isEmpty { pending = [] }
+                await handler(output)
+            } else if dropped {
+                dropped = false
+                await handler(.init(channel: .console, text: "Some application output exceeded the console buffer.\n"))
+            } else {
+                break
+            }
+        }
+        drainTask = nil
     }
 
     func close() {
         closed = true
         handler = nil
-        pending.removeAll()
+        pending = []
         size = 0
+        drainTask?.cancel()
+        drainTask = nil
     }
 }
 

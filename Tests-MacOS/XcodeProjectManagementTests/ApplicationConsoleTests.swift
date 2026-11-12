@@ -43,6 +43,7 @@ struct ApplicationConsoleTests {
             ) }
         }
         let code = try await withDeadline(console) { try await console.wait() }
+        try await waitUntil { received.withLock { $0.contains(.init(channel: .stdout, text: "last line\n")) } }
         #expect(code == 0)
         let output = received.withLock { $0 }
         #expect(output.contains(.init(channel: .stdout, text: "ready\n")))
@@ -56,7 +57,37 @@ struct ApplicationConsoleTests {
         #expect(try await console.wait() == 0)
         let received = CrossPlatformLock(initialState: "")
         await console.output.connect { output in received.withLock { $0 += output.text } }
+        try await waitUntil { received.withLock { $0 == "early\n" } }
         #expect(received.withLock { $0 } == "early\n")
+    }
+
+    @Test
+    func slowClientDoesNotBlockApplicationOutput() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let script = """
+        printf 'ready\\n' >&2
+        while [ ! -f release ]; do sleep 0.01; done
+        awk 'BEGIN { for (i = 0; i < 6000; i++) print "application output 012345678901234567890123456789 " i }' >&2
+        """
+        let console = try ApplicationConsole(
+            executable: "/bin/sh", arguments: ["-c", script], workingDirectory: directory
+        )
+        await console.output.connect { output in
+            if output.text == "ready\n" {
+                FileManager.default.createFile(
+                    atPath: directory.appendingPathComponent("release").path,
+                    contents: nil
+                )
+            }
+            try? await Task.sleep(for: .seconds(8))
+        }
+        let start = ContinuousClock.now
+        let code = try await withDeadline(console) { try await console.wait() }
+        #expect(code == 0)
+        #expect(ContinuousClock.now - start < .seconds(6))
+        await console.output.close()
     }
 
     @Test
@@ -69,18 +100,19 @@ struct ApplicationConsoleTests {
     }
 
     @Test
-    func startupBufferReportsTruncationAndContinuesStreaming() async {
+    func startupBufferReportsTruncationAndContinuesStreaming() async throws {
         let buffer = ApplicationOutputBuffer()
         await buffer.append(.init(channel: .stdout, text: "first\n"))
         await buffer.append(.init(channel: .stdout, text: String(repeating: "x", count: 256 * 1024)))
         let received = CrossPlatformLock(initialState: [ApplicationOutput]())
         await buffer.connect { output in received.withLock { $0.append(output) } }
         await buffer.append(.init(channel: .stderr, text: "live\n"))
+        try await waitUntil { received.withLock { $0.count == 3 } }
         let output = received.withLock { $0 }
         #expect(output.count == 3)
         #expect(output[0].text == "first\n")
-        #expect(output[1].channel == .console)
-        #expect(output[2].text == "live\n")
+        #expect(output.contains(.init(channel: .stderr, text: "live\n")))
+        #expect(output.contains { $0.channel == .console })
     }
 
     @Test
@@ -108,6 +140,14 @@ struct ApplicationConsoleTests {
             }
             defer { group.cancelAll() }
             return try await group.next()!
+        }
+    }
+
+    private func waitUntil(_ condition: @escaping @Sendable () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !condition() {
+            guard ContinuousClock.now < deadline else { throw DAPRelayError.timedOut }
+            try await Task.sleep(for: .milliseconds(10))
         }
     }
 }
