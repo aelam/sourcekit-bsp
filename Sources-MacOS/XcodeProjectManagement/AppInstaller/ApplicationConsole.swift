@@ -7,17 +7,7 @@ struct ApplicationOutput: Sendable, Equatable {
     let text: String
 
     var runMessage: String {
-        var message = text
-        // Build logs can add a receive timestamp. Remove Apple's mirrored timestamp only for Run.
-        if channel == .stderr,
-           let range = text.range(
-               of: #"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3,9}(?:[+-]\d{4})? (?=[^\s\[]+\[\d+:[^\]]+\] )"#,
-               options: .regularExpression
-           ) {
-            message = String(text[range.upperBound...])
-        }
-        if message.hasSuffix("\n") { message.removeLast() }
-        return message
+        ApplicationLogText.forBuildLog(text, standardError: channel == .stderr)
     }
 }
 

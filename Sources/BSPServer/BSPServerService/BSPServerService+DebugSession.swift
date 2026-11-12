@@ -20,7 +20,12 @@ extension BSPServerService {
         let context = try await executionContext(reference, operation: .debug, targets: targets)
         try validateDebugRevision(revision)
         let id = UUID()
-        let session = DeferredDAPSession { [weak self] request, pid in
+        let session = DeferredDAPSession(onOutput: { [weak self] message in
+            try? await self?.sendNotification(ServerJSONRPCNotification(
+                method: "build/logMessage",
+                params: BuildLogMessageParams(type: 3, originId: originId, message: message)
+            ))
+        }) { [weak self] request, pid in
             guard let self else { throw CancellationError() }
             try await self.validateDebugRevision(revision)
             if request == .attach {
