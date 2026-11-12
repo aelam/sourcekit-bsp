@@ -47,11 +47,11 @@ struct DeferredDAPSessionTests {
         let logs = CrossPlatformLock(initialState: [String]())
         let relay = DeferredDAPSession(onOutput: { message in
             logs.withLock { $0.append(message) }
-        }) { _, _ in
+        }, prepare: { _, _ in
             await DebugSessionBackend(connection: .init(uri: native.start(), request: .launch, program: "/tmp/Hello")) {
                 await native.stop()
             }
-        }
+        })
         let client = try await DeferredTestClient(uri: relay.start())
         try await client.send(request(1, "initialize"))
         _ = try await client.response(1)
@@ -471,15 +471,7 @@ private actor DeferredFakeAdapter {
                                         "type": "event",
                                         "event": "initialized"
                                     ])))
-                                if let emittedOutput {
-                                    try pending
-                                        .append(DebugAdapterFrameBuffer.frame(JSONSerialization.data(withJSONObject: [
-                                            "seq": 101,
-                                            "type": "event",
-                                            "event": "output",
-                                            "body": ["category": emittedOutput.category, "output": emittedOutput.text]
-                                        ])))
-                                }
+                                try appendEmittedOutput(to: &pending)
                             }
                         }
                     }
@@ -488,5 +480,15 @@ private actor DeferredFakeAdapter {
                 try await Task.sleep(for: .milliseconds(5))
             }
         } catch {}
+    }
+
+    private func appendEmittedOutput(to pending: inout Data) throws {
+        guard let emittedOutput else { return }
+        try pending.append(DebugAdapterFrameBuffer.frame(JSONSerialization.data(withJSONObject: [
+            "seq": 101,
+            "type": "event",
+            "event": "output",
+            "body": ["category": emittedOutput.category, "output": emittedOutput.text]
+        ])))
     }
 }
