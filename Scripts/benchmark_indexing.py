@@ -3,7 +3,6 @@
 
 import argparse
 import json
-import os
 from pathlib import Path
 import subprocess
 import threading
@@ -41,11 +40,13 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     report = {"backend": args.backend, "project": str(args.project.resolve()), "measurements": []}
-    environment = dict(os.environ, SOURCEKIT_BSP_PREPARE_FOR_INDEXING="1" if args.backend == "swift-build" else "0")
+    command = [str(args.server.resolve())]
+    if args.backend == "swift-build":
+        command.append("--enable-build-target-prepare")
     stop = threading.Event()
     stderr_path = args.output.with_suffix(".stderr.log")
     with stderr_path.open("w") as stderr:
-        process = subprocess.Popen([str(args.server.resolve())], cwd=args.project.resolve(), env=environment,
+        process = subprocess.Popen(command, cwd=args.project.resolve(),
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr)
         sampler = threading.Thread(target=sample_memory, args=(process.pid, stop, report), daemon=True)
         sampler.start()

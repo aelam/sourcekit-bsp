@@ -147,7 +147,7 @@ see [project configuration](Docs/wiki/Getting-Started.md#configure-the-applicati
 
 ## Index preparation for Xcode projects
 
-The optional `prepareForIndexing` setting uses Swift Build to prepare dependency
+The optional `--enable-build-target-prepare` flag uses Swift Build to prepare dependency
 modules and generated files without a full application build. SourceKit-LSP then
 indexes source files in the background. Compile, Run, Test, and Debug continue to
 use the existing Xcode execution paths.
@@ -168,17 +168,22 @@ Point `.bsp/*.json` at `.build/debug/sourcekit-bsp`. Keep the matching
 `SWBBuildServiceBundle` executable and resource bundles beside the server;
 copying only `sourcekit-bsp` is insufficient.
 
-Add the setting to your application's `.sourcekit-bsp/project.json`:
+Add the flag to the server's `argv` in `.bsp/*.json`. Any BSP client that starts
+this command uses the same setting:
 
 ```json
 {
-  "prepareForIndexing": true
+  "argv": [
+    "/absolute/path/to/sourcekit-bsp",
+    "--enable-build-target-prepare"
+  ]
 }
 ```
 
-The default is `false`, which leaves BSP preparation as a no-op.
-`SOURCEKIT_BSP_PREPARE_FOR_INDEXING=1` enables the same feature; `0` disables it.
-The environment variable takes precedence over the project setting.
+The flag is off by default. When present, it enables dependency preparation when
+SourceKit-LSP sends `buildTarget/prepare`. It does not start background indexing
+or build the full application. Remove the flag to restore no-op preparation.
+Project and workspace selection can use `.sourcekit-bsp/project.json`.
 
 Enable SourceKit-LSP background indexing separately in `.vscode/settings.json`:
 
@@ -188,7 +193,7 @@ Enable SourceKit-LSP background indexing separately in `.vscode/settings.json`:
 }
 ```
 
-The Hello demo enables preparation in `.sourcekit-bsp/project.json` and LSP
+The Hello demo enables preparation in `.bsp/config.json` and LSP
 background indexing in `.vscode/settings.json`. After rebuilding the server or
 changing these settings, run **Developer: Reload Window** in VS Code.
 
@@ -405,9 +410,9 @@ python3 Scripts/bsp_client.py --project "$bsp_project" \
 ```
 
 The probe uses `.build/debug/sourcekit-bsp` by default. Use `--server` to select
-another build. Hello enables `prepareForIndexing`, so use a server built with
-Swift Build support. For a default server build, set
-`SOURCEKIT_BSP_PREPARE_FOR_INDEXING=0` when running the probe.
+another build. The probe does not read Hello's `.bsp/config.json`. Pass
+`--enable-build-target-prepare` to test dependency preparation with a server
+built with Swift Build support.
 See the [client guide](Scripts/README.md) for options.
 
 ## Execution configuration extension
@@ -420,7 +425,7 @@ Compiler-information requests such as `buildTarget/scalacOptions`,
 `buildTarget/javacOptions`, and SourceKit compiler options describe the current
 compiler inputs. This extension instead lists selectable execution settings.
 Selecting these settings does not change the language server's indexing context.
-With `prepareForIndexing` enabled, starting an operation synchronizes the resolved
+With `--enable-build-target-prepare` enabled, starting an operation synchronizes the resolved
 destination and configuration with the indexing backend.
 
 ### Negotiate the extension

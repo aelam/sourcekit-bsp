@@ -10,7 +10,7 @@ public final class SwiftyBeaverLogger: @unchecked Sendable {
         let process = ProcessInfo.processInfo
         self.init(
             logFileURL: URL(fileURLWithPath: "/tmp/sourcekit-bsp/\(process.processIdentifier).log"),
-            debugEnabled: Self.debugEnabled(environment: process.environment, arguments: process.arguments)
+            debugEnabled: Self.debugEnabled(arguments: process.arguments)
         )
     }
 
@@ -20,9 +20,8 @@ public final class SwiftyBeaverLogger: @unchecked Sendable {
         self.destination = RotatingFileDestination(url: logFileURL)
     }
 
-    static func debugEnabled(environment: [String: String], arguments: [String]) -> Bool {
-        arguments.contains("--debug") || ["1", "true", "yes", "on"]
-            .contains(environment["BSP_DEBUG"]?.lowercased() ?? "")
+    static func debugEnabled(arguments: [String]) -> Bool {
+        arguments.contains("--debug")
     }
 
     public func info(

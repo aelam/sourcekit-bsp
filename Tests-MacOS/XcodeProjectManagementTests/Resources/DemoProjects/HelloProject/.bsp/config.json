@@ -12,8 +12,9 @@
     "argv": [
         "/usr/bin/env",
         "DEVELOPER_DIR=/Applications/Xcode-27.0.0.app/Contents/Developer",
-        "BSP_DEBUG=1",
-        "/Users/wang.lun/.codex/worktrees/swift-build-indexing/sourcekit-bsp/.build/debug/sourcekit-bsp"
+        "/Users/wang.lun/.codex/worktrees/swift-build-indexing/sourcekit-bsp/.build/debug/sourcekit-bsp",
+        "--debug",
+        "--enable-build-target-prepare"
     ],
     "kind": "xcode"
 }

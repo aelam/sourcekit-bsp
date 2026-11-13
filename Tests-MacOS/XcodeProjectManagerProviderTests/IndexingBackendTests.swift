@@ -7,7 +7,7 @@ import Testing
 struct IndexingBackendTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SOURCEKIT_BSP_SWIFT_BUILD"] == "1"))
     func indexingBackendCreationDoesNotLoadWorkspace() async throws {
-        let root = try configurationRoot(#"{"prepareForIndexing":true}"#)
+        let root = try configurationRoot(nil)
         defer { try? FileManager.default.removeItem(at: root) }
         let snapshot = XcodeProjectSnapshot(
             rootURL: root,
@@ -23,7 +23,8 @@ struct IndexingBackendTests {
             )
         )
         // Missing workspace and toolchain paths must not block the BSP connection.
-        let index = try #require(await XcodeIndexingConfiguration.makeBackend(snapshot: snapshot))
+        let index = try #require(await XcodeIndexingConfiguration(enableBuildTargetPrepare: true)
+            .makeBackend(snapshot: snapshot))
         #expect(index.indexStoreURL == snapshot.xcodeGlobalSettings.indexStoreURL)
         #expect(index.indexDatabaseURL == snapshot.xcodeGlobalSettings.indexDatabaseURL)
         await index.shutdown()
@@ -83,43 +84,29 @@ struct IndexingBackendTests {
         #expect(await index.stopped)
     }
 
-    @Test(arguments: [nil, "{}", #"{"project":"Hello.xcodeproj"}"#, #"{"prepareForIndexing":false}"#])
-    func preparationIsDisabledUnlessEnabled(contents: String?) throws {
-        let root = try configurationRoot(contents)
+    @Test(
+        .enabled(if: ProcessInfo.processInfo.environment["SOURCEKIT_BSP_SWIFT_BUILD"] == "1"),
+        arguments: [false, true]
+    )
+    func providerUsesLaunchSettingAcrossReloads(enabled: Bool) async throws {
+        let root = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
-        #expect(try !XcodeIndexingConfiguration.load(root: root, environment: [:]).prepareForIndexing)
-    }
-
-    @Test
-    func projectSettingEnablesPreparation() throws {
-        let root = try configurationRoot(#"{"prepareForIndexing":true}"#)
-        defer { try? FileManager.default.removeItem(at: root) }
-        #expect(try XcodeIndexingConfiguration.load(root: root, environment: [:]).prepareForIndexing)
-    }
-
-    @Test(arguments: ["1", "true", "0", "false"])
-    func environmentOverridesProjectSetting(value: String) throws {
-        let enabled = value == "1" || value == "true"
-        let root = try configurationRoot("{\"prepareForIndexing\":\(!enabled)}")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let configuration = try XcodeIndexingConfiguration.load(
-            root: root, environment: ["SOURCEKIT_BSP_PREPARE_FOR_INDEXING": value]
-        )
-        #expect(configuration.prepareForIndexing == enabled)
-    }
-
-    @Test
-    func rejectsInvalidPreparationSettings() throws {
-        let root = try configurationRoot(#"{"prepareForIndexing":"true"}"#)
-        defer { try? FileManager.default.removeItem(at: root) }
-        #expect(throws: DecodingError.self) {
-            try XcodeIndexingConfiguration.load(root: root, environment: [:])
-        }
-        try Data("{}".utf8).write(to: root.appendingPathComponent(".sourcekit-bsp/project.json"))
-        #expect(throws: XcodeProjectError.self) {
-            try XcodeIndexingConfiguration.load(
-                root: root, environment: ["SOURCEKIT_BSP_PREPARE_FOR_INDEXING": "typo"]
-            )
+        let directory = root.appendingPathComponent(".sourcekit-bsp")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // A legacy project setting must not override the process's launch option.
+        try Data("{\"prepareForIndexing\":\(!enabled)}".utf8)
+            .write(to: directory.appendingPathComponent("project.json"))
+        let provider = XcodeProjectManagerProvider(enableBuildTargetPrepare: enabled)
+        let manager = try await provider.createProjectManager(rootURL: root, config: nil)
+        do {
+            try await manager.initialize()
+            #expect(await manager.preparesIndexingOnRequest == enabled)
+            try await manager.updateBuildGraph()
+            #expect(await manager.preparesIndexingOnRequest == enabled)
+            await manager.shutdown()
+        } catch {
+            await manager.shutdown()
+            throw error
         }
     }
 

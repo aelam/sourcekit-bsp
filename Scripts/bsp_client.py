@@ -206,13 +206,19 @@ def main():
     parser.add_argument("--breakpoint", help="Source path and line, separated by a colon")
     parser.add_argument("--timeout", type=float, default=300)
     parser.add_argument("--verbose", action="store_true", help="Print all protocol messages")
+    parser.add_argument("--debug", action="store_true", help="Enable server debug logs")
+    parser.add_argument("--enable-build-target-prepare", action="store_true",
+                        help="Enable dependency preparation in the server")
     args = parser.parse_args()
     root = Path(args.project).resolve()
     server = str(Path(args.server).resolve())
     environment = os.environ.copy()
     if args.developer_dir:
         environment["DEVELOPER_DIR"] = str(Path(args.developer_dir).resolve())
-    process = subprocess.Popen([server], cwd=root, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    command = [server] + (["--enable-build-target-prepare"] if args.enable_build_target_prepare else [])
+    if args.debug:
+        command.append("--debug")
+    process = subprocess.Popen(command, cwd=root, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     connection = Connection(process.stdout, process.stdin, timeout=args.timeout, verbose=args.verbose)
     initialized = False
     try:

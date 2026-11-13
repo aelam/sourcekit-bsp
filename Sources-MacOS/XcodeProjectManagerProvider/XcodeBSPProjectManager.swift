@@ -30,7 +30,7 @@ public actor XcodeBSPProjectManager: ProjectManager {
     public init(
         backend: XcodeProjectManager,
         indexingFactory: @escaping @Sendable (XcodeProjectSnapshot) async throws -> (any XcodeIndexingBackend)? = {
-            try await XcodeIndexingConfiguration.makeBackend(snapshot: $0)
+            try await XcodeIndexingConfiguration().makeBackend(snapshot: $0)
         }
     ) {
         self.backend = backend

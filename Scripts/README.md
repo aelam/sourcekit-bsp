@@ -46,6 +46,8 @@ For preparation commands and DerivedData paths, see [Indexing and paths](../Docs
 | `--build-setting` | Additional Xcode argument; repeat as needed |
 | `--params` | Explicit request parameters; its `arguments` array overrides build options |
 | `--verbose` | Show protocol messages |
+| `--debug` | Enable server debug logs |
+| `--enable-build-target-prepare` | Enable Xcode dependency preparation for `buildTarget/prepare` requests |
 
 ## Debug validation
 
@@ -59,3 +61,17 @@ An adapter crash or timeout fails validation.
 The probe has no continuous file notifications or interactive cancellation.
 `workspace/reload` affects only its own connection, not an editor's server.
 For protocol payloads, see [BSP lifecycle](../Docs/BSP-Lifecycle.md).
+
+### Enable build target preparation
+
+`bsp_client.py` starts the server directly and does not read the editor's BSP
+connection file. Forward the server flag when testing dependency preparation:
+
+```sh
+python3 Scripts/bsp_client.py --project /path/to/project \
+  --enable-build-target-prepare --method buildTarget/prepare --target Hello
+```
+
+The flag is off by default. It requires a server built with Swift Build support
+and does not start SourceKit-LSP background indexing. `benchmark_indexing.py`
+passes this flag when `--backend swift-build` is selected.

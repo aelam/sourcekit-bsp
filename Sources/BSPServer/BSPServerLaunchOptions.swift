@@ -4,14 +4,20 @@ import SwiftPMProjectManagerProvider
 
 public struct BSPServerLaunchOptions: Sendable {
     public let configuration: ProjectConfiguration?
+    public let enableBuildTargetPrepare: Bool
 
     public init(arguments: [String]) throws {
         var selection: (option: String, path: String)?
+        var enableBuildTargetPrepare = false
         var index = 0
         while index < arguments.count {
             let option = arguments[index]
             index += 1
             if option == "--debug" { continue }
+            if option == "--enable-build-target-prepare" {
+                enableBuildTargetPrepare = true
+                continue
+            }
             guard ["--package", "--project", "--workspace"].contains(option) else {
                 throw BuildServerError.invalidConfiguration("Unknown server option: \(option). Use --help for usage.")
             }
@@ -25,6 +31,7 @@ public struct BSPServerLaunchOptions: Sendable {
             selection = (option, arguments[index])
             index += 1
         }
+        self.enableBuildTargetPrepare = enableBuildTargetPrepare
         guard let selection else {
             configuration = nil
             return

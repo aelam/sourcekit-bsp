@@ -60,7 +60,7 @@ bsp-build          # swift build + success message
 bsp-test          # swift test --parallel
 
 # Debug
-bsp-debug         # BSP_DEBUG=1 swift run sourcekit-bsp
+bsp-debug         # swift run sourcekit-bsp --debug
 
 # Code quality
 lint              # swiftlint && swiftformat --lint .
@@ -76,7 +76,7 @@ format            # swiftformat . && swiftlint --fix
 
 ```bash
 # Start debug mode
-BSP_DEBUG=1 swift run sourcekit-bsp
+swift run sourcekit-bsp --debug
 
 # Or use alias
 bsp-debug
@@ -108,7 +108,7 @@ The project uses these configuration files:
 - Automated code review preparation
 
 ### 3. Protocol Debugging
-- Use BSP_DEBUG mode to observe JSON-RPC communication
+- Use `--debug` to observe JSON-RPC communication
 - Test message handling logic
 - Verify protocol compliance
 

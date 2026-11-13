@@ -15,8 +15,11 @@ import XcodeProjectManagement
 
 public struct XcodeProjectManagerProvider: ProjectManagerProvider {
     public let name = "XcodeProjectManagerProvider"
+    private let indexingConfiguration: XcodeIndexingConfiguration
 
-    public init() {}
+    public init(enableBuildTargetPrepare: Bool = false) {
+        self.indexingConfiguration = .init(enableBuildTargetPrepare: enableBuildTargetPrepare)
+    }
 
     public func canHandle(projectURL: URL) async -> Bool {
         let fileManager = FileManager.default
@@ -66,7 +69,9 @@ public struct XcodeProjectManagerProvider: ProjectManagerProvider {
             )
         )
 
-        return XcodeBSPProjectManager(backend: projectManager)
+        return XcodeBSPProjectManager(backend: projectManager) { snapshot in
+            try await indexingConfiguration.makeBackend(snapshot: snapshot)
+        }
     }
 }
 

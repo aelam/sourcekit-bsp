@@ -6,19 +6,18 @@ SourceKit-LSP builds the symbol index used for navigation and references.
 ## Preparation and indexing
 
 By default, `buildTarget/prepare` completes without building. To prepare dependency
-modules and generated files with Swift Build, enable `prepareForIndexing` in
-`.sourcekit-bsp/project.json`:
+modules and generated files with Swift Build, start the server with:
 
-```json
-{
-  "prepareForIndexing": true
-}
+```sh
+sourcekit-bsp --enable-build-target-prepare
 ```
+
+Put the flag after the executable in `.bsp/*.json`'s `argv` so each editor
+connection enables it. It is off by default and does not start SourceKit-LSP
+background indexing.
 
 This requires a server built with `SOURCEKIT_BSP_SWIFT_BUILD=1` and its matching
 build service and resources. See [build and setup](../../README.md#index-preparation-for-xcode-projects).
-`SOURCEKIT_BSP_PREPARE_FOR_INDEXING=1` also enables preparation; `0` disables it.
-This environment variable overrides the project setting.
 
 Preparation generates indexing inputs without linking or packaging the application.
 The last destination and configuration resolved when Build, Run, Test, or Debug
@@ -27,7 +26,7 @@ starts also apply to indexing. Menu selection alone does not update them.
 ```sh
 python3 Scripts/bsp_client.py --server /absolute/path/to/sourcekit-bsp \
   --project /absolute/path/to/HelloProject \
-  --method buildTarget/prepare --target Hello
+  --method buildTarget/prepare --target Hello --enable-build-target-prepare
 ```
 
 SourceKit-LSP requests preparation when indexing is enabled. With a BSP connection

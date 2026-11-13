@@ -25,7 +25,7 @@ struct SwiftBuildIndexingCacheTests {
         )
         let service = Bundle(for: IndexCacheBundleLocator.self).bundleURL.deletingLastPathComponent()
             .appendingPathComponent("SWBBuildServiceBundle")
-        let backend = try #require(await XcodeIndexingConfiguration.makeBackend(
+        let backend = try #require(await XcodeIndexingConfiguration(enableBuildTargetPrepare: true).makeBackend(
             snapshot: snapshot,
             serviceExecutable: service
         ))
@@ -70,11 +70,6 @@ struct SwiftBuildIndexingCacheTests {
     private func makeProject(in root: URL) throws -> URL {
         let project = root.appendingPathComponent("Cache.xcodeproj")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(
-            at: root.appendingPathComponent(".sourcekit-bsp"), withIntermediateDirectories: true
-        )
-        try Data(#"{"prepareForIndexing":true}"#.utf8)
-            .write(to: root.appendingPathComponent(".sourcekit-bsp/project.json"))
         var objects: [String: [String: Any]] = [:]
         func add(_ object: [String: Any]) -> String {
             let id = String(format: "%024X", objects.count + 1)

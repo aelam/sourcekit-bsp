@@ -26,7 +26,7 @@ XcodeProjectReference → XcodeProjectSnapshot → BSPProject → BSP queries
 Target queries and build-log dependency traversal use the stored BSP model.
 Source queries load only requested targets through the backend's source cache.
 Compile, run, test, and debug requests use the existing Xcode execution paths.
-When `prepareForIndexing` is enabled, compiler arguments and BSP preparation use
+When `--enable-build-target-prepare` is enabled, compiler arguments and BSP preparation use
 `SwiftBuildIndexingBackend`. Reload replaces the model after loading succeeds;
 a failed reload retains the previous model.
 
@@ -146,8 +146,10 @@ Use `project` instead of `workspace` to select an `.xcodeproj`. Paths can be
 absolute or relative to the project root. The server resolves schemes for each
 requested target; the optional `scheme` field does not override that selection.
 
-The optional `prepareForIndexing` boolean enables Swift Build indexing preparation.
-It defaults to `false` and requires a server built with Swift Build support.
+The server launch flag `--enable-build-target-prepare` enables dependency preparation
+for `buildTarget/prepare` requests. Add it after the executable in `.bsp/*.json`'s
+`argv`. It is off by default and requires a server built with Swift Build support.
+It is not a setting in this project configuration file.
 SourceKit-LSP background indexing has a separate setting. See
 [index preparation](../../README.md#index-preparation-for-xcode-projects) for setup,
 destination synchronization, and DerivedData paths.

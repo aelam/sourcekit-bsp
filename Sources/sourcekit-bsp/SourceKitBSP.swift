@@ -50,7 +50,9 @@ struct SourceKitBSP {
 
         // 使用清晰的分层架构 - BSPServerService 作为服务层
         // 使用工厂来管理多个项目管理器提供者
-        let factory = await ProjectManagerProviderRegistry.createFactory()
+        let factory = await ProjectManagerProviderRegistry.createFactory(
+            enableBuildTargetPrepare: launch.enableBuildTargetPrepare
+        )
         let bspService = BSPServerService.createStdioService(
             projectManagerProvider: factory,
             launchConfiguration: launch.configuration
@@ -92,7 +94,12 @@ struct SourceKitBSP {
         print("Options:")
         print("  -h, --help      Show this help message and exit")
         print("  --version       Show the version and exit")
-        print("  --debug         Enable debug logs (or set BSP_DEBUG=1)")
+        print("  --debug         Enable debug logs (off by default)")
+        print("  --enable-build-target-prepare")
+        print("                  Handle BSP buildTarget/prepare requests for Xcode projects.")
+        print("                  Prepare dependency modules and generated files on request.")
+        print("                  Off by default. Requires a server built with Swift Build support.")
+        print("                  Does not start SourceKit-LSP background indexing or build the full application.")
         print("  --package PATH  Select one SwiftPM package")
         print("  --project PATH  Select one Xcode project")
         print("  --workspace PATH Select one Xcode workspace")
@@ -105,6 +112,7 @@ struct SourceKitBSP {
         print("")
         print("Examples:")
         print("  sourcekit-bsp                    # Start BSP server")
+        print("  sourcekit-bsp --enable-build-target-prepare")
         print("  sourcekit-bsp xcode-project --help")
         print("  sourcekit-bsp xcode-project resolve-project --workspace-folder /path/to/project")
         print("  echo '{\"id\":1,\"method\":\"build/initialize\"...}' | sourcekit-bsp")

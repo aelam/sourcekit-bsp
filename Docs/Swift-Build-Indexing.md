@@ -2,18 +2,15 @@
 
 This branch evaluates Swift Build as the Xcode indexing backend.
 
-Enable dependency preparation in `.sourcekit-bsp/project.json`:
+Enable dependency preparation with a server launch flag:
 
-```json
-{
-  "prepareForIndexing": true
-}
+```sh
+sourcekit-bsp --enable-build-target-prepare
 ```
 
-The default is `false`. `SOURCEKIT_BSP_PREPARE_FOR_INDEXING=1` enables the same
-feature and overrides the project setting; `0` disables it. The Hello demo
-enables `prepareForIndexing` in `.sourcekit-bsp/project.json`, which the server
-reads for each client connection.
+For an editor, append `--enable-build-target-prepare` after the server executable
+in `.bsp/*.json`'s `argv`. The Hello demo includes it in `.bsp/config.json`.
+Omit the flag to keep preparation disabled. The flag takes no value.
 
 This option selects Swift Build for compiler options and dependency preparation.
 It does not turn SourceKit-LSP background indexing on or off. In VS Code, set
