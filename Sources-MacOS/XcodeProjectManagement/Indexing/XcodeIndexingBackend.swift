@@ -42,13 +42,6 @@ public struct XcodeIndexingConfiguration: Sendable, Equatable {
     func makeBackend(snapshot: XcodeProjectSnapshot, serviceExecutable: URL?) async throws
         -> (any XcodeIndexingBackend)? {
         guard enableBuildTargetPrepare else { return nil }
-        #if SWIFT_BUILD_INDEXING
         return try SwiftBuildIndexingBackend(snapshot: snapshot, serviceExecutable: serviceExecutable)
-        #else
-        throw XcodeProjectError.invalidConfig(
-            "--enable-build-target-prepare requires a server built with SOURCEKIT_BSP_SWIFT_BUILD=1 "
-                + "and its matching SWBBuildServiceBundle."
-        )
-        #endif
     }
 }

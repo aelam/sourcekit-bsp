@@ -2,20 +2,18 @@
 // The swift-tools-version declares the minimum version of Swift required to
 // build this package.
 
-import Foundation
 import PackageDescription
 
 #if os(macOS)
-let swiftBuildEnabled = ProcessInfo.processInfo.environment["SOURCEKIT_BSP_SWIFT_BUILD"] == "1"
-#else
-let swiftBuildEnabled = false
-#endif
-
-let swiftBuildDependencies: [Target.Dependency] = swiftBuildEnabled ? [
-    .product(
-        name: "SwiftBuild", package: "swift-build"
+let platformDependencies: [Package.Dependency] = [
+    .package(
+        url: "https://github.com/swiftlang/swift-build.git",
+        revision: "2d847030c63961cb1cf8cbb6ad2bc7245fdfeb09"
     ),
-] : []
+]
+#else
+let platformDependencies: [Package.Dependency] = []
+#endif
 
 let multiPlatformTargets: [Target] = [
     .target(
@@ -75,7 +73,8 @@ let sourceKitBSPTarget: Target = .executableTarget(
         "Logger",
         "XcodeProjectManagerProvider",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
-    ] + (swiftBuildEnabled ? [.product(name: "SWBBuildServiceBundle", package: "swift-build")] : [])
+        .product(name: "SWBBuildServiceBundle", package: "swift-build"),
+    ]
 )
 
 let bspServerTarget: Target = .target(
@@ -139,14 +138,15 @@ let macOnlyTargets: [Target] = [
                 name: "XcodeProj",
                 package: "XcodeProj"
             ),
-        ] + swiftBuildDependencies,
+            .product(name: "SwiftBuild", package: "swift-build"),
+        ],
         path: "Sources-MacOS/XcodeProjectManagement",
         resources: [
             .copy("README.md"),
         ],
         swiftSettings: [
             .define("MACOS_ONLY", .when(platforms: [.macOS]))
-        ] + (swiftBuildEnabled ? [.define("SWIFT_BUILD_INDEXING")] : [])
+        ]
     ),
     .target(
         name: "XcodeProjectManagerProvider",
@@ -226,16 +226,11 @@ let dependencies: [PackageDescription.Package.Dependency] = [
         url: "https://github.com/apple/swift-crypto.git",
         from: "3.0.0"
     )
-] + (swiftBuildEnabled ? [
-    .package(
-        url: "https://github.com/swiftlang/swift-build.git",
-        revision: "2d847030c63961cb1cf8cbb6ad2bc7245fdfeb09"
-    ),
-] : [])
+] + platformDependencies
 
 let package = Package(
     name: "sourcekit-bsp",
-    platforms: [.macOS(swiftBuildEnabled ? .v15 : .v13)],
+    platforms: [.macOS(.v15)],
     products: products,
     dependencies: dependencies,
     targets: targets

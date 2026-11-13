@@ -1,4 +1,3 @@
-#if SWIFT_BUILD_INDEXING
 import Foundation
 import Logger
 import SwiftBuild
@@ -485,4 +484,3 @@ private final class IndexPlanningDelegate: SWBPlanningOperationDelegate, Sendabl
         .deferred
     }
 }
-#endif

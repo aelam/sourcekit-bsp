@@ -5,7 +5,7 @@ import Testing
 @testable import XcodeProjectManagerProvider
 
 struct IndexingBackendTests {
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["SOURCEKIT_BSP_SWIFT_BUILD"] == "1"))
+    @Test
     func indexingBackendCreationDoesNotLoadWorkspace() async throws {
         let root = try configurationRoot(nil)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -84,10 +84,7 @@ struct IndexingBackendTests {
         #expect(await index.stopped)
     }
 
-    @Test(
-        .enabled(if: ProcessInfo.processInfo.environment["SOURCEKIT_BSP_SWIFT_BUILD"] == "1"),
-        arguments: [false, true]
-    )
+    @Test(arguments: [false, true])
     func providerUsesLaunchSettingAcrossReloads(enabled: Bool) async throws {
         let root = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }

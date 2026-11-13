@@ -5,7 +5,6 @@ import Testing
 
 struct SwiftBuildIndexingCacheTests {
     @Test(
-        .enabled(if: ProcessInfo.processInfo.environment["SOURCEKIT_BSP_SWIFT_BUILD"] == "1"),
         .timeLimit(.minutes(2)),
         arguments: [false, true]
     )

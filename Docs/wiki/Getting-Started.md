@@ -2,7 +2,7 @@
 
 ## Requirements
 
-macOS 13+, Xcode with Swift 6.1+, and your project's SDKs and simulator runtimes.
+macOS 15+, Xcode with Swift 6.2+, and your project's SDKs and simulator runtimes.
 The command-line probe also requires Python 3.
 
 ## Choose the server executable

@@ -15,8 +15,9 @@ Omit the flag to keep preparation disabled. The flag takes no value.
 This option selects Swift Build for compiler options and dependency preparation.
 It does not turn SourceKit-LSP background indexing on or off. In VS Code, set
 `swift.sourcekit-lsp.backgroundIndexing` to `"on"`; Hello already uses this value.
-The server must be built with `SOURCEKIT_BSP_SWIFT_BUILD=1` and include the
-matching `SWBBuildServiceBundle` executable and resources.
+macOS builds include Swift Build by default. Mint installs the matching
+`SWBBuildServiceBundle` executable and resource bundles with the server.
+Keep these components together when copying a build manually.
 
 BSP connection initialization does not start Swift Build or create an indexing
 plan. The first compiler-option or preparation request loads the workspace and
