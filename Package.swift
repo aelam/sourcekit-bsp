@@ -141,9 +141,7 @@ let macOnlyTargets: [Target] = [
             .product(name: "SwiftBuild", package: "swift-build"),
         ],
         path: "Sources-MacOS/XcodeProjectManagement",
-        resources: [
-            .copy("README.md"),
-        ],
+        exclude: ["README.md"],
         swiftSettings: [
             .define("MACOS_ONLY", .when(platforms: [.macOS]))
         ]
