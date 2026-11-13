@@ -1,18 +1,32 @@
 # Indexing and paths
 
-sourcekit-bsp prepares compiler inputs and index data. SourceKit-LSP builds the
-symbol index used for navigation and references.
+sourcekit-bsp supplies compiler arguments and can prepare indexing dependencies.
+SourceKit-LSP builds the symbol index used for navigation and references.
 
 ## Preparation and indexing
 
-`buildTarget/prepare` runs a regular incremental Xcode build with indexing enabled
-and code signing disabled. It uses the configured build configuration and the
-target's simulator platform or macOS, independently of the selected run device.
+By default, `buildTarget/prepare` completes without building. To prepare dependency
+modules and generated files with Swift Build, start the server with:
+
+```sh
+sourcekit-bsp --enable-build-target-prepare
+```
+
+Put the flag after the executable in `.bsp/*.json`'s `argv` so each editor
+connection enables it. It is off by default and does not start SourceKit-LSP
+background indexing.
+
+This requires a server built with `SOURCEKIT_BSP_SWIFT_BUILD=1` and its matching
+build service and resources. See [build and setup](../../README.md#index-preparation-for-xcode-projects).
+
+Preparation generates indexing inputs without linking or packaging the application.
+The last destination and configuration resolved when Build, Run, Test, or Debug
+starts also apply to indexing. Menu selection alone does not update them.
 
 ```sh
 python3 Scripts/bsp_client.py --server /absolute/path/to/sourcekit-bsp \
   --project /absolute/path/to/HelloProject \
-  --method buildTarget/prepare --target Hello
+  --method buildTarget/prepare --target Hello --enable-build-target-prepare
 ```
 
 SourceKit-LSP requests preparation when indexing is enabled. With a BSP connection
@@ -32,9 +46,10 @@ set your editor's SourceKit-LSP options or create `.sourcekit-lsp/config.json`:
 }
 ```
 
-Settings depend on the SourceKit-LSP version. Each preparation checks for changed
-sources or deleted products. Failures include build output; a failed or cancelled
-build can be retried.
+Settings depend on the SourceKit-LSP version. The VS Code Swift extension also
+supports `"swift.sourcekit-lsp.backgroundIndexing": "on"`. This controls the language
+server, independently of the BSP preparation setting. Swift Build checks changed
+inputs on each preparation; a failed or cancelled preparation can be retried.
 
 Compile, test, preparation, builds before debug, and build-settings queries with
 an explicit DerivedData path share a queue for that directory. An operating-system
@@ -59,12 +74,18 @@ the same DerivedData directory.
 | Server built with `swift build` | `<repository>/.build/debug/sourcekit-bsp` |
 | Server built with Xcode | `<server DerivedData>/Build/Products/Debug/sourcekit-bsp` |
 | Application products | `<project DerivedData>/Build/Products` |
+| Index preparation products | `<project DerivedData>/Index.noindex/Build/Products` |
+| Index preparation intermediates | `<project DerivedData>/Index.noindex/Build/Intermediates.noindex` |
 | Compiler index data | `<project DerivedData>/Index.noindex/DataStore` |
 | SourceKit-LSP index database | `<project DerivedData>/IndexDatabase.noIndex` |
 
 The server passes a project DerivedData path to Xcode and uses consistent index
 paths for initialization, compiler options, and preparation. Manual Xcode builds
 must use the same `-derivedDataPath` to share products.
+
+Index preparation emits reduced modules for language analysis. These do not
+replace application build products. A shared index store also does not guarantee
+reuse of all index records when compiler arguments differ.
 
 `buildTarget/outputPaths` reports the default product root. The probe's
 `--derived-data` overrides compile/run/test/debug paths without moving the language

@@ -1,5 +1,6 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
+import XcodeProjectManagement
 
 public extension XcodeBSPProjectManager {
     func shouldReloadProject(for changes: [ProjectFileChange]) -> Bool {
@@ -24,6 +25,7 @@ struct XcodeFileChangeClassifier {
         return changes.contains { change in
             guard let file = change.uri.fileURL?.standardizedFileURL else { return false }
             let path = file.path
+            if file == XcodeIndexingSelection.file(in: buildRootURL).standardizedFileURL { return true }
             guard path != derivedData, !path.hasPrefix(derivedData + "/"),
                   !file.pathComponents.contains(".build") else { return false }
             if Self.configurationExtensions.contains(file.pathExtension)

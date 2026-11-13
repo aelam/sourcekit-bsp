@@ -30,6 +30,10 @@ This directory contains all the GitHub Actions workflows for sourcekit-bsp. Each
 - Artifact uploads for release binaries
 - Works out of the box without tokens
 
+macOS CI runs `SwiftPMTestingTests` and `SwiftPMSingleTestTests` after the other
+tests so their nested package builds do not compete with Xcode integration builds.
+Tests remain parallel within each phase, and the coverage report includes both phases.
+
 ### 🔍 Code Quality (`code-quality.yml`)
 
 **Triggers:**

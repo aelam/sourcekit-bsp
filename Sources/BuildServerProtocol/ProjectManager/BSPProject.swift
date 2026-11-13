@@ -41,6 +41,18 @@ public struct BSPProject: Sendable {
         return targets[index]
     }
 
+    public func withIndexPaths(store: URL, database: URL) -> BSPProject {
+        BSPProject(
+            rootURL: rootURL,
+            name: name,
+            targets: targets,
+            buildRootURL: buildRootURL,
+            indexStoreURL: store,
+            indexDatabaseURL: database,
+            dependencyModules: directDependencyModules
+        )
+    }
+
     /// Include external libraries from each target and its transitive build dependencies.
     public func dependencyModules(for identifiers: [BSPBuildTargetIdentifier]) throws -> [DependencyModulesItem] {
         try identifiers.map { identifier in

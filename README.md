@@ -13,7 +13,7 @@ and source lists on macOS and Linux. It builds root package targets, runs execut
 products, runs root test targets, and supports executable and test debugging on macOS.
 
 - Discover projects, workspaces, sources, and target dependencies.
-- Prepare compiler inputs and index data for SourceKit-LSP.
+- Supply compiler arguments and optionally prepare dependencies for SourceKit-LSP indexing.
 - Build and test targets; launch applications and debug on macOS or a simulator.
 - Refresh project state after client file notifications and cancel active builds.
 - Report build/test/index stages, compiler diagnostics, and readable output through standard BSP notifications.
@@ -144,6 +144,77 @@ The clients start the executable in `argv`; running it directly waits for protoc
 
 For projects with multiple workspaces, configure `.sourcekit-bsp/project.json`;
 see [project configuration](Docs/wiki/Getting-Started.md#configure-the-application-project).
+
+## Index preparation for Xcode projects
+
+The optional `--enable-build-target-prepare` flag uses Swift Build to prepare dependency
+modules and generated files without a full application build. SourceKit-LSP then
+indexes source files in the background. Compile, Run, Test, and Debug continue to
+use the existing Xcode execution paths.
+
+The server starts Swift Build when it receives the first indexing request.
+It plans the requested target and its dependencies instead of planning every
+target during the BSP connection handshake.
+
+This feature requires macOS 15+, Swift 6.2+, and a server built with Swift Build
+support. A default build or Mint installation does not include this support.
+Build it from this repository with the selected Xcode toolchain:
+
+```sh
+SOURCEKIT_BSP_SWIFT_BUILD=1 swift build --build-system swiftbuild --product sourcekit-bsp
+```
+
+Point `.bsp/*.json` at `.build/debug/sourcekit-bsp`. Keep the matching
+`SWBBuildServiceBundle` executable and resource bundles beside the server;
+copying only `sourcekit-bsp` is insufficient.
+
+Add the flag to the server's `argv` in `.bsp/*.json`. Any BSP client that starts
+this command uses the same setting:
+
+```json
+{
+  "argv": [
+    "/absolute/path/to/sourcekit-bsp",
+    "--enable-build-target-prepare"
+  ]
+}
+```
+
+The flag is off by default. When present, it enables dependency preparation when
+SourceKit-LSP sends `buildTarget/prepare`. It does not start background indexing
+or build the full application. Remove the flag to restore no-op preparation.
+Project and workspace selection can use `.sourcekit-bsp/project.json`.
+
+Enable SourceKit-LSP background indexing separately in `.vscode/settings.json`:
+
+```json
+{
+  "swift.sourcekit-lsp.backgroundIndexing": "on"
+}
+```
+
+The Hello demo enables preparation in `.bsp/config.json` and LSP
+background indexing in `.vscode/settings.json`. After rebuilding the server or
+changing these settings, run **Developer: Reload Window** in VS Code.
+
+The backend uses the project's existing DerivedData directory:
+
+| Data | Path within DerivedData |
+| --- | --- |
+| Application build products | `Build/Products` |
+| Index preparation products | `Index.noindex/Build/Products` |
+| Index preparation intermediates | `Index.noindex/Build/Intermediates.noindex` |
+| Compiler index data | `Index.noindex/DataStore` |
+| SourceKit-LSP index database | `IndexDatabase.noIndex` |
+
+Preparation omits some compilation work, so its modules do not replace normal
+application build products. Sharing the index store does not guarantee that
+SourceKit-LSP can reuse every index record from an Xcode build.
+
+The indexing platform and configuration follow the resolved destination when
+Build, Run, Test, or Debug starts. Changing a menu selection alone does not update
+the indexing context. This uses existing BSP requests and file notifications.
+See [Swift Build indexing](Docs/Swift-Build-Indexing.md) for validation commands.
 
 ## Multiple connections in one workspace
 
@@ -339,7 +410,10 @@ python3 Scripts/bsp_client.py --project "$bsp_project" \
 ```
 
 The probe uses `.build/debug/sourcekit-bsp` by default. Use `--server` to select
-another build. See the [client guide](Scripts/README.md) for options.
+another build. The probe does not read Hello's `.bsp/config.json`. Pass
+`--enable-build-target-prepare` to test dependency preparation with a server
+built with Swift Build support.
+See the [client guide](Scripts/README.md) for options.
 
 ## Execution configuration extension
 
@@ -351,6 +425,8 @@ Compiler-information requests such as `buildTarget/scalacOptions`,
 `buildTarget/javacOptions`, and SourceKit compiler options describe the current
 compiler inputs. This extension instead lists selectable execution settings.
 Selecting these settings does not change the language server's indexing context.
+With `--enable-build-target-prepare` enabled, starting an operation synchronizes the resolved
+destination and configuration with the indexing backend.
 
 ### Negotiate the extension
 
@@ -635,6 +711,7 @@ default settings.
 - [Getting started](Docs/wiki/Getting-Started.md)
 - [Build, run, test, and debug](Docs/wiki/Build-Run-Test-Debug.md)
 - [Indexing and build paths](Docs/wiki/Indexing-and-Paths.md)
+- [Swift Build index preparation](Docs/Swift-Build-Indexing.md)
 - [Protocol support](Docs/wiki/Protocol-Support.md) and [lifecycle payloads](Docs/BSP-Lifecycle.md)
 - [Troubleshooting](Docs/wiki/Troubleshooting.md)
 - [Wiki sources](Docs/wiki/README.md)

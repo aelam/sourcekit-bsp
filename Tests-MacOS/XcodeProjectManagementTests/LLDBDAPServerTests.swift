@@ -30,7 +30,8 @@ struct LLDBDAPServerTests {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sleep")
         process.arguments = ["30"]
-        try process.run()
+        let launch: () throws -> Void = process.run
+        try launch()
         defer { if process.isRunning { process.terminate() } }
 
         if listening {

@@ -7,6 +7,36 @@ private typealias Coordinator = IndexPreparationCoordinator<String>
 @Suite(.timeLimit(.minutes(1)))
 struct IndexPreparationCoordinatorTests {
     @Test
+    func sharedPreparationPublishesOptionChangesOnce() async throws {
+        let coordinator = SharedIndexPreparationCoordinator<String, IndexPreparationChanges>()
+        let started = PreparationGate()
+        let release = PreparationGate()
+        defer { release.open() }
+        let target = XcodeTargetIdentifier(projectFilePath: "/tmp/App.xcodeproj", targetName: "App")
+        let one = Task {
+            try await coordinator.prepare(for: "target") { _ in
+                started.open()
+                await release.wait()
+                return IndexPreparationChanges([target])
+            }
+        }
+        await started.wait()
+        let two = Task {
+            try await coordinator.prepare(for: "target") { _ in
+                Issue.record("A shared preparation must run once")
+                return IndexPreparationChanges([])
+            }
+        }
+        try await waitUntil { coordinator.waiterCount(for: "target") == 2 }
+        release.open()
+        let first = try await one.value
+        let second = try await two.value
+        #expect(first.take() + second.take() == [target])
+        let repeated = try await coordinator.prepare(for: "target") { _ in IndexPreparationChanges([]) }
+        #expect(repeated.take().isEmpty)
+    }
+
+    @Test
     func sharesActiveWorkAndKeepsKeysIndependent() async throws {
         let coordinator = Coordinator()
         let first = PreparationProbe()

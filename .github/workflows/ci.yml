@@ -28,6 +28,8 @@ jobs:
     name: macOS Build and Test
     runs-on: macos-latest
     timeout-minutes: 30
+    env:
+      SWIFTPM_EXECUTION_TESTS: 'SwiftPMTestingTests|SwiftPMSingleTestTests'
 
     steps:
     - name: Checkout
@@ -57,9 +59,20 @@ jobs:
       run: swift package resolve
 
     - name: Build and Test
+      shell: bash
       run: |
+        set -euo pipefail
         echo "Running tests in macOS CI mode..."
-        swift test --enable-code-coverage
+        # Nested SwiftPM test builds run separately from Xcode integration builds.
+        swift test --enable-code-coverage --skip "$SWIFTPM_EXECUTION_TESTS"
+        COVERAGE_JSON="$(swift test --show-codecov-path)"
+        cp "$(dirname "$COVERAGE_JSON")/default.profdata" "$RUNNER_TEMP/main-tests.profdata"
+      env:
+        CI: true
+        MACOS_CI: true
+
+    - name: Test SwiftPM test execution
+      run: swift test --skip-build --enable-code-coverage --filter "$SWIFTPM_EXECUTION_TESTS"
       env:
         CI: true
         MACOS_CI: true
@@ -84,8 +97,13 @@ jobs:
           exit 1
         fi
 
+        # SwiftPM replaces coverage on each test run. Include both phases.
+        xcrun llvm-profdata merge -sparse \
+          "$RUNNER_TEMP/main-tests.profdata" "$PROFILE_DATA" \
+          -o "$RUNNER_TEMP/combined-tests.profdata"
+
         xcrun llvm-cov export "${COVERAGE_OBJECTS[@]}" \
-          -instr-profile="$PROFILE_DATA" \
+          -instr-profile="$RUNNER_TEMP/combined-tests.profdata" \
           -format=lcov \
           -ignore-filename-regex='(^|/)(\.build|Tests|Tests-MacOS)/' \
           > coverage.info

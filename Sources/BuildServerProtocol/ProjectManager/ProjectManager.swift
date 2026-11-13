@@ -19,6 +19,10 @@ public protocol ProjectManager: AnyObject, Sendable {
 
     var capabilities: ProjectManagerCapabilities { get async }
 
+    /// Execute background preparation only when the provider explicitly enables it.
+    var preparesIndexingOnRequest: Bool { get async }
+    var watchedConfigurationFiles: [URL] { get async }
+
     var watchedFileRoots: [URL] { get async }
 
     var supportsBuildContexts: Bool { get async }
@@ -166,6 +170,14 @@ public protocol ProjectManager: AnyObject, Sendable {
 }
 
 public extension ProjectManager {
+    var preparesIndexingOnRequest: Bool {
+        false
+    }
+
+    var watchedConfigurationFiles: [URL] {
+        []
+    }
+
     var workspaceRootURL: URL {
         get async { await rootURL }
     }

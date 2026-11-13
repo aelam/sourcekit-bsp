@@ -89,7 +89,9 @@ actor XcodeBuildExecutor {
             }
         }
         try Task.checkCancellation()
-        try process.run()
+        // SWBUtil also defines an async run; this executor owns completion and pipe draining.
+        let launch: () throws -> Void = process.run
+        try launch()
 
         // Keep draining both pipes after cancellation, until the process exits and closes them.
         let completion = Task {

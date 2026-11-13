@@ -1,6 +1,7 @@
-//  BSPServerService+BuildTargetRun.swift
-import BuildServerProtocol
 import Foundation
+
+//  BSPServerService+BuildTargetRun.swift
+import SourceKitBSPProtocol
 
 extension BSPServerService {
     func test(

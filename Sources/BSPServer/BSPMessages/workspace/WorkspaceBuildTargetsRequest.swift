@@ -14,8 +14,8 @@
 //   }
 //
 
-import BuildServerProtocol
 import JSONRPCConnection
+import SourceKitBSPProtocol
 
 public struct WorkspaceBuildTargetsRequest: ContextualRequestType, Sendable {
     public typealias RequiredContext = BSPServerService

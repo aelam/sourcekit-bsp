@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import JSONRPCConnection
+import SourceKitBSPProtocol
 
 struct BuildTargetDependencyModulesRequest: ContextualRequestType, Sendable {
     typealias RequiredContext = BSPServerService

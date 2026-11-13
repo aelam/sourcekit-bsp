@@ -3,10 +3,10 @@
 //  Created by ST22956 on 2024/11/17.
 //
 
-import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
 import Logger
+import SourceKitBSPProtocol
 
 /// Languages supported by sourcekit-bsp project providers
 public let buildServerSupportedLanguages: Set<Language> = [.swift, .objective_c, .objective_cpp, .c, .cpp]
@@ -84,10 +84,12 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
                 )
             }
 
+            let watchers = await createFileSystemWatchers(roots: projectManager.watchedFileRoots)
+                + projectManager.watchedConfigurationFiles.map { FileSystemWatcher(globPattern: $0.path) }
             return await createResponseForBuildInitializeRequest(
                 project: projectInfo,
                 projectCapabilities: projectManager.capabilities,
-                watchedRoots: projectManager.watchedFileRoots,
+                fileWatchers: watchers,
                 contextExtension: service.negotiateBuildContext(self.params.data),
                 clientCapabilities: self.params.capabilities
             )
@@ -97,7 +99,7 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
     private func createResponseForBuildInitializeRequest(
         project: BSPProject,
         projectCapabilities: ProjectManagerCapabilities,
-        watchedRoots: [URL],
+        fileWatchers: [FileSystemWatcher],
         contextExtension: BuildContextExtension?,
         clientCapabilities: Params.BuildClientCapabilities
     ) -> BuildInitializeResponse {
@@ -106,7 +108,6 @@ public struct BuildInitializeRequest: ContextualRequestType, Sendable {
             clientCapabilities: clientCapabilities,
             projectCapabilities: projectCapabilities
         )
-        let fileWatchers = createFileSystemWatchers(roots: watchedRoots)
         return BuildInitializeResponse(
             jsonrpc: "2.0",
             id: id,

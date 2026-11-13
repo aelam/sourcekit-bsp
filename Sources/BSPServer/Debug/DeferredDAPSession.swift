@@ -1,6 +1,6 @@
-import BuildServerProtocol
 import CoreFoundation
 import Foundation
+import SourceKitBSPProtocol
 import Support
 #if os(macOS)
 import Darwin

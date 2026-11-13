@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 struct SwiftPMTestSelection: Codable, Sendable {
     static let dataKind = "sourcekit-test-selection"

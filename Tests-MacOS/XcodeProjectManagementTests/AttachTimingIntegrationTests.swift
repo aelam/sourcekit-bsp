@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 import Support
 import Testing
 @testable import XcodeProjectManagement
@@ -44,9 +44,10 @@ struct AttachTimingIntegrationTests {
     @Test(arguments: [true, false])
     func reportsFailedOrUnansweredNativeRequests(receivedResponse: Bool) async throws {
         let summaries = CrossPlatformLock(initialState: [String]())
-        let report: @Sendable (String) async -> Void = { message in
-            summaries.withLock { $0.append(message) }
-        }
+        let report: @Sendable (String)
+            async -> Void = { message in
+                summaries.withLock { $0.append(message) }
+            }
         let timing = XcodeAttachTiming.$report.withValue(report) { AttachTiming() }
         let backend = timing.track(DebugSessionBackend(
             connection: .init(uri: "tcp://127.0.0.1:1", request: .attach, pid: 42)

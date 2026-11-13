@@ -4,10 +4,10 @@
 //  Copyright © 2024 Wang Lun.
 //
 
-import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
 import Logger
+import SourceKitBSPProtocol
 
 extension BSPServerService {
     func getWorkingDirectory() async throws -> String? {
@@ -22,13 +22,21 @@ extension BSPServerService {
         return await projectManager.getTargetList()
     }
 
-    /// Acknowledge preparation without building dependencies.
-    func buildTargetForIndex(targets _: [BSPBuildTargetIdentifier]) async throws {
-        guard projectManager != nil else {
+    func buildTargetForIndex(targets: [BSPBuildTargetIdentifier]) async throws {
+        guard let projectManager else {
             throw BuildServerError.invalidConfiguration("Project not initialized")
         }
-
-        // Background indexing uses existing build products. Build dependencies explicitly when they change.
+        guard await projectManager.preparesIndexingOnRequest else { return }
+        let changed = try await projectManager.buildIndex(for: targets) { message in
+            logger.debug("Index preparation: \(message)")
+        }
+        guard !changed.isEmpty else { return }
+        try await sendNotification(ServerJSONRPCNotification(
+            method: BuildTargetDidChangeNotification.method(),
+            params: BuildTargetDidChangeNotification.Params(changes: changed.map {
+                BuildTargetEvent(target: $0, kind: .changed, dataKind: nil, data: nil)
+            })
+        ))
     }
 
     func outputPaths(

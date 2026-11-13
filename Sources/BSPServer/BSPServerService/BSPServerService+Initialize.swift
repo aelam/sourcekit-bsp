@@ -5,9 +5,9 @@
 //  Created by wang.lun on 2025/08/21.
 //
 
-import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
+import SourceKitBSPProtocol
 
 public extension BSPServerService {
     func shutdownProject() async {

@@ -2,11 +2,13 @@ import Foundation
 import Support
 
 /// Shares active preparations. The caller must include all build inputs in the key.
-final class IndexPreparationCoordinator<Key: Hashable & Sendable>: Sendable {
+typealias IndexPreparationCoordinator<Key: Hashable & Sendable> = SharedIndexPreparationCoordinator<Key, Bool>
+
+final class SharedIndexPreparationCoordinator<Key: Hashable & Sendable, Value: Sendable>: Sendable {
     typealias LogHandler = @Sendable (String) -> Void
 
     private struct Waiter: Sendable {
-        let continuation: CheckedContinuation<Bool, Error>
+        let continuation: CheckedContinuation<Value, Error>
         let logHandler: LogHandler?
     }
 
@@ -40,13 +42,13 @@ final class IndexPreparationCoordinator<Key: Hashable & Sendable>: Sendable {
         }
     }
 
-    /// Returns whether compiler options changed. Completed results are never cached.
+    /// Completed results are never cached.
     /// Only the first operation runs; every current waiter receives subsequent log messages.
     func prepare(
         for key: Key,
         logHandler: LogHandler? = nil,
-        operation: @escaping @Sendable (@escaping LogHandler) async throws -> Bool
-    ) async throws -> Bool {
+        operation: @escaping @Sendable (@escaping LogHandler) async throws -> Value
+    ) async throws -> Value {
         let waiterID = UUID()
         let cancelled = CrossPlatformLock(initialState: false)
         let changed = try await withTaskCancellationHandler {
@@ -84,7 +86,7 @@ final class IndexPreparationCoordinator<Key: Hashable & Sendable>: Sendable {
         waiterID: UUID,
         cancelled: CrossPlatformLock<Bool>,
         waiter: Waiter,
-        operation: @escaping @Sendable (@escaping LogHandler) async throws -> Bool
+        operation: @escaping @Sendable (@escaping LogHandler) async throws -> Value
     ) -> (any Error)? {
         state.withLock { state in
             let isCancelled = cancelled.withLock { $0 }
@@ -96,7 +98,7 @@ final class IndexPreparationCoordinator<Key: Hashable & Sendable>: Sendable {
             }
             let id = UUID()
             let task = Task {
-                let result: Result<Bool, Error>
+                let result: Result<Value, Error>
                 do {
                     try Task.checkCancellation()
                     let changed = try await operation { message in
@@ -131,7 +133,7 @@ final class IndexPreparationCoordinator<Key: Hashable & Sendable>: Sendable {
         cancelled?.1?.cancel()
     }
 
-    private func finish(preparationID: UUID, result: Result<Bool, Error>) {
+    private func finish(preparationID: UUID, result: Result<Value, Error>) {
         let waiters: [Waiter] = state.withLock { state in
             guard let preparation = state.preparations.removeValue(forKey: preparationID) else { return [] }
             // An abandoned operation must not remove its replacement.

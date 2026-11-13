@@ -1,6 +1,6 @@
 //
 //  DebugSessionConnection.swift
-//  BuildServerProtocol
+//  SourceKitBSPProtocol
 //
 //  Copyright © 2024 Wang Lun.
 //

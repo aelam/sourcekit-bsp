@@ -97,7 +97,7 @@ alias lint='swiftlint && swiftformat --lint .'
 alias format='swiftformat . && swiftlint --fix'
 
 # BSP Development
-alias bsp-debug='BSP_DEBUG=1 swift run sourcekit-bsp'
+alias bsp-debug='swift run sourcekit-bsp --debug'
 alias bsp-build='swift build && echo "✅ Build complete!"'
 alias bsp-test='swift test --parallel'
 

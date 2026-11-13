@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 extension BSPServerService {
     func negotiateBuildContext(_ data: LSPAny?) async -> BuildContextExtension? {

@@ -1,10 +1,29 @@
-import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
+import SourceKitBSPProtocol
 import Testing
 @testable import BSPServer
 
 struct BSPServerLaunchOptionsTests {
+    @Test
+    func preparationFlagDoesNotChangeProjectSelection() throws {
+        #expect(try !BSPServerLaunchOptions(arguments: []).enableBuildTargetPrepare)
+        #expect(try !BSPServerLaunchOptions(arguments: ["--debug"]).enableBuildTargetPrepare)
+        let standalone = try BSPServerLaunchOptions(arguments: ["--enable-build-target-prepare"])
+        #expect(standalone.enableBuildTargetPrepare)
+        #expect(standalone.configuration == nil)
+        for selector in ["--project", "--workspace"] {
+            for arguments in [
+                ["--enable-build-target-prepare", selector, "relative path", "--debug"],
+                [selector, "relative path", "--enable-build-target-prepare"]
+            ] {
+                let options = try BSPServerLaunchOptions(arguments: arguments)
+                #expect(options.enableBuildTargetPrepare)
+                #expect(options.configuration?.customSettings[String(selector.dropFirst(2))] == "relative path")
+            }
+        }
+    }
+
     @Test
     func parsesSelectorsAndPreservesDebugOnlyStartup() throws {
         #expect(try BSPServerLaunchOptions(arguments: []).configuration == nil)
@@ -25,7 +44,8 @@ struct BSPServerLaunchOptionsTests {
     @Test(arguments: [
         ["--package"], ["--project", ""], ["--workspace", " "], ["--unknown"],
         ["--package", "--debug"], ["--package", "A", "--package", "A"],
-        ["--package", "A", "--project", "B"], ["--workspace", "A", "--project", "B"]
+        ["--package", "A", "--project", "B"], ["--workspace", "A", "--project", "B"],
+        ["--enable-build-target-prepare", "true"], ["--enable-build-target-prepare=false"]
     ])
     func rejectsMalformedOrConflictingSelectors(arguments: [String]) {
         #expect(throws: (any Error).self) { try BSPServerLaunchOptions(arguments: arguments) }

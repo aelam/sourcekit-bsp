@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 public struct SwiftPMProjectManagerProvider: ProjectManagerProvider {
     public static let providerName = "SwiftPMProjectManagerProvider"

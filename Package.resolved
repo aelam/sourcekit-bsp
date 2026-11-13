@@ -1,5 +1,5 @@
 {
-  "originHash" : "1ac1497c545f0ee73af61f51cb50a5f5078e18d5f138518aabc1c00b374991b3",
+  "originHash" : "52fd48909062d9cd5296887b81ffbe49b6493527441518bb90e6c63e1032dc5e",
   "pins" : [
     {
       "identity" : "aexml",
@@ -47,12 +47,74 @@
       }
     },
     {
+      "identity" : "swift-build",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-build.git",
+      "state" : {
+        "revision" : "2d847030c63961cb1cf8cbb6ad2bc7245fdfeb09"
+      }
+    },
+    {
       "identity" : "swift-crypto",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-crypto.git",
       "state" : {
         "revision" : "d1c6b70f7c5f19fb0b8750cb8dcdf2ea6e2d8c34",
         "version" : "3.15.0"
+      }
+    },
+    {
+      "identity" : "swift-driver",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-driver.git",
+      "state" : {
+        "branch" : "release/6.4.x",
+        "revision" : "174567a5681a9a949bcd52f821deb8fa65105434"
+      }
+    },
+    {
+      "identity" : "swift-llbuild",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-llbuild.git",
+      "state" : {
+        "branch" : "release/6.4.x",
+        "revision" : "ab6421207b9e4971c94e97c5832a3d8a4cae9092"
+      }
+    },
+    {
+      "identity" : "swift-system",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-system.git",
+      "state" : {
+        "revision" : "640e5755b5826f4437eaeedd366fd776737db62c",
+        "version" : "1.9.0"
+      }
+    },
+    {
+      "identity" : "swift-toolchain-sqlite",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-toolchain-sqlite",
+      "state" : {
+        "revision" : "d9b11cb79071d5ab992ff47dfd2e8d6e19418d97",
+        "version" : "1.0.13"
+      }
+    },
+    {
+      "identity" : "swift-tools-protocols",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-tools-protocols.git",
+      "state" : {
+        "branch" : "release/6.4.x",
+        "revision" : "4345e69c5572ec3d1f737fba90bca024b32da5cf"
+      }
+    },
+    {
+      "identity" : "swift-tools-support-core",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-tools-support-core.git",
+      "state" : {
+        "branch" : "release/6.4.x",
+        "revision" : "0496a15648b286a259356c534f3f26a57bbf48a5"
       }
     },
     {

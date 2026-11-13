@@ -1,7 +1,7 @@
-import BuildServerProtocol
 import Foundation
 import Logger
 import PathKit
+import SourceKitBSPProtocol
 import XcodeProj
 import XcodeProjectManagement
 

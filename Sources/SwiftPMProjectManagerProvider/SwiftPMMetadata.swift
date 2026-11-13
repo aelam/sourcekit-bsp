@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 struct SwiftPMPackageDescription: Decodable, Sendable {
     let name: String

@@ -4,10 +4,10 @@
 //  Copyright © 2024 Wang Lun.
 //
 
-import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
 import Logger
+import SourceKitBSPProtocol
 import Support
 
 /// Manages BSP task lifecycle including taskStart, taskProgress, and taskFinish notifications

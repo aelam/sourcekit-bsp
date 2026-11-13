@@ -1,4 +1,4 @@
-import BuildServerProtocol
+import SourceKitBSPProtocol
 import XcodeProjectManagement
 
 extension XcodeProjectSnapshot {

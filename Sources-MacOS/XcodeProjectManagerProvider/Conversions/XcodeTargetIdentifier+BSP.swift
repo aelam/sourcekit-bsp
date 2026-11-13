@@ -8,8 +8,8 @@
 //  through here so the mapping stays consistent and correct.
 //
 
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 import XcodeProjectManagement
 
 extension XcodeTargetIdentifier {

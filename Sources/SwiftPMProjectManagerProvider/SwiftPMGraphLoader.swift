@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 import Support
 
 struct SwiftPMGraphLoader: Sendable {

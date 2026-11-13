@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 private struct XcodeOperationSchemeOptions {
     let options: [BuildContextOption]
