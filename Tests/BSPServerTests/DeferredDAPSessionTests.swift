@@ -320,6 +320,100 @@ struct DeferredDAPSessionTests {
     }
 }
 
+extension DeferredDAPSessionTests {
+    @Test(arguments: ["success", "initialize", "attach", "cancel"])
+    func reportsNativeStartupTimingsAndRemovesClientProgram(outcome: String) async throws {
+        let native = try DeferredFakeAdapter(
+            holdStart: outcome == "cancel", failedCommand: ["initialize", "attach"].contains(outcome) ? outcome : nil
+        )
+        let timings = CrossPlatformLock(initialState: [(String, Duration, Bool?)]())
+        let relay = DeferredDAPSession { _, _ in
+            await DebugSessionBackend(
+                connection: .init(uri: native.start(), request: .attach, pid: 42),
+                didStart: {
+                    #expect(outcome == "success")
+                    #expect(timings.withLock { $0.map(\.0) } == ["initialize", "attach"])
+                },
+                recordRequestTiming: { command, elapsed, success in
+                    timings.withLock { $0.append((command, elapsed, success)) }
+                },
+                stop: { await native.stop() }
+            )
+        }
+        let client = try await DeferredTestClient(uri: relay.start())
+        try await client.send(request(1, "initialize"))
+        _ = try await client.response(1)
+        #expect(timings.withLock { $0.isEmpty })
+        // The native request is attach even when the client requests launch.
+        try await client.send(request(2, "launch", ["program": "/tmp/unrelated"]))
+        if outcome == "cancel" {
+            _ = try await client.event("initialized")
+            try await client.send(request(3, "disconnect"))
+            _ = try await client.response(3)
+        } else {
+            let response = try await object(client.response(2))
+            #expect(response["command"] as? String == "launch")
+            #expect(response["success"] as? Bool == (outcome == "success"))
+        }
+        await relay.stop()
+        await client.close()
+        let records = timings.withLock { $0 }
+        #expect(records.map(\.0) == (outcome == "initialize" ? ["initialize"] : ["initialize", "attach"]))
+        #expect(records.allSatisfy { $0.1 >= .zero })
+        #expect(records.first?.2 == (outcome != "initialize"))
+        if outcome != "initialize" {
+            #expect(records.last?.2 == (outcome == "cancel" ? nil : outcome == "success"))
+            let messages = try await native.messages.map(object)
+            let attach = try #require(messages.first { $0["command"] as? String == "attach" })
+            let arguments = try #require(attach["arguments"] as? [String: Any])
+            #expect(arguments["program"] == nil)
+            #expect(arguments["pid"] as? Int == 42)
+        }
+    }
+
+    @Test
+    func oversizedApplicationOutputDoesNotDisconnectTheDebugger() async throws {
+        let native = try DeferredFakeAdapter(emittedOutput: (
+            category: "stdout",
+            text: String(repeating: "x", count: 5 * 1024 * 1024)
+        ))
+        let relay = DeferredDAPSession { _, _ in
+            await DebugSessionBackend(connection: .init(uri: native.start(), request: .launch, program: "/tmp/Hello")) {
+                await native.stop()
+            }
+        }
+        let client = try await DeferredTestClient(uri: relay.start())
+        try await client.send(request(1, "initialize"))
+        _ = try await client.response(1)
+        try await client.send(request(2, "launch"))
+        _ = try await client.response(2)
+        let output = try await object(client.event("output"))
+        let body = try #require(output["body"] as? [String: Any])
+        #expect(body["category"] as? String == "console")
+        #expect((body["output"] as? String)?.contains("exceeded") == true)
+        try await client.send(request(3, "threads"))
+        #expect(try await object(client.response(3))["success"] as? Bool == true)
+        try await client.send(request(4, "disconnect"))
+        _ = try await client.response(4)
+        await relay.stop()
+        await client.close()
+    }
+
+    @Test
+    func preparationFailureWakesAnIdleRelay() async throws {
+        let relay = DeferredDAPSession { _, _ in throw HostAttachError.invalid("Preparation failed") }
+        let client = try await DeferredTestClient(uri: relay.start())
+        try await client.send(request(1, "initialize"))
+        _ = try await client.response(1)
+        try await client.send(request(2, "launch"))
+        let response = try await object(client.response(2))
+        #expect(response["success"] as? Bool == false)
+        #expect((response["message"] as? String)?.contains("Preparation failed") == true)
+        await relay.stop()
+        await client.close()
+    }
+}
+
 private actor DeferredPreparationGate {
     var entered = false
     var continuation: CheckedContinuation<Void, Never>?
@@ -401,9 +495,15 @@ private actor DeferredFakeAdapter {
     var task: Task<Void, Never>?
     var messages: [Data] = []
     let holdStart: Bool
+    let failedCommand: String?
     let emittedOutput: (category: String, text: String)?
-    init(holdStart: Bool = false, emittedOutput: (category: String, text: String)? = nil) throws {
+    init(
+        holdStart: Bool = false,
+        failedCommand: String? = nil,
+        emittedOutput: (category: String, text: String)? = nil
+    ) throws {
         self.holdStart = holdStart
+        self.failedCommand = failedCommand
         self.emittedOutput = emittedOutput
         (listener, port) = try AttachDAPSocket.listener()
     }
@@ -447,7 +547,7 @@ private actor DeferredFakeAdapter {
                             let command = request["command"] as? String ?? ""
                             let response = try DebugAdapterFrameBuffer.frame(JSONSerialization.data(withJSONObject: [
                                 "seq": 100, "type": "response", "request_seq": request["seq"] as? Int ?? 0,
-                                "command": command, "success": true,
+                                "command": command, "success": command != failedCommand,
                                 "body": command == "initialize" ? [
                                     "supportsConfigurationDoneRequest": true, "supportsFunctionBreakpoints": true,
                                     "supportsRestartRequest": true

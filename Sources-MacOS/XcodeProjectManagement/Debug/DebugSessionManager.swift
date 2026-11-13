@@ -237,7 +237,9 @@ public actor DebugSessionManager {
         do {
             try Task.checkCancellation()
             liveEndpoints.append(endpoint)
-            return .init(uri: endpoint.uri, request: .attach, program: identity.executable, pid: identity.pid)
+            // LLDB discovers the executable and loaded modules from the verified PID.
+            // Supplying program also loads file dependencies before attaching to the process.
+            return .init(uri: endpoint.uri, request: .attach, pid: identity.pid)
         } catch {
             await endpoint.stop()
             throw error

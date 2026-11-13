@@ -76,6 +76,10 @@ package enum AttachDAPSocket {
 
     package static func read(_ fd: Int32) throws -> Data? {
         var buffer = [UInt8](repeating: 0, count: 65536)
+        return try read(fd, buffer: &buffer)
+    }
+
+    package static func read(_ fd: Int32, buffer: inout [UInt8]) throws -> Data? {
         let count = recv(fd, &buffer, buffer.count, 0)
         if count > 0 { return Data(buffer.prefix(count)) }
         if count < 0, errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR { return nil }

@@ -41,6 +41,11 @@ The server keeps `simctl launch --console-pty` or `devicectl device process laun
 --console` connected for the application lifetime. The launch deadline does not
 limit how long the application can run. macOS applications use local pipes.
 
+Run and Debug share successful build settings queries for up to five minutes,
+with at most 32 cached selections per project. Concurrent requests for the same
+selection share one query. Project reloads and completed builds invalidate the
+cache. Explicit external xcconfig overrides bypass completed-result reuse.
+
 ## Test
 
 ```sh
@@ -155,6 +160,17 @@ PID must match the selected target. Attach requires a resolved debug Build Conte
 and supports iOS simulator apps, physical iOS devices, and macOS executables.
 Test Attach is not supported.
 
+On macOS and iOS simulators, Attach passes the verified PID to LLDB without a
+`program` path. LLDB discovers the executable and loaded modules from the process.
+This avoids loading file dependencies before attachment; debug symbols remain
+available. Physical device Attach still supplies the matching local executable.
+
+The `Attach[...]` log summary separates `dap.initialize` from `dap.attach`.
+Each measures elapsed time from queuing the native request to receiving its
+response, including transport and adapter work. `dap.handshake` includes both
+requests and identity checks, so these durations must not be added together.
+An unanswered request records elapsed time when the session closes.
+
 For a physical iOS device, the server reads the installed app and running process
 reports from `devicectl`. It matches the exact bundle identifier and executable
 path, then rechecks the PID before attaching. The matching local build product is
@@ -184,6 +200,13 @@ launch onward, including output written before the debugger connects. Build and
 launch progress remains in BSP `build/logMessage` notifications. The server keeps
 up to 4 MiB of startup output and reports overflow. Disconnecting closes the
 console helper; it does not signal an application that the debugger detached from.
+
+Application output is batched by channel for up to 20 ms or 32 KiB. Pipe queues
+retain at most 512 KiB per stream, and incomplete lines are emitted in bounded
+fragments. If a consumer falls behind, excess output is discarded with a console
+notice. Debug output also has a 4 MiB send budget so a slow console does not
+displace debugger responses. Output is not archived to a separate application
+log file.
 
 For applications launched by the server, the default environment includes
 `OS_ACTIVITY_DT_MODE=enable` and `OS_ACTIVITY_MODE=debug`. These are the Darwin
