@@ -4,8 +4,8 @@
 //  Copyright © 2024 Wang Lun.
 //
 
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 /// Represents a BSP task with lifecycle management
 public struct BSPTask: Sendable {

@@ -4,10 +4,10 @@
 //  Copyright © 2024 Wang Lun.
 
 import BSPServer
-import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
 import Logger
+import SourceKitBSPProtocol
 #if os(macOS)
 import XcodeProjectManagerProvider
 #endif

@@ -1,11 +1,29 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 import Testing
 import XcodeProj
 @testable import XcodeProjectManagement
 
 @Suite(.serialized)
 struct XcodeBuildContextTests {
+    @Test
+    func derivesIndexingPlatformFromResolvedDestination() async throws {
+        let fixture = try await ContextFixture.make(inventory: ContextInventory(), clock: ContextClock())
+        defer { fixture.remove() }
+        for (destination, platform) in [
+            ("BSP-DEVICE", "iphoneos"),
+            ("generic/platform=iOS Simulator", "iphonesimulator")
+        ] {
+            let context = try await fixture.manager.resolveContext(.init(
+                operation: .compile,
+                selection: ["xcode.scheme": fixture.schemeID, "xcode.destination": destination]
+            ))
+            let selection = try await fixture.manager.indexingSelection(context)
+            #expect(selection.platform == platform)
+            #expect(selection.configuration == context.selection["xcode.configuration"])
+        }
+    }
+
     @Test
     func expiredDiscoveryReturnsBeforeRefreshAndSharesItsFlightWithResolution() async throws {
         let inventory = ContextInventory()

@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 struct BuildOutputContext: Sendable {
     var rootURL: URL = FileManager.default.temporaryDirectory

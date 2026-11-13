@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 public struct PublishDiagnosticsParams: Codable, Sendable {
     public static let method = "build/publishDiagnostics"

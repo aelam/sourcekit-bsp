@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 public extension XcodeProjectManager {
     func validateContext(_ context: BuildContext) throws {

@@ -1,6 +1,6 @@
-import BuildServerProtocol
 import Foundation
 import Logger
+import SourceKitBSPProtocol
 import Support
 
 /// The build product to debug, resolved from a target.

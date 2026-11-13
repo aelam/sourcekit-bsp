@@ -1,6 +1,6 @@
-import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
+import SourceKitBSPProtocol
 
 extension BSPTaskManager {
     func executeDebugWithProgress(

@@ -5,8 +5,8 @@
 //  Created by wang.lun on 2025/08/21.
 //
 
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 extension BSPServerService {
     func getSourcesItems(targetIds: [BSPBuildTargetIdentifier]) async throws -> [SourcesItem] {

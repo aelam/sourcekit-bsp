@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 import Testing
 import XcodeProjectManagement
 @testable import XcodeProjectManagerProvider

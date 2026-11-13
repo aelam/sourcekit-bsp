@@ -1,6 +1,6 @@
-import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
+import SourceKitBSPProtocol
 
 actor TestReportReporter {
     let task: BSPTask

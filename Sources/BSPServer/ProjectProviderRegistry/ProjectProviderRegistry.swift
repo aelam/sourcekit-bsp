@@ -5,9 +5,9 @@
 //  Copyright © 2024 Wang Lun.
 //
 
-import BuildServerProtocol
 import Foundation
 import Logger
+import SourceKitBSPProtocol
 import SwiftPMProjectManagerProvider
 
 #if os(macOS)

@@ -63,7 +63,8 @@ public struct LLDBDAPServer: DebugAdapterServing {
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         do {
-            try process.run()
+            let launch: () throws -> Void = process.run
+            try launch()
         } catch {
             throw LLDBDAPError.failedToStart(error.localizedDescription)
         }

@@ -1,7 +1,7 @@
-import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
 import Logger
+import SourceKitBSPProtocol
 #if os(macOS)
 import XcodeProjectManagement
 #endif

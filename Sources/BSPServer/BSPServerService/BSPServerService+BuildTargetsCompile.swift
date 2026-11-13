@@ -1,7 +1,7 @@
-import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
 import Logger
+import SourceKitBSPProtocol
 
 extension BSPServerService {
     func compileTargets(

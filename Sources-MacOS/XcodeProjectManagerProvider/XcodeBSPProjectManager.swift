@@ -1,11 +1,19 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 import XcodeProjectManagement
 
 /// Owns the BSP model and delegates execution to the Xcode backend.
 public actor XcodeBSPProjectManager: ProjectManager {
     public var capabilities: ProjectManagerCapabilities {
-        [.compile, .test, .run, .debug, .prepare, .sourceKitOptions, .outputPaths, .cleanCache, .dependencyModules]
+        var capabilities: ProjectManagerCapabilities =
+            [.compile, .test, .run, .debug, .prepare, .sourceKitOptions, .outputPaths, .cleanCache, .dependencyModules]
+        // Removing active index data requires a separate lifecycle from ordinary cache cleaning.
+        if indexing != nil { capabilities.remove(.cleanCache) }
+        return capabilities
+    }
+
+    public var preparesIndexingOnRequest: Bool {
+        indexing != nil
     }
 
     let backend: XcodeProjectManager
@@ -16,9 +24,17 @@ public actor XcodeBSPProjectManager: ProjectManager {
     public nonisolated let projectType = "xcodeproj"
     public private(set) var project: BSPProject?
     private var reloadTask: Task<Void, Error>?
+    var indexing: (any XcodeIndexingBackend)?
+    private let indexingFactory: @Sendable (XcodeProjectSnapshot) async throws -> (any XcodeIndexingBackend)?
 
-    public init(backend: XcodeProjectManager) {
+    public init(
+        backend: XcodeProjectManager,
+        indexingFactory: @escaping @Sendable (XcodeProjectSnapshot) async throws -> (any XcodeIndexingBackend)? = {
+            try await XcodeIndexingConfiguration.makeBackend(snapshot: $0)
+        }
+    ) {
         self.backend = backend
+        self.indexingFactory = indexingFactory
     }
 
     public func initialize() async throws {
@@ -35,8 +51,21 @@ public actor XcodeBSPProjectManager: ProjectManager {
             guard let project = try await backend.makeBSPProject() else {
                 throw XcodeProjectError.invalidConfig("Project not initialized")
             }
+            guard let snapshot = await backend.projectSnapshot else {
+                throw XcodeProjectError.invalidConfig("Project not initialized")
+            }
+            let nextIndexing = try await indexingFactory(snapshot)
+            let previousIndexing = indexing
+            indexing = nextIndexing
             // Publish before any waiter returns from the shared reload task.
-            self.project = project
+            if let nextIndexing {
+                self.project = project.withIndexPaths(
+                    store: nextIndexing.indexStoreURL, database: nextIndexing.indexDatabaseURL
+                )
+            } else {
+                self.project = project
+            }
+            await previousIndexing?.shutdown()
         }
         reloadTask = task
         defer { reloadTask = nil }
@@ -56,11 +85,12 @@ public actor XcodeBSPProjectManager: ProjectManager {
         await backend.stopContextDestinationDiscovery()
         await backend.shutdownBuilds()
         await backend.stopIndexPreparation()
+        await indexing?.shutdown()
         await backend.stopDebugSessions()
     }
 
     public func getSourceFileList(targetIdentifiers: [BSPBuildTargetIdentifier]) async throws
-        -> [BuildServerProtocol.SourcesItem] {
+        -> [SourceKitBSPProtocol.SourcesItem] {
         try validateTargets(targetIdentifiers)
         let sources = await backend
             .getSourcesItems(targetIdentifiers: targetIdentifiers.map(XcodeTargetIdentifier.init))
@@ -78,6 +108,9 @@ public actor XcodeBSPProjectManager: ProjectManager {
     public func getCompileArguments(targetIdentifier: String, sourceFileURL: URL) async throws -> [String] {
         let identifier = try BSPBuildTargetIdentifier(uri: URI(string: targetIdentifier))
         try validateTargets([identifier])
+        if let indexing {
+            return try await indexing.compilerArguments(for: XcodeTargetIdentifier(identifier), file: sourceFileURL)
+        }
         return try await backend.getCompileArguments(
             targetIdentifier: XcodeTargetIdentifier(identifier), sourceFileURL: sourceFileURL
         )
@@ -90,7 +123,12 @@ public actor XcodeBSPProjectManager: ProjectManager {
     public func buildIndex(
         for targets: [BSPBuildTargetIdentifier], logHandler: (@Sendable (String) -> Void)?
     ) async throws -> [BSPBuildTargetIdentifier] {
-        try await backend.prepareForIndexing(
+        try validateTargets(targets)
+        if let indexing {
+            return try await indexing.prepare(targets: targets.map(XcodeTargetIdentifier.init), log: logHandler)
+                .map(\.bspIdentifier)
+        }
+        return try await backend.prepareForIndexing(
             targetIdentifiers: targets.map(XcodeTargetIdentifier.init), logHandler: logHandler
         )
         .map(\.bspIdentifier)

@@ -4,9 +4,9 @@
 //  Copyright © 2024 Wang Lun.
 //
 
-import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
+import SourceKitBSPProtocol
 
 /// https://build-server-protocol.github.io/docs/specification.html
 /// https://github.com/microsoft/build-server-for-gradle

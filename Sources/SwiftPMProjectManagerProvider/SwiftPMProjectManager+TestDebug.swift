@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 struct SwiftPMDebugLaunch: Sendable {
     let program: URL

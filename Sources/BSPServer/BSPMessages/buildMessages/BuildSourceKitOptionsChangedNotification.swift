@@ -15,8 +15,8 @@
 // Deprecated
 //
 
-import BuildServerProtocol
 import JSONRPCConnection
+import SourceKitBSPProtocol
 
 public struct BuildSourceKitOptionsChangedNotification: ContextualNotificationType, Sendable {
     public typealias RequiredContext = BSPServerService
@@ -39,10 +39,10 @@ public struct BuildSourceKitOptionsChangedNotification: ContextualNotificationTy
         /// A source file might be part of multiple targets and might have different compiler arguments in those two
         /// targets,
         /// thus the target is necessary in this request.
-        public var target: BuildServerProtocol.BSPBuildTargetIdentifier
+        public var target: SourceKitBSPProtocol.BSPBuildTargetIdentifier
 
         /// The language with which the document was opened in the editor.
-        public var language: BuildServerProtocol.Language
+        public var language: SourceKitBSPProtocol.Language
     }
 
     public let id: JSONRPCID

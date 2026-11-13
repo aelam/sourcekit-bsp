@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import JSONRPCConnection
+import SourceKitBSPProtocol
 
 public struct WorkspaceReloadRequest: ContextualRequestType, Sendable {
     public typealias RequiredContext = BSPServerService

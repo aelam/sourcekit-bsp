@@ -60,7 +60,7 @@ import Logger
 // }
 // ```
 //
-import BuildServerProtocol
+import SourceKitBSPProtocol
 
 public struct TextDocumentSourceKitOptionsRequest: ContextualRequestType, Sendable {
     public typealias RequiredContext = BSPServerService
@@ -94,7 +94,7 @@ public struct TextDocumentSourceKitOptionsRequest: ContextualRequestType, Sendab
         /// This helps the server provide language-specific compiler options and optimizations.
         ///
         /// - SeeAlso: ``Language`` for supported language types.
-        public var language: BuildServerProtocol.Language
+        public var language: SourceKitBSPProtocol.Language
     }
 
     public let id: JSONRPCID

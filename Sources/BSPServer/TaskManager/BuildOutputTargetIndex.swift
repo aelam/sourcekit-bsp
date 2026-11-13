@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 /// Resolves diagnostic ownership from one build context snapshot.
 struct BuildOutputTargetIndex: Sendable {

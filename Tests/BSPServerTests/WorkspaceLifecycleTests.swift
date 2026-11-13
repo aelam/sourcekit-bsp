@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 import Testing
 @testable import BSPServer
 @testable import JSONRPCConnection
@@ -12,6 +12,8 @@ private actor RefreshProjectManager: WorkspaceProjectManagerStub {
     var revision = 0
     var inputInvalidations = 0
     var indexPreparations = 0
+    var preparesIndexingOnRequest = false
+    var preparationChangesOptions = true
     var capabilities = Set(ProjectManagerCapability.allCases)
     var watchedFileRoots: [URL] {
         [rootURL, rootURL.deletingLastPathComponent().appendingPathComponent("SharedPackage")]
@@ -27,7 +29,12 @@ private actor RefreshProjectManager: WorkspaceProjectManagerStub {
 
     func buildIndex(for targetIdentifiers: [BSPBuildTargetIdentifier]) async throws -> [BSPBuildTargetIdentifier] {
         indexPreparations += 1
-        return targetIdentifiers
+        return preparationChangesOptions ? targetIdentifiers : []
+    }
+
+    func enablePreparation(changesOptions: Bool) {
+        preparesIndexingOnRequest = true
+        preparationChangesOptions = changesOptions
     }
 
     var failReload = false
@@ -213,6 +220,24 @@ private extension BSPServerService {
 }
 
 struct WorkspaceLifecycleTests {
+    @Test(arguments: [false, true])
+    func optedInPreparationNotifiesOnlyChangedOptions(changesOptions: Bool) async throws {
+        let harness = await setup()
+        await harness.manager.enablePreparation(changesOptions: changesOptions)
+        let targets = await harness.manager.getTargetList().map(\.id)
+        try await harness.service.buildTargetForIndex(targets: targets)
+        #expect(await harness.manager.indexPreparations == 1)
+        let messages = try await harness.transport.sent.map {
+            try JSONSerialization.jsonObject(with: $0) as? [String: Any]
+        }
+        #expect(messages.count == (changesOptions ? 1 : 0))
+        if changesOptions {
+            #expect(messages.first??["method"] as? String == "buildTarget/didChange")
+            let params = try #require(messages.first??["params"] as? [String: Any])
+            #expect((params["changes"] as? [[String: Any]])?.count == targets.count)
+        }
+    }
+
     private struct Harness<Manager: ProjectManager> {
         let service: BSPServerService
         let handler: BSPMessageHandler

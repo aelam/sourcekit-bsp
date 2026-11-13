@@ -1,6 +1,6 @@
-import BuildServerProtocol
 import Foundation
 import Logger
+import SourceKitBSPProtocol
 
 public extension XcodeProjectManager {
     func startDebugSession(

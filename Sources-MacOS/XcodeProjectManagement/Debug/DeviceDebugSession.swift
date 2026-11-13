@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 struct DeviceDebugSession: Sendable {
     let commands: DeviceCommandRunner

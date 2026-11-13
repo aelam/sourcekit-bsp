@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 public extension SwiftPMProjectManager {
     var supportsBuildContexts: Bool {

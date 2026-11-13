@@ -2,7 +2,20 @@
 // The swift-tools-version declares the minimum version of Swift required to
 // build this package.
 
+import Foundation
 import PackageDescription
+
+#if os(macOS)
+let swiftBuildEnabled = ProcessInfo.processInfo.environment["SOURCEKIT_BSP_SWIFT_BUILD"] == "1"
+#else
+let swiftBuildEnabled = false
+#endif
+
+let swiftBuildDependencies: [Target.Dependency] = swiftBuildEnabled ? [
+    .product(
+        name: "SwiftBuild", package: "swift-build"
+    ),
+] : []
 
 let multiPlatformTargets: [Target] = [
     .target(
@@ -26,16 +39,17 @@ let multiPlatformTargets: [Target] = [
         ]
     ),
     .target(
-        name: "BuildServerProtocol",
+        name: "SourceKitBSPProtocol",
         dependencies: [
             "Logger"
-        ]
+        ],
+        path: "Sources/BuildServerProtocol"
     ),
     .target(
         name: "SwiftPMProjectManagerProvider",
         dependencies: [
             "Logger",
-            "BuildServerProtocol",
+            "SourceKitBSPProtocol",
             "Support",
         ]
     ),
@@ -61,7 +75,7 @@ let sourceKitBSPTarget: Target = .executableTarget(
         "Logger",
         "XcodeProjectManagerProvider",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
-    ]
+    ] + (swiftBuildEnabled ? [.product(name: "SWBBuildServiceBundle", package: "swift-build")] : [])
 )
 
 let bspServerTarget: Target = .target(
@@ -70,7 +84,7 @@ let bspServerTarget: Target = .target(
         "Logger",
         "JSONRPCConnection",
         "SwiftPMProjectManagerProvider",
-        "BuildServerProtocol",
+        "SourceKitBSPProtocol",
         "Support",
         "XcodeProjectManagerProvider",
         "XcodeProjectManagement",
@@ -91,7 +105,7 @@ let bspServerTarget: Target = .target(
         "Logger",
         "JSONRPCConnection",
         "SwiftPMProjectManagerProvider",
-        "BuildServerProtocol",
+        "SourceKitBSPProtocol",
         "Support",
     ]
 )
@@ -101,7 +115,7 @@ let multiPlatformProducts: [Product] = [
     .library(name: "Support", targets: ["Logger"]),
     .library(name: "JSONRPCConnection", targets: ["JSONRPCConnection"]),
     .library(name: "Logger", targets: ["Logger"]),
-    .library(name: "BuildServerProtocol", targets: ["BuildServerProtocol"]),
+    .library(name: "SourceKitBSPProtocol", targets: ["SourceKitBSPProtocol"]),
     .library(
         name: "SwiftPMProjectManagerProvider",
         targets: ["SwiftPMProjectManagerProvider"]
@@ -119,26 +133,26 @@ let macOnlyTargets: [Target] = [
         name: "XcodeProjectManagement",
         dependencies: [
             "Logger",
-            "BuildServerProtocol",
+            "SourceKitBSPProtocol",
             "Support",
             .product(
                 name: "XcodeProj",
                 package: "XcodeProj"
             ),
-        ],
+        ] + swiftBuildDependencies,
         path: "Sources-MacOS/XcodeProjectManagement",
         resources: [
             .copy("README.md"),
         ],
         swiftSettings: [
             .define("MACOS_ONLY", .when(platforms: [.macOS]))
-        ]
+        ] + (swiftBuildEnabled ? [.define("SWIFT_BUILD_INDEXING")] : [])
     ),
     .target(
         name: "XcodeProjectManagerProvider",
         dependencies: [
             "XcodeProjectManagement",
-            "BuildServerProtocol"
+            "SourceKitBSPProtocol"
         ],
         path: "Sources-MacOS/XcodeProjectManagerProvider",
         swiftSettings: [
@@ -212,11 +226,16 @@ let dependencies: [PackageDescription.Package.Dependency] = [
         url: "https://github.com/apple/swift-crypto.git",
         from: "3.0.0"
     )
-]
+] + (swiftBuildEnabled ? [
+    .package(
+        url: "https://github.com/swiftlang/swift-build.git",
+        revision: "2d847030c63961cb1cf8cbb6ad2bc7245fdfeb09"
+    ),
+] : [])
 
 let package = Package(
     name: "sourcekit-bsp",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(swiftBuildEnabled ? .v15 : .v13)],
     products: products,
     dependencies: dependencies,
     targets: targets

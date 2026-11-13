@@ -4,10 +4,10 @@
 //  Copyright © 2024 Wang Lun.
 //
 
-import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
 import Logger
+import SourceKitBSPProtocol
 
 /// BSP 服务层 - 连接 BSP 协议和项目管理
 /// 这是整个系统的核心服务，负责协调各个层次

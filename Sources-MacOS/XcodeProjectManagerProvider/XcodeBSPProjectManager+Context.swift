@@ -1,10 +1,15 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 import XcodeProjectManagement
 
 public extension XcodeBSPProjectManager {
     var supportsBuildContexts: Bool {
         true
+    }
+
+    var watchedConfigurationFiles: [URL] {
+        guard indexing != nil, let project else { return [] }
+        return [XcodeIndexingSelection.file(in: project.buildRootURL)]
     }
 
     var supportedBuildPolicies: [BuildContextBuildPolicy] {
@@ -26,6 +31,7 @@ public extension XcodeBSPProjectManager {
         context: BuildContext
     ) async throws -> StatusCode {
         try checkContextScope(context, operation: .compile, targets: targetIdentifiers)
+        try await synchronizeIndexingSelection(context)
         let result = try await backend.compileContext(
             context, arguments: arguments, outputHandler: logHandler.map { ClosureOutputHandler(onLine: $0) }
         )
@@ -68,6 +74,7 @@ public extension XcodeBSPProjectManager {
             environmentVariables: environmentVariables,
             workingDirectory: workingDirectory
         )
+        try await synchronizeIndexingSelection(context)
         let flags = try await backend.contextArguments(context, arguments: nil)
         if context.buildPolicy == .build {
             await progressHandler?("Building the selected scheme before launch")
@@ -105,6 +112,7 @@ public extension XcodeBSPProjectManager {
         context: BuildContext
     ) async throws -> StatusCode {
         try checkContextScope(context, operation: .test, targets: targetIdentifiers)
+        try await synchronizeIndexingSelection(context)
         let flags = try await backend.contextArguments(context, arguments: arguments)
         let result = try await backend.test(
             xcodeTargetIdentifiers: targetIdentifiers.map { XcodeTargetIdentifier($0) },
@@ -127,6 +135,7 @@ public extension XcodeBSPProjectManager {
     ) async throws -> DebugSessionConnection {
         try checkContextScope(context, operation: .debug, targets: targetIdentifiers)
         try checkContextRuntimeArguments(arguments, environmentVariables: nil, workingDirectory: nil)
+        try await synchronizeIndexingSelection(context)
         let flags = try await backend.contextArguments(context, arguments: nil)
         if context.buildPolicy == .build {
             await progressHandler?("Building the selected scheme before debugging")
@@ -140,6 +149,12 @@ public extension XcodeBSPProjectManager {
             logHandler: logHandler,
             progressHandler: progressHandler
         )
+    }
+
+    private func synchronizeIndexingSelection(_ context: BuildContext) async throws {
+        guard indexing != nil, let project else { return }
+        let selection = try await backend.indexingSelection(context)
+        _ = try selection.save(in: project.buildRootURL)
     }
 
     private func checkContextScope(

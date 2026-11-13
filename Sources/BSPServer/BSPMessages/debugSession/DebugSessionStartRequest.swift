@@ -1,7 +1,7 @@
-import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
 import Logger
+import SourceKitBSPProtocol
 
 /// https://build-server-protocol.github.io/docs/specification.html
 public struct DebugSessionStartRequest: ContextualRequestType, Sendable {

@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 import SwiftPMProjectManagerProvider
 
 public struct BSPServerLaunchOptions: Sendable {

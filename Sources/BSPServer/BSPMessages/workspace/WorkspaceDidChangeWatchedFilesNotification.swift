@@ -5,9 +5,9 @@
 //  Copyright © 2024 Wang Lun.
 //
 
-import BuildServerProtocol
 import JSONRPCConnection
 import Logger
+import SourceKitBSPProtocol
 
 public struct WorkspaceDidChangeWatchedFilesNotification: ContextualNotificationType, Sendable {
     public typealias RequiredContext = BSPServerService

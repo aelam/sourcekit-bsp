@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 import Testing
 import XcodeProj
 @testable import XcodeProjectManagement
@@ -69,6 +69,8 @@ struct XcodeBSPProjectTests {
             .appendingPathComponent("XcodeProjectManagementTests/Resources/DemoProjects/HelloProject")
         try FileManager.default.copyItem(at: fixture, to: root)
         defer { try? FileManager.default.removeItem(at: root) }
+        try Data(#"{"prepareForIndexing":false}"#.utf8)
+            .write(to: root.appendingPathComponent(".sourcekit-bsp/project.json"))
         try addPackageProduct(to: root)
         try writePackageVersion("1.2.3", in: root)
         let toolchain = XcodeToolchain(workingDirectory: root)

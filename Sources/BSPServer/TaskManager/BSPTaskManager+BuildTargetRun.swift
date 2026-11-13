@@ -1,6 +1,6 @@
-import BuildServerProtocol
 import Foundation
 import JSONRPCConnection
+import SourceKitBSPProtocol
 
 extension BSPTaskManager {
     func executeRunWithProgress(
@@ -22,14 +22,15 @@ extension BSPTaskManager {
                 }
             }
         }
-        let finishBuildOutput: @Sendable () async -> Void = {
-            if let flusher {
-                flusher.cancel()
-                await flusher.value
+        let finishBuildOutput: @Sendable ()
+            async -> Void = {
+                if let flusher {
+                    flusher.cancel()
+                    await flusher.value
+                }
+                await reporter?.consume(batcher.drain())
+                await reporter?.finish()
             }
-            await reporter?.consume(batcher.drain())
-            await reporter?.finish()
-        }
         let buildOutput = reporter.map { _ in
             RunBuildOutput(onLine: { batcher.append($0) }, finish: finishBuildOutput)
         }

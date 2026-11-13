@@ -1,9 +1,21 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 import Testing
 @testable import XcodeProjectManagerProvider
 
 struct XcodeFileChangeTests {
+    @Test(arguments: [ProjectFileChange.Kind.created, .changed, .deleted])
+    func indexingSelectionReloadsEvenInsideDerivedData(kind: ProjectFileChange.Kind) {
+        #expect(classifier.requiresReload(for: [event(
+            "DerivedData/Logs/sourcekit-bsp/indexing-selection.json",
+            kind: kind
+        )]))
+        #expect(!classifier.requiresReload(for: [event(
+            "DerivedData/Index.noindex/Build/Intermediates.noindex/cache.json",
+            kind: kind
+        )]))
+    }
+
     private let root = URL(fileURLWithPath: "/tmp/BSP Workspace")
 
     private var classifier: XcodeFileChangeClassifier {

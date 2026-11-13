@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 extension XcodeDestination {
     var buildContextMetadata: BuildContextDestination {

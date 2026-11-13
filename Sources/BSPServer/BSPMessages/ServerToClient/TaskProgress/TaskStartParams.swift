@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 public struct TaskStartParams: Codable, Sendable {
     public static let method = "build/taskStart"

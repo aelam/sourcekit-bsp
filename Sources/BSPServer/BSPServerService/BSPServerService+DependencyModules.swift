@@ -1,4 +1,4 @@
-import BuildServerProtocol
+import SourceKitBSPProtocol
 
 extension BSPServerService {
     func getDependencyModules(targetIds: [BSPBuildTargetIdentifier]) async throws -> [DependencyModulesItem] {

@@ -1,5 +1,5 @@
-import BuildServerProtocol
 import Foundation
+import SourceKitBSPProtocol
 
 extension BSPTaskManager {
     func executeTestsWithProgress(
