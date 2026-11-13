@@ -242,7 +242,7 @@ struct SwiftPMSingleTestTests {
         .timeLimit(.minutes(3)),
         arguments: [false, true]
     )
-    func runsIndividualCasesAndReportsTheirActualResults(parallel: Bool) async throws {
+    func runsIndividualAndGroupedCasesAndReportsTheirActualResults(parallel: Bool) async throws {
         let fixture = try TemporarySwiftPMPackage()
         try writeMixedTests(fixture)
         let manager = try await SwiftPMProjectManagerProvider().createProjectManager(rootURL: fixture.root, config: nil)
@@ -251,19 +251,22 @@ struct SwiftPMSingleTestTests {
         let options = ["--jobs", "1"] + (parallel ? ["--parallel", "--quiet"] : ["--quiet"])
         let output = TestOutput()
         let events = TestEvents()
-        for (index, specification) in [
+        let specifications = [
             ("selectedSwift()", "swift-testing", TestStatus.passed),
             ("SelectedCase/testSelected()", "XCTest", .passed),
             ("Nested/parameterized(value:)", "swift-testing", .passed),
             ("Nested/knownIssue()", "swift-testing", .passed),
             ("skippedSwift()", "swift-testing", .skipped),
             ("SelectedCase/testSkipped()", "XCTest", .skipped),
-        ].enumerated() {
+        ]
+        // Keep one real single-test request for each framework. Group the remaining
+        // result cases to avoid repeated SwiftPM startup and package planning in CI.
+        let groups = [[specifications[0]], [specifications[1]], Array(specifications.dropFirst(2))]
+        for (index, group) in groups.enumerated() {
             let arguments = try await selectionArguments(
                 manager,
                 target: selected.id,
-                id: specification.0,
-                style: specification.1,
+                tests: group.map { ($0.0, $0.1) },
                 options: options + (index == 0 ? [] : ["--skip-build"])
             )
             #expect(try await manager.test(
@@ -275,36 +278,37 @@ struct SwiftPMSingleTestTests {
                 testEventHandler: { await events.append($0) }
             ) == .ok)
             let report = try #require(await events.lastReport)
-            #expect(report.tests.count == 1)
-            #expect(report.tests.first?.testId == specification.0)
-            #expect(report.tests.first?.status == specification.2)
+            #expect(report.tests.count == group.count)
+            for specification in group {
+                let result = try #require(report.tests.first { $0.testId == specification.0 })
+                #expect(result.status == specification.2)
+            }
         }
         #expect(!output.text.contains("UNEXPECTED_SIBLING_EXECUTION"))
-        for (id, style, failure) in [
-            ("selectedSwift()", "swift-testing", "swift"),
-            ("SelectedCase/testSelected()", "XCTest", "xctest")
-        ] {
-            let arguments = try await selectionArguments(
-                manager,
-                target: selected.id,
-                id: id,
-                style: style,
-                options: options + ["--skip-build"]
-            )
-            #expect(try await manager.test(
-                targetIdentifiers: [selected.id],
-                arguments: arguments,
-                environmentVariables: ["FAIL_STYLE": failure],
-                workingDirectory: nil,
-                logHandler: nil
-            ) { await events.append($0) } == .error)
-            #expect(await events.lastReport?.tests.first?.status == .failed)
+        let failures = Array(specifications.prefix(2))
+        let failureArguments = try await selectionArguments(
+            manager,
+            target: selected.id,
+            tests: failures.map { ($0.0, $0.1) },
+            options: options + ["--skip-build"]
+        )
+        #expect(try await manager.test(
+            targetIdentifiers: [selected.id],
+            arguments: failureArguments,
+            environmentVariables: ["FAIL_STYLE": "all"],
+            workingDirectory: nil,
+            logHandler: nil
+        ) { await events.append($0) } == .error)
+        let failureReport = try #require(await events.lastReport)
+        #expect(failureReport.tests.count == failures.count)
+        for specification in failures {
+            let result = try #require(failureReport.tests.first { $0.testId == specification.0 })
+            #expect(result.status == .failed)
         }
         let missing = try await selectionArguments(
             manager,
             target: selected.id,
-            id: "missing()",
-            style: "swift-testing",
+            tests: [("missing()", "swift-testing")],
             options: ["--skip-build"]
         )
         #expect(try await manager.test(
@@ -322,11 +326,10 @@ struct SwiftPMSingleTestTests {
     private func selectionArguments(
         _ manager: any ProjectManager,
         target: BSPBuildTargetIdentifier,
-        id: String,
-        style: String,
+        tests: [(id: String, style: String)],
         options: [String]
     ) async throws -> [String]? {
-        let selection = SwiftPMTestSelection(tests: [.init(target: target, id: id, style: style)])
+        let selection = SwiftPMTestSelection(tests: tests.map { .init(target: target, id: $0.id, style: $0.style) })
         let data = try JSONDecoder().decode(LSPAny.self, from: JSONEncoder().encode(selection))
         return try await manager.testArguments(
             targetIdentifiers: [target],
@@ -366,7 +369,7 @@ private func writeMixedTests(_ fixture: TemporarySwiftPMPackage) throws {
                 FileManager.default.createFile(atPath: finish,
                 contents: Data())
             }
-            return environment["FAIL_STYLE"] != style
+            return environment["FAIL_STYLE"] != style && environment["FAIL_STYLE"] != "all"
         }
         @Test func selectedSwift() { #expect(probe("swift")) }
         @Test(.disabled("skip probe")) func skippedSwift() {}
