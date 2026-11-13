@@ -1,4 +1,5 @@
 import Foundation
+import Support
 import Testing
 @testable import XcodeProjectManagement
 
@@ -35,7 +36,11 @@ struct SwiftBuildIndexingCacheTests {
                 XcodeTargetIdentifier(projectFilePath: project.path, targetName: "Library\($0)")
             }
             // Library0 -> Library1 -> Library2: prepare the dependency before its consumer.
-            #expect(try await backend.prepare(targets: [targets[1]], log: nil).isEmpty)
+            let logs = CrossPlatformLock(initialState: [String]())
+            #expect(try await backend.prepare(targets: [targets[1], targets[2]]) { message in
+                logs.withLock { $0.append(message) }
+            }.isEmpty)
+            #expect(logs.withLock { $0.count(where: { $0 == "Index preparation build started" }) } == 1)
             #expect(try await backend.prepare(targets: [targets[0]], log: nil).isEmpty)
             var initialOptions: [[String]] = []
             for target in targets {
@@ -53,13 +58,33 @@ struct SwiftBuildIndexingCacheTests {
                 for: targets[0], file: root.appendingPathComponent("Library0.swift")
             )
             #expect(first == initialOptions[0])
-            #expect(try await backend.prepare(targets: targets, log: nil).isEmpty)
+            logs.withLock { $0.removeAll() }
+            // Duplicate targets must still produce one native operation.
+            #expect(try await backend.prepare(targets: targets + [targets[0]]) { message in
+                logs.withLock { $0.append(message) }
+            }.isEmpty)
+            #expect(logs.withLock { $0.count(where: { $0 == "Index preparation build started" }) } == 1)
+            // Both an evicted target and a surviving plan can still read the batch description.
+            for index in [0, 6] {
+                #expect(try await backend.compilerArguments(
+                    for: targets[index], file: root.appendingPathComponent("Library\(index).swift")
+                ) == initialOptions[index])
+            }
             for (target, expected) in zip(targets, initialOptions) {
                 let options = try await backend.compilerArguments(
                     for: target, file: root.appendingPathComponent("\(target.targetName).swift")
                 )
                 #expect(options == expected)
             }
+            let missing = XcodeTargetIdentifier(projectFilePath: project.path, targetName: "Missing")
+            logs.withLock { $0.removeAll() }
+            await #expect(throws: (any Error).self) {
+                try await backend.prepare(targets: [targets[0], missing]) { message in
+                    logs.withLock { $0.append(message) }
+                }
+            }
+            #expect(logs.withLock { $0.isEmpty })
+            #expect(try await backend.prepare(targets: [targets[0], targets[1]], log: nil).isEmpty)
             await backend.shutdown()
         } catch {
             await backend.shutdown()

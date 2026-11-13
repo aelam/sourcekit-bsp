@@ -23,7 +23,13 @@ plan. The first compiler-option or preparation request loads the workspace and
 plans the requested target and its dependencies. Concurrent requests for the
 same target share planning work. The server retains up to four recent plans
 through Swift Build's description-lifetime API. Active queries retain their
-plans until completion. Evicted plans are recreated when needed. Preparation
+plans until completion. A prepare request with multiple targets uses one build
+operation. Its per-target plans share one retained build description, which stays
+available until its last cached plan or active query releases it. Later requests
+can introduce other targets through the same build service session. Separate
+requests are not automatically combined.
+
+Evicted plans are recreated when needed. Preparation
 compares published options only for the target being prepared.
 Logs distinguish queued work, work that has acquired the build lock, and elapsed
 time. Initial planning can still take time for a target with many dependencies.

@@ -16,29 +16,30 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
     private var targetInfos: [SWBTargetInfo] = []
     private var workspaceLoaded = false
     private let initialization = IndexPreparationCoordinator<String>()
-    /// Each plan owns one native retain. In-flight queries keep it alive after cache eviction.
-    private final class Plan: Sendable {
-        let request: SWBBuildRequest
-        let descriptionID: SWBBuildDescriptionID
-        let target: SWBConfiguredTargetIdentifier
+    /// All plans from one operation share its single native retain.
+    private final class BuildDescription: Sendable {
+        let id: SWBBuildDescriptionID
         private let session: SWBBuildServiceSession
 
-        init(
-            request: SWBBuildRequest,
-            descriptionID: SWBBuildDescriptionID,
-            target: SWBConfiguredTargetIdentifier,
-            session: SWBBuildServiceSession
-        ) {
-            self.request = request
-            self.descriptionID = descriptionID
-            self.target = target
+        init(id: SWBBuildDescriptionID, session: SWBBuildServiceSession) {
+            self.id = id
             self.session = session
         }
 
         deinit {
             let session = session
-            let descriptionID = descriptionID
+            let descriptionID = id
             Task { await session.releaseBuildDescription(id: descriptionID) }
+        }
+    }
+
+    private struct Plan: Sendable {
+        let request: SWBBuildRequest
+        let description: BuildDescription
+        let target: SWBConfiguredTargetIdentifier
+
+        var descriptionID: SWBBuildDescriptionID {
+            description.id
         }
     }
 
@@ -182,6 +183,13 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
         _ operation: SWBBuildOperation, request: SWBBuildRequest, guid: String,
         log: (@Sendable (String) -> Void)?
     ) async throws -> Plan {
+        let description = try await consumeDescription(operation, log: log)
+        return try await makePlan(request: request, description: description, guid: guid)
+    }
+
+    private func consumeDescription(
+        _ operation: SWBBuildOperation, log: (@Sendable (String) -> Void)?
+    ) async throws -> BuildDescription {
         guard let session else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
         var identifier: String?
         do {
@@ -190,7 +198,7 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
             }
             guard let identifier
             else { throw XcodeProjectError.invalidConfig("Swift Build returned no build description") }
-            return try await makePlan(request: request, descriptionID: SWBBuildDescriptionID(identifier), guid: guid)
+            return BuildDescription(id: SWBBuildDescriptionID(identifier), session: session)
         } catch {
             if let identifier { await session.releaseBuildDescription(id: SWBBuildDescriptionID(identifier)) }
             throw error
@@ -199,17 +207,17 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
 
     private func makePlan(
         request: SWBBuildRequest,
-        descriptionID: SWBBuildDescriptionID,
+        description: BuildDescription,
         guid: String
     ) async throws -> Plan {
         guard let session else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
         let targets = try await session.selectConfiguredTargetsForIndex(
-            targets: [SWBTargetGUID(rawValue: guid)], buildDescription: descriptionID, buildRequest: request
+            targets: [SWBTargetGUID(rawValue: guid)], buildDescription: description.id, buildRequest: request
         )
         guard targets.count == 1, let identifier = targets.first else {
             throw XcodeProjectError.invalidConfig("Swift Build cannot select one index configuration: \(guid)")
         }
-        return Plan(request: request, descriptionID: descriptionID, target: identifier, session: session)
+        return Plan(request: request, description: description, target: identifier)
     }
 
     private func makeRequest() -> SWBBuildRequest {
@@ -333,17 +341,23 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
         targets: [XcodeTargetIdentifier], log: @escaping @Sendable (String) -> Void
     ) async throws -> [XcodeTargetIdentifier] {
         guard let session else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
-        var changed: Set<XcodeTargetIdentifier> = []
+        var batchRequest = request
+        var guids: [String] = []
         for target in targets {
             try Task.checkCancellation()
-            let (targetRequest, guid) = try await makeTargetRequest(for: target)
-            let operation = try await session.createBuildOperation(
-                request: targetRequest,
-                delegate: IndexPlanningDelegate(), retainBuildDescription: true
-            )
-            let prepared = try await consumePlan(
-                operation, request: targetRequest, guid: guid, log: log
-            )
+            let guid = try await resolveGUID(target)
+            guids.append(guid)
+            batchRequest.add(target: SWBConfiguredTarget(guid: guid))
+        }
+        batchRequest.buildCommand = .prepareForIndexing(buildOnlyTheseTargets: guids, enableIndexBuildArena: true)
+        let operation = try await session.createBuildOperation(
+            request: batchRequest, delegate: IndexPlanningDelegate(), retainBuildDescription: true
+        )
+        let description = try await consumeDescription(operation, log: log)
+        var changed: Set<XcodeTargetIdentifier> = []
+        for (target, guid) in zip(targets, guids) {
+            try Task.checkCancellation()
+            let prepared = try await makePlan(request: batchRequest, description: description, guid: guid)
             cache(prepared, for: target)
             // Refresh this target before another preparation can evict its description.
             // Unrelated targets can hold expired IDs and must not fail this preparation.
@@ -375,6 +389,7 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
                 for await event in events {
                     eventHandler(event)
                     switch event {
+                    case .buildStarted: log?("Index preparation build started")
                     case let .taskStarted(info): log?(info.executionDescription)
                     case let .targetStarted(info): log?("Preparing \(info.targetName)")
                     case let .taskDiagnostic(info): log?(info.message)
