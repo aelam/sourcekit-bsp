@@ -6,7 +6,8 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
     nonisolated let indexStoreURL: URL
     nonisolated let indexDatabaseURL: URL
     private let snapshot: XcodeProjectSnapshot
-    private let selection: XcodeIndexingSelection?
+    private var selection: XcodeIndexingSelection?
+    private var selectionVersion = UUID()
     private let arena: URL
     private let serviceExecutable: URL
     private var service: SWBBuildService?
@@ -42,7 +43,12 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
         }
     }
 
-    private let planning = SharedIndexPreparationCoordinator<XcodeTargetIdentifier, Plan>()
+    private struct PlanningKey: Hashable, Sendable {
+        let target: XcodeTargetIdentifier
+        let selectionVersion: UUID
+    }
+
+    private let planning = SharedIndexPreparationCoordinator<PlanningKey, Plan>()
     private var plans: [XcodeTargetIdentifier: Plan] = [:]
     private var planAccessOrder: [XcodeTargetIdentifier] = []
     private var targetGUIDs: [XcodeTargetIdentifier: String] = [:]
@@ -58,6 +64,16 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
     }
 
     private var publishedOptions: [OptionsKey: [String]] = [:]
+    private var validOptions: Set<OptionsKey> = []
+    private var argumentsVersion = UUID()
+    struct Statistics {
+        var workspaceLoads = 0
+        var buildDescriptions = 0
+        var compilerArgumentQueries = 0
+        var compilerArgumentCacheHits = 0
+    }
+
+    private(set) var statistics = Statistics()
     private var stopped = false
     private struct PreparationKey: Hashable, Sendable {
         let targets: [XcodeTargetIdentifier]
@@ -130,28 +146,35 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
         try await session.setSystemInfo(.default())
         targetInfos = try await session.workspaceInfo().targetInfos
         request = makeRequest()
+        statistics.workspaceLoads += 1
     }
 
-    private func plan(for target: XcodeTargetIdentifier) async throws -> Plan {
+    private func plan(for target: XcodeTargetIdentifier, version: UUID) async throws -> Plan {
         try await ensureLoaded()
+        try checkSelection(version)
         if let cached = cachedPlan(for: target) { return cached }
-        return try await planning.prepare(for: target) { _ in
+        let key = PlanningKey(target: target, selectionVersion: version)
+        return try await planning.prepare(for: key) { _ in
             try await self.perform("plan \(target.targetName)") { backend in
+                try backend.checkSelection(version)
                 if let cached = backend.cachedPlan(for: target) { return cached }
-                return try await backend.createPlan(for: target)
+                return try await backend.createPlan(for: target, version: version)
             }
         }
     }
 
-    private func createPlan(for target: XcodeTargetIdentifier) async throws -> Plan {
+    private func createPlan(for target: XcodeTargetIdentifier, version: UUID) async throws -> Plan {
         guard let session else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
         let (targetRequest, guid) = try await makeTargetRequest(for: target)
+        try checkSelection(version)
+        statistics.buildDescriptions += 1
         let operation = try await session.createBuildOperationForBuildDescriptionOnly(
             request: targetRequest, delegate: IndexPlanningDelegate(), retainBuildDescription: true
         )
         let plan = try await consumePlan(operation, request: targetRequest, guid: guid) {
             logger.debug("Index planning: \($0)")
         }
+        try checkSelection(version)
         cache(plan, for: target)
         return plan
     }
@@ -267,16 +290,52 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
     }
 
     func compilerArguments(for target: XcodeTargetIdentifier, file: URL) async throws -> [String] {
-        let plan = try await plan(for: target)
-        return try await perform("compiler arguments", serializeBuild: false) { backend in
-            try await backend.publishArguments(for: target, file: file, plan: plan)
+        let version = selectionVersion
+        try checkSelection(version)
+        let key = OptionsKey(target: target, file: file)
+        while true {
+            try checkSelection(version)
+            if validOptions.contains(key), let arguments = publishedOptions[key] {
+                statistics.compilerArgumentCacheHits += 1
+                return arguments
+            }
+            let inputs = argumentsVersion
+            let plan = try await plan(for: target, version: version)
+            let result = try await perform("compiler arguments", serializeBuild: false) { backend in
+                try backend.checkSelection(version)
+                return try await backend.arguments(for: target, file: file, plan: plan)
+            }
+            try checkSelection(version)
+            guard argumentsVersion == inputs else { continue }
+            publishedOptions[key] = result
+            validOptions.insert(key)
+            return result
         }
     }
 
-    private func publishArguments(for target: XcodeTargetIdentifier, file: URL, plan: Plan) async throws -> [String] {
-        let result = try await arguments(for: target, file: file, plan: plan)
-        publishedOptions[OptionsKey(target: target, file: file)] = result
-        return result
+    func updateSelection(_ selection: XcodeIndexingSelection?) throws {
+        try checkSelection(selectionVersion)
+        guard self.selection != selection else { return }
+        self.selection = selection
+        selectionVersion = UUID()
+        generation = UUID()
+        request = makeRequest()
+        plans.removeAll()
+        planAccessOrder.removeAll()
+        sourcePaths.removeAll()
+        publishedOptions.removeAll()
+        invalidateCachedArguments()
+        logger.info("Swift Build indexing configuration updated; reusing workspace session")
+    }
+
+    private func checkSelection(_ version: UUID) throws {
+        try Task.checkCancellation()
+        guard !stopped, selectionVersion == version else { throw CancellationError() }
+    }
+
+    private func invalidateCachedArguments() {
+        argumentsVersion = UUID()
+        validOptions.removeAll()
     }
 
     private func arguments(for target: XcodeTargetIdentifier, file: URL, plan: Plan) async throws -> [String] {
@@ -295,6 +354,7 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
         }
         // PIF loading can spell symlinked paths differently from the client's document URI.
         let path = try sourcePaths[target]?.paths[file.resolvingSymlinksInPath()] ?? AbsolutePath(validating: file.path)
+        statistics.compilerArgumentQueries += 1
         return try await session.indexCompilerArguments(
             of: path, in: plan.target,
             buildDescription: plan.descriptionID, buildRequest: plan.request
@@ -327,23 +387,28 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
     ) async throws -> [XcodeTargetIdentifier] {
         let targets = Array(Set(targets)).sorted { $0.rawValue < $1.rawValue }
         guard !targets.isEmpty else { return [] }
+        let version = selectionVersion
+        try checkSelection(version)
         let key = PreparationKey(targets: targets, generation: generation)
         let changes = try await preparation.prepare(for: key, logHandler: log) { sharedLog in
             try await self.ensureLoaded()
             let targets = try await self.perform("prepare") { backend in
-                try await backend.prepareOperation(targets: targets, log: sharedLog)
+                try backend.checkSelection(version)
+                return try await backend.prepareOperation(targets: targets, version: version, log: sharedLog)
             }
             return IndexPreparationChanges(targets)
         }
+        try checkSelection(version)
         return changes.take()
     }
 
     func invalidateInputs() {
         generation = UUID()
+        invalidateCachedArguments()
     }
 
     private func prepareOperation(
-        targets: [XcodeTargetIdentifier], log: @escaping @Sendable (String) -> Void
+        targets: [XcodeTargetIdentifier], version: UUID, log: @escaping @Sendable (String) -> Void
     ) async throws -> [XcodeTargetIdentifier] {
         guard let session else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
         var batchRequest = request
@@ -354,23 +419,32 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
             guids.append(guid)
             batchRequest.add(target: SWBConfiguredTarget(guid: guid))
         }
+        try checkSelection(version)
         batchRequest.buildCommand = .prepareForIndexing(buildOnlyTheseTargets: guids, enableIndexBuildArena: true)
         let operation = try await session.createBuildOperation(
             request: batchRequest, delegate: IndexPlanningDelegate(), retainBuildDescription: true
         )
         let description = try await consumeDescription(operation, log: log)
+        try checkSelection(version)
+        invalidateCachedArguments()
+        let inputs = argumentsVersion
         var changed: Set<XcodeTargetIdentifier> = []
         for (target, guid) in zip(targets, guids) {
             try Task.checkCancellation()
             let prepared = try await makePlan(request: batchRequest, description: description, guid: guid)
+            try checkSelection(version)
             cache(prepared, for: target)
             // Refresh this target before another preparation can evict its description.
             // Unrelated targets can hold expired IDs and must not fail this preparation.
             let previousOptions = publishedOptions.filter { $0.key.target == target }
             for (key, previous) in previousOptions {
                 let current = try await arguments(for: target, file: key.file, plan: prepared)
+                try checkSelection(version)
                 if current != previous { changed.insert(target) }
-                publishedOptions[key] = current
+                if argumentsVersion == inputs {
+                    publishedOptions[key] = current
+                    validOptions.insert(key)
+                }
             }
         }
         return changed.sorted { $0.rawValue < $1.rawValue }

@@ -25,6 +25,8 @@ public actor XcodeBSPProjectManager: ProjectManager {
     public private(set) var project: BSPProject?
     private var reloadTask: Task<Void, Error>?
     var indexing: (any XcodeIndexingBackend)?
+    var indexingSelectionChanged = false
+    var projectFilesChanged = false
     private let indexingFactory: @Sendable (XcodeProjectSnapshot) async throws -> (any XcodeIndexingBackend)?
 
     public init(
@@ -46,7 +48,14 @@ public actor XcodeBSPProjectManager: ProjectManager {
             try await reloadTask.value
             return
         }
+        let selectionOnly = indexingSelectionChanged && !projectFilesChanged
+        indexingSelectionChanged = false
+        projectFilesChanged = false
         let task = Task {
+            if selectionOnly, let indexing, let project {
+                try await indexing.updateSelection(XcodeIndexingSelection.load(in: project.buildRootURL))
+                return
+            }
             try await backend.reloadProject()
             guard let project = try await backend.makeBSPProject() else {
                 throw XcodeProjectError.invalidConfig("Project not initialized")

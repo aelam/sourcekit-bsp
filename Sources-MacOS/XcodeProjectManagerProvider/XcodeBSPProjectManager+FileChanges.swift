@@ -3,10 +3,16 @@ import SourceKitBSPProtocol
 import XcodeProjectManagement
 
 public extension XcodeBSPProjectManager {
-    func shouldReloadProject(for changes: [ProjectFileChange]) -> Bool {
+    func shouldReloadProject(for changes: [ProjectFileChange]) async -> Bool {
         guard let project else { return false }
-        return XcodeFileChangeClassifier(rootURL: project.rootURL, buildRootURL: project.buildRootURL)
-            .requiresReload(for: changes)
+        let selectionFile = XcodeIndexingSelection.file(in: project.buildRootURL).standardizedFileURL
+        let selectionChanges = changes.filter { $0.uri.fileURL?.standardizedFileURL == selectionFile }
+        let projectChanges = changes.filter { $0.uri.fileURL?.standardizedFileURL != selectionFile }
+        let reloadProject = XcodeFileChangeClassifier(rootURL: project.rootURL, buildRootURL: project.buildRootURL)
+            .requiresReload(for: projectChanges)
+        projectFilesChanged = projectFilesChanged || reloadProject
+        indexingSelectionChanged = indexingSelectionChanged || !selectionChanges.isEmpty
+        return reloadProject || !selectionChanges.isEmpty
     }
 }
 

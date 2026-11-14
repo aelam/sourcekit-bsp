@@ -29,6 +29,7 @@ struct SwiftBuildIndexingCacheTests {
             snapshot: snapshot,
             serviceExecutable: service
         ))
+        let engine = try #require(backend as? SwiftBuildIndexingBackend)
         do {
             // Swift Build keeps four descriptions by default. Seven targets force eviction.
             let targets = (0 ..< 7).map {
@@ -53,10 +54,16 @@ struct SwiftBuildIndexingCacheTests {
                 }
             }
             // Query the oldest description before prepare has a chance to recreate it.
+            let before = await engine.statistics
             let first = try await backend.compilerArguments(
                 for: targets[0], file: root.appendingPathComponent("Library0.swift")
             )
             #expect(first == initialOptions[0])
+            if !prepareAfterEachTarget {
+                #expect(await engine.statistics.buildDescriptions == before.buildDescriptions)
+                #expect(await engine.statistics.compilerArgumentQueries == before.compilerArgumentQueries)
+                #expect(await engine.statistics.compilerArgumentCacheHits == before.compilerArgumentCacheHits + 1)
+            }
             logs.withLock { $0.removeAll() }
             // Duplicate targets must still produce one native operation.
             #expect(try await backend.prepare(targets: targets + [targets[0]]) { message in
@@ -91,6 +98,65 @@ struct SwiftBuildIndexingCacheTests {
         }
     }
 
+    @Test(.timeLimit(.minutes(2)))
+    func cachesArgumentsAcrossContextReadsAndReusesTheSessionWhenSelectionChanges() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Index Selection \(UUID())")
+            .resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = try makeProject(in: root)
+        let derivedData = root.appendingPathComponent("DerivedData")
+        let debug = XcodeIndexingSelection(platform: "macosx", configuration: "Debug")
+        _ = try debug.save(in: derivedData)
+        let toolchain = XcodeToolchain(workingDirectory: root)
+        try await toolchain.initialize()
+        let installation = try #require(await toolchain.getSelectedInstallation())
+        let snapshot = XcodeProjectSnapshot(
+            rootURL: root, projectLocation: .standaloneProject(project),
+            xcodeGlobalSettings: .init(derivedDataPath: derivedData),
+            xcodeTargets: [], schemes: [], configuration: "Debug", xcodeInstallation: installation
+        )
+        let service = Bundle(for: IndexCacheBundleLocator.self).bundleURL.deletingLastPathComponent()
+            .appendingPathComponent("SWBBuildServiceBundle")
+        let engine = try SwiftBuildIndexingBackend(snapshot: snapshot, serviceExecutable: service)
+        let target = XcodeTargetIdentifier(projectFilePath: project.path, targetName: "Library0")
+        let file = root.appendingPathComponent("Library0.swift")
+        do {
+            let initial = try await engine.compilerArguments(for: target, file: file)
+            #expect(initial.contains { $0.contains("INDEX_DEBUG") })
+            let cold = await engine.statistics
+            for _ in 0 ..< 10 {
+                try await engine.updateSelection(debug)
+                #expect(try await engine.compilerArguments(for: target, file: file) == initial)
+            }
+            #expect(await engine.statistics.workspaceLoads == 1)
+            #expect(await engine.statistics.buildDescriptions == cold.buildDescriptions)
+            #expect(await engine.statistics.compilerArgumentQueries == cold.compilerArgumentQueries)
+            #expect(await engine.statistics.compilerArgumentCacheHits == 10)
+
+            await engine.invalidateInputs()
+            #expect(try await engine.compilerArguments(for: target, file: file) == initial)
+            #expect(await engine.statistics.compilerArgumentQueries == cold.compilerArgumentQueries + 1)
+
+            try await engine.updateSelection(.init(platform: "macosx", configuration: "Release"))
+            let release = try await engine.compilerArguments(for: target, file: file)
+            #expect(release.contains { $0.contains("INDEX_RELEASE") })
+            #expect(!release.contains { $0.contains("INDEX_DEBUG") })
+            #expect(await engine.statistics.workspaceLoads == 1)
+            #expect(await engine.statistics.buildDescriptions == cold.buildDescriptions + 1)
+
+            try await engine.updateSelection(.init(platform: "macosx"))
+            #expect(try await engine.compilerArguments(for: target, file: file) == initial)
+            #expect(await engine.statistics.workspaceLoads == 1)
+            await engine.shutdown()
+            await #expect(throws: CancellationError.self) {
+                try await engine.compilerArguments(for: target, file: file)
+            }
+        } catch {
+            await engine.shutdown()
+            throw error
+        }
+    }
+
     private func makeProject(in root: URL) throws -> URL {
         let project = root.appendingPathComponent("Cache.xcodeproj")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
@@ -101,9 +167,13 @@ struct SwiftBuildIndexingCacheTests {
             return id
         }
         func configuration(_ settings: [String: Any]) -> String {
-            let config = add(["isa": "XCBuildConfiguration", "name": "Debug", "buildSettings": settings])
+            let configs = ["Debug", "Release"].map { name in
+                var settings = settings
+                settings["SWIFT_ACTIVE_COMPILATION_CONDITIONS"] = "$(inherited) INDEX_\(name.uppercased())"
+                return add(["isa": "XCBuildConfiguration", "name": name, "buildSettings": settings])
+            }
             return add([
-                "isa": "XCConfigurationList", "buildConfigurations": [config],
+                "isa": "XCConfigurationList", "buildConfigurations": configs,
                 "defaultConfigurationIsVisible": 0, "defaultConfigurationName": "Debug"
             ])
         }
