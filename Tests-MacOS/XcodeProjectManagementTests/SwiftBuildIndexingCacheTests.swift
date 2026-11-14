@@ -133,9 +133,20 @@ struct SwiftBuildIndexingCacheTests {
             #expect(await engine.statistics.compilerArgumentQueries == cold.compilerArgumentQueries)
             #expect(await engine.statistics.compilerArgumentCacheHits == 10)
 
+            try Data("public struct EditedValue {}\n".utf8).write(to: file)
+            await engine.invalidateInputs(preservingArguments: true)
+            #expect(try await engine.compilerArguments(for: target, file: file) == initial)
+            #expect(await engine.statistics.compilerArgumentQueries == cold.compilerArgumentQueries)
+
             await engine.invalidateInputs()
             #expect(try await engine.compilerArguments(for: target, file: file) == initial)
             #expect(await engine.statistics.compilerArgumentQueries == cold.compilerArgumentQueries + 1)
+
+            // Preparing a dependency can change generated inputs used by its consumer.
+            let dependency = XcodeTargetIdentifier(projectFilePath: project.path, targetName: "Library1")
+            #expect(try await engine.prepare(targets: [dependency], log: nil).isEmpty)
+            #expect(try await engine.compilerArguments(for: target, file: file) == initial)
+            #expect(await engine.statistics.compilerArgumentQueries == cold.compilerArgumentQueries + 2)
 
             try await engine.updateSelection(.init(platform: "macosx", configuration: "Release"))
             let release = try await engine.compilerArguments(for: target, file: file)
@@ -157,7 +168,72 @@ struct SwiftBuildIndexingCacheTests {
         }
     }
 
-    private func makeProject(in root: URL) throws -> URL {
+    @Test(.timeLimit(.minutes(2)))
+    func sharesArgumentAndSourceQueriesAcrossConcurrentRequests() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Index Queries \(UUID())")
+            .resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = try makeProject(in: root, extraSource: true)
+        let derivedData = root.appendingPathComponent("DerivedData")
+        _ = try XcodeIndexingSelection(platform: "macosx", configuration: "Debug").save(in: derivedData)
+        let toolchain = XcodeToolchain(workingDirectory: root)
+        try await toolchain.initialize()
+        let installation = try #require(await toolchain.getSelectedInstallation())
+        let snapshot = XcodeProjectSnapshot(
+            rootURL: root, projectLocation: .standaloneProject(project),
+            xcodeGlobalSettings: .init(derivedDataPath: derivedData),
+            xcodeTargets: [], schemes: [], configuration: "Debug", xcodeInstallation: installation
+        )
+        let service = Bundle(for: IndexCacheBundleLocator.self).bundleURL.deletingLastPathComponent()
+            .appendingPathComponent("SWBBuildServiceBundle")
+        let engine = try SwiftBuildIndexingBackend(snapshot: snapshot, serviceExecutable: service)
+        let target = XcodeTargetIdentifier(projectFilePath: project.path, targetName: "Library0")
+        let files = ["Library0.swift", "Library0Extra.swift"].map { root.appendingPathComponent($0) }
+        do {
+            for pass in 1 ... 2 {
+                try await withThrowingTaskGroup(of: [String].self) { group in
+                    for index in 0 ..< 40 {
+                        let file = files[index % files.count]
+                        group.addTask { try await engine.compilerArguments(for: target, file: file) }
+                    }
+                    for try await arguments in group {
+                        #expect(arguments.contains("Library0"))
+                        #expect(arguments.contains { $0.contains("INDEX_DEBUG") })
+                    }
+                }
+                let statistics = await engine.statistics
+                #expect(statistics.workspaceLoads == 1)
+                #expect(statistics.buildDescriptions == 1)
+                #expect(statistics.sourceQueries == 1)
+                #expect(statistics.compilerArgumentQueries == pass * files.count)
+                await engine.invalidateInputs()
+            }
+            await engine.shutdown()
+        } catch {
+            await engine.shutdown()
+            throw error
+        }
+    }
+
+    @Test
+    func invalidatedArgumentsCannotBePublishedByAnOlderQuery() {
+        let target = XcodeTargetIdentifier(projectFilePath: "/tmp/Cache.xcodeproj", targetName: "Library0")
+        let key = SwiftBuildIndexingArgumentsCache.Key(target: target, file: URL(fileURLWithPath: "/tmp/File.swift"))
+        var cache = SwiftBuildIndexingArgumentsCache()
+        let oldVersion = cache.version
+        let initial = cache.publish(["old"], for: key, version: oldVersion)
+        #expect(initial)
+        cache.invalidate()
+        #expect(cache.cached(for: key) == nil)
+        #expect(cache.published(for: target)[key] == ["old"])
+        let current = cache.publish(["new"], for: key, version: cache.version)
+        let stale = cache.publish(["stale"], for: key, version: oldVersion)
+        #expect(current)
+        #expect(!stale)
+        #expect(cache.cached(for: key) == ["new"])
+    }
+
+    private func makeProject(in root: URL, extraSource: Bool = false) throws -> URL {
         let project = root.appendingPathComponent("Cache.xcodeproj")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         var objects: [String: [String: Any]] = [:]
@@ -196,8 +272,19 @@ struct SwiftBuildIndexingCacheTests {
             ])
             sources.append(source)
             let buildFile = add(["isa": "PBXBuildFile", "fileRef": source])
+            var buildFiles = [buildFile]
+            if extraSource {
+                try Data("public struct ExtraValue\(index) {}\n".utf8)
+                    .write(to: root.appendingPathComponent("\(name)Extra.swift"))
+                let extra = add([
+                    "isa": "PBXFileReference", "path": "\(name)Extra.swift", "sourceTree": "<group>",
+                    "lastKnownFileType": "sourcecode.swift"
+                ])
+                sources.append(extra)
+                buildFiles.append(add(["isa": "PBXBuildFile", "fileRef": extra]))
+            }
             let phase = add([
-                "isa": "PBXSourcesBuildPhase", "files": [buildFile],
+                "isa": "PBXSourcesBuildPhase", "files": buildFiles,
                 "buildActionMask": 2_147_483_647, "runOnlyForDeploymentPostprocessing": 0
             ])
             let product = add([

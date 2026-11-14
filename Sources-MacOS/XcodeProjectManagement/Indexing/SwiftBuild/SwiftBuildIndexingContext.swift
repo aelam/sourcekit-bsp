@@ -15,9 +15,9 @@ struct SwiftBuildIndexingContext {
         self.request = Self.makeRequest(snapshot: snapshot, buildContext: buildContext)
     }
 
-    mutating func invalidateInputs() {
+    mutating func invalidateInputs(preservingArguments: Bool) {
         preparationGeneration = UUID()
-        arguments.invalidate()
+        if !preservingArguments { arguments.invalidate() }
     }
 
     private static func makeRequest(

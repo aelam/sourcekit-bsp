@@ -5,50 +5,16 @@
 //  Created by ST22956 on 2024/11/23.
 //
 
-import JSONRPCConnection
 import SourceKitBSPProtocol
 
-struct BuildTargetDidChangeNotification: ContextualNotificationType {
-    typealias RequiredContext = BSPServerService
-
+/// Sent to clients when targets or their compiler options change.
+enum BuildTargetDidChangeNotification {
     static func method() -> String {
         "buildTarget/didChange"
     }
 
-    struct Params: Codable {
+    struct Params: Codable, Sendable {
         let changes: [BuildTargetEvent]?
-    }
-
-    let jsonrpc: String
-    let method: String
-    let params: Params
-
-    init(params: Params) {
-        self.jsonrpc = "2.0"
-        self.method = Self.method()
-        self.params = params
-    }
-
-    // MARK: - ContextualNotificationType Implementation
-
-    func handle<Handler: ContextualMessageHandler>(
-        contextualHandler: Handler
-    ) async throws where Handler.Context == BSPServerService {
-        await contextualHandler.withContext { _ in
-            guard let changes = params.changes else {
-                return
-            }
-            for change in changes {
-                handleBuildTargetChange(change)
-            }
-        }
-    }
-
-    private func handleBuildTargetChange(_ change: BuildTargetEvent) {
-        // Handle the build target change in the context
-        // This could involve updating internal state, notifying observers, etc.
-        // The actual implementation will depend on the specifics of the BuildServerContext
-        // and how it manages build targets.
     }
 }
 

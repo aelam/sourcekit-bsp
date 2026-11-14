@@ -84,6 +84,9 @@ public protocol ProjectManager: AnyObject, Sendable {
     /// Mark active index preparation inputs as changed without reloading the graph.
     func invalidateIndexInputs() async
 
+    /// Lets providers preserve compiler arguments when only source contents change.
+    func invalidateIndexInputs(for changes: [ProjectFileChange]) async
+
     /// workspace/buildTargets
     func getTargetList() async -> [BSPBuildTarget]
 
@@ -244,6 +247,11 @@ public extension ProjectManager {
     func shutdown() async {}
 
     func invalidateIndexInputs() async {}
+
+    func invalidateIndexInputs(for changes: [ProjectFileChange]) async {
+        guard !changes.isEmpty else { return }
+        await invalidateIndexInputs()
+    }
 
     func run(
         targetIdentifier: BSPBuildTargetIdentifier,

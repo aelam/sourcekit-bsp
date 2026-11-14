@@ -48,8 +48,7 @@ private let notificationTypes: [NotificationType.Type] = [
     // build
     BuildSourceKitOptionsChangedNotification.self, // build/sourceKitOptionsChanged
 
-    // $
-    CancelRequestNotification.self, // $/cancelRequest
+    // JSONRPCConnection handles $/cancelRequest before these notifications.
 ]
 
 public let bspRegistry = MessageRegistry(

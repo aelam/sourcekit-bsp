@@ -19,6 +19,7 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
         var buildDescriptions = 0
         var compilerArgumentQueries = 0
         var compilerArgumentCacheHits = 0
+        var sourceQueries = 0
     }
 
     private(set) var statistics = Statistics()
@@ -149,15 +150,31 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
                 return arguments
             }
             let inputs = context.arguments.version
-            let plan = try await plan(for: target, version: version)
-            let result = try await perform("compiler arguments", serializeBuild: false) { backend in
-                try backend.checkContext(version)
-                return try await backend.arguments(for: target, file: file, plan: plan)
+            let request = SwiftBuildIndexingOperations.ArgumentsKey(
+                entry: key, contextVersion: version, inputsVersion: inputs
+            )
+            let result = try await operations.arguments.prepare(for: request) { _ in
+                try await self.perform("compiler arguments", serializeBuild: false) { backend in
+                    try await backend.queryArguments(for: request)
+                }
             }
             try checkContext(version)
-            guard context.arguments.publish(result, for: key, version: inputs) else { continue }
+            guard context.arguments.version == inputs, let result else { continue }
             return result
         }
+    }
+
+    private func queryArguments(for request: SwiftBuildIndexingOperations.ArgumentsKey) async throws -> [String]? {
+        try checkContext(request.contextVersion)
+        guard context.arguments.version == request.inputsVersion else { return nil }
+        if let cached = context.arguments.cached(for: request.entry) { return cached }
+        let plan = try await plan(for: request.entry.target, version: request.contextVersion)
+        guard context.arguments.version == request.inputsVersion else { return nil }
+        let result = try await arguments(for: request.entry.target, file: request.entry.file, plan: plan)
+        try checkContext(request.contextVersion)
+        // Publish before shared work completes so a later caller cannot start the same query again.
+        guard context.arguments.publish(result, for: request.entry, version: request.inputsVersion) else { return nil }
+        return result
     }
 
     func updateSelection(_ buildContext: XcodeIndexingSelection?) throws {
@@ -177,21 +194,8 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
         guard let session = workspace?.session
         else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
         let version = context.version
-        let paths: [URL: AbsolutePath]
-        if let cached = context.plans.paths(for: target, descriptionID: plan.descriptionID) {
-            paths = cached
-        } else {
-            let sources = try await session.sources(
-                of: [plan.target],
-                buildDescription: plan.descriptionID,
-                buildRequest: plan.request
-            )
-            paths = Dictionary(sources.flatMap(\.sourceFiles).map {
-                (URL(fileURLWithPath: $0.path.pathString).resolvingSymlinksInPath(), $0.path)
-            }, uniquingKeysWith: { first, _ in first })
-            try checkContext(version)
-            context.plans.storePaths(paths, for: target, descriptionID: plan.descriptionID)
-        }
+        let paths = try await sourcePaths(for: target, plan: plan, version: version)
+        try checkContext(version)
         // PIF loading can spell symlinked paths differently from the client's document URI.
         let path = try paths[file.resolvingSymlinksInPath()] ?? AbsolutePath(validating: file.path)
         statistics.compilerArgumentQueries += 1
@@ -199,6 +203,41 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
             of: path, in: plan.target,
             buildDescription: plan.descriptionID, buildRequest: plan.request
         )
+    }
+
+    private func sourcePaths(
+        for target: XcodeTargetIdentifier, plan: Plan, version: UUID
+    ) async throws -> [URL: AbsolutePath] {
+        if let cached = context.plans.paths(for: target, descriptionID: plan.descriptionID) {
+            return cached
+        }
+        let key = SwiftBuildIndexingOperations.SourcesKey(
+            target: target, contextVersion: version, descriptionID: plan.descriptionID
+        )
+        return try await operations.sources.prepare(for: key) { _ in
+            try await self.querySourcePaths(for: target, plan: plan, version: version)
+        }
+    }
+
+    private func querySourcePaths(
+        for target: XcodeTargetIdentifier, plan: Plan, version: UUID
+    ) async throws -> [URL: AbsolutePath] {
+        defer { withExtendedLifetime(plan) {} }
+        try checkContext(version)
+        if let cached = context.plans.paths(for: target, descriptionID: plan.descriptionID) { return cached }
+        guard let session = workspace?.session
+        else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
+        statistics.sourceQueries += 1
+        let sources = try await session.sources(
+            of: [plan.target],
+            buildDescription: plan.descriptionID, buildRequest: plan.request
+        )
+        let paths = Dictionary(sources.flatMap(\.sourceFiles).map {
+            (URL(fileURLWithPath: $0.path.pathString).resolvingSymlinksInPath(), $0.path)
+        }, uniquingKeysWith: { first, _ in first })
+        try checkContext(version)
+        context.plans.storePaths(paths, for: target, descriptionID: plan.descriptionID)
+        return paths
     }
 
     private func resolveGUID(_ target: XcodeTargetIdentifier) async throws -> String {
@@ -246,8 +285,8 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
         return changes.take()
     }
 
-    func invalidateInputs() {
-        context.invalidateInputs()
+    func invalidateInputs(preservingArguments: Bool) {
+        context.invalidateInputs(preservingArguments: preservingArguments)
     }
 
     private func prepareOperation(
@@ -270,6 +309,7 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
         )
         let description = try await consumeDescription(operation, log: log)
         try checkContext(version)
+        // Preparation can generate inputs for dependencies and other consumers, including through scripts.
         context.arguments.invalidate()
         let inputs = context.arguments.version
         var changed: Set<XcodeTargetIdentifier> = []
@@ -366,8 +406,10 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
 
     func shutdown() async {
         operations.stopAcceptingWork()
+        await operations.arguments.stop()
         await operations.preparation.stop()
         await operations.planning.stop()
+        await operations.sources.stop()
         await operations.initialization.stop()
         for completion in operations.cancelPending() {
             await completion.value

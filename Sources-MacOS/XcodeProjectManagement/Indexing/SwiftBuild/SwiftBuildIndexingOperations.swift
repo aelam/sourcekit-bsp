@@ -1,4 +1,5 @@
 import Foundation
+import SwiftBuild
 
 /// Tracks shared requests and pending operations until shutdown.
 struct SwiftBuildIndexingOperations {
@@ -12,6 +13,18 @@ struct SwiftBuildIndexingOperations {
         let generation: UUID
     }
 
+    struct ArgumentsKey: Hashable, Sendable {
+        let entry: SwiftBuildIndexingArgumentsCache.Key
+        let contextVersion: UUID
+        let inputsVersion: UUID
+    }
+
+    struct SourcesKey: Hashable, Sendable {
+        let target: XcodeTargetIdentifier
+        let contextVersion: UUID
+        let descriptionID: SWBBuildDescriptionID
+    }
+
     private struct Pending {
         let cancel: @Sendable () -> Void
         let completion: Task<Void, Never>
@@ -20,6 +33,8 @@ struct SwiftBuildIndexingOperations {
     let initialization = IndexPreparationCoordinator<String>()
     let planning = SharedIndexPreparationCoordinator<PlanningKey, SwiftBuildIndexingPlan>()
     let preparation = SharedIndexPreparationCoordinator<PreparationKey, IndexPreparationChanges>()
+    let arguments = SharedIndexPreparationCoordinator<ArgumentsKey, [String]?>()
+    let sources = SharedIndexPreparationCoordinator<SourcesKey, [URL: AbsolutePath]>()
     private var pending: [UUID: Pending] = [:]
     private(set) var isStopped = false
 

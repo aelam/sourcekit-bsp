@@ -85,15 +85,10 @@ public final actor JSONRPCConnection {
         errorProcessingTask = nil
     }
 
-    private struct Cancellation: Decodable {
-        struct Params: Decodable { let id: RequestID }
-        let params: Params
-    }
-
     /// Preserve notification order without blocking cancellation behind a build.
     private func enqueueMessage(_ message: JSONRPCMessage) {
-        if message.request.method == "$/cancelRequest", message.request.id == nil {
-            if let cancellation = try? jsonDecoder.decode(Cancellation.self, from: message.rawData) {
+        if message.request.method == CancelRequestNotification.method(), message.request.id == nil {
+            if let cancellation = try? jsonDecoder.decode(CancelRequestNotification.self, from: message.rawData) {
                 requests[cancellation.params.id]?.cancel()
             }
             return
@@ -175,14 +170,15 @@ public final actor JSONRPCConnection {
         do {
             let typedRequest = try jsonDecoder.decode(requestType, from: message.rawData)
 
-            if let response = await typedRequest.handle(handler: messageHandler, id: requestID) {
-                if Task.isCancelled {
-                    outcome = "cancelled"
-                    await sendErrorResponse(
-                        id: requestID, error: JSONRPCError(code: -32800, message: "Request cancelled")
-                    )
-                    return
-                }
+            let response = await typedRequest.handle(handler: messageHandler, id: requestID)
+            if Task.isCancelled {
+                outcome = "cancelled"
+                await sendErrorResponse(
+                    id: requestID, error: JSONRPCError(code: -32800, message: "Request cancelled")
+                )
+                return
+            }
+            if let response {
                 do {
                     try await send(response: response)
                     if let failure = response as? JSONRPCErrorResponse {

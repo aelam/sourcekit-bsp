@@ -24,9 +24,15 @@ public protocol XcodeIndexingBackend: Sendable {
     func compilerArguments(for target: XcodeTargetIdentifier, file: URL) async throws -> [String]
     func prepare(targets: [XcodeTargetIdentifier], log: (@Sendable (String) -> Void)?) async throws
         -> [XcodeTargetIdentifier]
-    func invalidateInputs() async
+    func invalidateInputs(preservingArguments: Bool) async
     func updateSelection(_ selection: XcodeIndexingSelection?) async throws
     func shutdown() async
+}
+
+public extension XcodeIndexingBackend {
+    func invalidateInputs() async {
+        await invalidateInputs(preservingArguments: false)
+    }
 }
 
 public struct XcodeIndexingConfiguration: Sendable, Equatable {

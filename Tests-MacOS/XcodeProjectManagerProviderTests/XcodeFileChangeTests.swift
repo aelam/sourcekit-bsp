@@ -68,6 +68,30 @@ struct XcodeFileChangeTests {
         #expect(classifier.requiresReload(for: [event(path, kind: .created)]))
         #expect(classifier.requiresReload(for: [event(path, kind: .deleted)]))
         #expect(!classifier.requiresReload(for: [event(path)]))
+        #expect(classifier.preservesCompilerArguments(for: [event(path)]))
+        #expect(!classifier.preservesCompilerArguments(for: [event(path, kind: .created)]))
+        #expect(!classifier.preservesCompilerArguments(for: [event(path, kind: .deleted)]))
+    }
+
+    @Test(arguments: [
+        "DerivedData/Generated.swift", ".build/Input.swift", "Config/Debug.xcconfig",
+        "Sources/../DerivedData/Generated.swift", "Scripts/generate.sh", "Package.swift",
+        "Package.resolved", "Assets/Icon.png", "Module/Module.modulemap", "App.xcodeproj/project.pbxproj"
+    ])
+    func generatedConfigurationAndUnknownInputsInvalidateArguments(path: String) {
+        #expect(!classifier.preservesCompilerArguments(for: [event(path)]))
+        #expect(!classifier.preservesCompilerArguments(for: [event("Sources/File.swift"), event(path)]))
+    }
+
+    @Test
+    func selectionEventsDeferInvalidationToTheContextComparison() throws {
+        let selection = event("DerivedData/Logs/sourcekit-bsp/indexing-selection.json")
+        #expect(classifier.preservesCompilerArguments(for: [selection]))
+        #expect(classifier.preservesCompilerArguments(for: [selection, event("Sources/File.swift")]))
+        #expect(!classifier.preservesCompilerArguments(for: [selection, event("Config/Debug.xcconfig")]))
+        #expect(try !classifier.preservesCompilerArguments(for: [
+            .init(uri: URI(string: "https://example.com/File.swift"), kind: .changed)
+        ]))
     }
 
     @Test(arguments: [

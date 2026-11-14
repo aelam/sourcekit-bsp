@@ -36,6 +36,21 @@ struct XcodeFileChangeClassifier {
         "pbxproj", "xcworkspace", "xcconfig", "xcscheme", "xctestplan", "xcfilelist"
     ]
 
+    func preservesCompilerArguments(for changes: [ProjectFileChange]) -> Bool {
+        let derivedData = buildRootURL.standardizedFileURL.path
+        let selectionFile = XcodeIndexingSelection.file(in: buildRootURL).standardizedFileURL
+        return changes.allSatisfy { change in
+            guard let file = change.uri.fileURL?.standardizedFileURL else { return false }
+            // The context update compares the effective settings before it clears caches.
+            if file == selectionFile { return true }
+            guard change.kind == .changed,
+                  file.path != derivedData, !file.path.hasPrefix(derivedData + "/"),
+                  !file.pathComponents.contains(".build"),
+                  file.lastPathComponent != "Package.swift" else { return false }
+            return Self.sourceExtensions.contains(file.pathExtension)
+        }
+    }
+
     func requiresReload(for changes: [ProjectFileChange]) -> Bool {
         let derivedData = buildRootURL.standardizedFileURL.path
         let configuration = rootURL.appendingPathComponent(".sourcekit-bsp/project.json").standardizedFileURL

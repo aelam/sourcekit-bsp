@@ -67,6 +67,7 @@ struct SwiftBuildIndexingPlanCache: Sendable {
     mutating func storePaths(
         _ paths: [URL: AbsolutePath], for target: XcodeTargetIdentifier, descriptionID: SWBBuildDescriptionID
     ) {
+        guard plans[target]?.descriptionID == descriptionID else { return }
         sourcePaths[target] = SourcePaths(descriptionID: descriptionID, paths: paths)
     }
 }
