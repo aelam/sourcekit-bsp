@@ -22,11 +22,40 @@ public actor XcodeBSPProjectManager: ProjectManager {
     }
 
     public nonisolated let projectType = "xcodeproj"
-    public private(set) var project: BSPProject?
-    private var reloadTask: Task<Void, Error>?
-    var indexing: (any XcodeIndexingBackend)?
-    var indexingSelectionChanged = false
-    var projectFilesChanged = false
+    public var project: BSPProject? {
+        loadedProject?.model
+    }
+
+    var indexing: (any XcodeIndexingBackend)? {
+        loadedProject?.indexing
+    }
+
+    private struct LoadedProject {
+        let model: BSPProject
+        let indexing: (any XcodeIndexingBackend)?
+
+        init(model: BSPProject, indexing: (any XcodeIndexingBackend)?) {
+            self.indexing = indexing
+            if let indexing {
+                self.model = model.withIndexPaths(store: indexing.indexStoreURL, database: indexing.indexDatabaseURL)
+            } else {
+                self.model = model
+            }
+        }
+    }
+
+    struct ReloadState {
+        var task: Task<Void, Error>?
+        var pendingReasons: XcodeProjectUpdateReasons = []
+
+        mutating func takePendingReasons() -> XcodeProjectUpdateReasons {
+            defer { pendingReasons = [] }
+            return pendingReasons
+        }
+    }
+
+    private var loadedProject: LoadedProject?
+    var reload = ReloadState()
     private let indexingFactory: @Sendable (XcodeProjectSnapshot) async throws -> (any XcodeIndexingBackend)?
 
     public init(
@@ -44,15 +73,13 @@ public actor XcodeBSPProjectManager: ProjectManager {
     }
 
     public func updateBuildGraph() async throws {
-        if let reloadTask {
-            try await reloadTask.value
+        if let task = reload.task {
+            try await task.value
             return
         }
-        let selectionOnly = indexingSelectionChanged && !projectFilesChanged
-        indexingSelectionChanged = false
-        projectFilesChanged = false
+        let reasons = reload.takePendingReasons()
         let task = Task {
-            if selectionOnly, let indexing, let project {
+            if reasons == .indexBuildContext, let indexing, let project {
                 try await indexing.updateSelection(XcodeIndexingSelection.load(in: project.buildRootURL))
                 return
             }
@@ -65,19 +92,12 @@ public actor XcodeBSPProjectManager: ProjectManager {
             }
             let nextIndexing = try await indexingFactory(snapshot)
             let previousIndexing = indexing
-            indexing = nextIndexing
             // Publish before any waiter returns from the shared reload task.
-            if let nextIndexing {
-                self.project = project.withIndexPaths(
-                    store: nextIndexing.indexStoreURL, database: nextIndexing.indexDatabaseURL
-                )
-            } else {
-                self.project = project
-            }
+            loadedProject = LoadedProject(model: project, indexing: nextIndexing)
             await previousIndexing?.shutdown()
         }
-        reloadTask = task
-        defer { reloadTask = nil }
+        reload.task = task
+        defer { reload.task = nil }
         // A failed reload leaves the previous model available.
         try await task.value
     }
@@ -89,8 +109,8 @@ public actor XcodeBSPProjectManager: ProjectManager {
     }
 
     public func shutdown() async {
-        reloadTask?.cancel()
-        if let reloadTask { _ = await reloadTask.result }
+        reload.task?.cancel()
+        if let task = reload.task { _ = await task.result }
         await backend.stopContextDestinationDiscovery()
         await backend.shutdownBuilds()
         await backend.stopIndexPreparation()
