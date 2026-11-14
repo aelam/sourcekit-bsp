@@ -3,11 +3,28 @@ import SourceKitBSPProtocol
 import XcodeProjectManagement
 
 public extension XcodeBSPProjectManager {
-    func shouldReloadProject(for changes: [ProjectFileChange]) -> Bool {
+    func shouldReloadProject(for changes: [ProjectFileChange]) async -> Bool {
         guard let project else { return false }
-        return XcodeFileChangeClassifier(rootURL: project.rootURL, buildRootURL: project.buildRootURL)
-            .requiresReload(for: changes)
+        let selectionFile = XcodeIndexingSelection.file(in: project.buildRootURL).standardizedFileURL
+        let selectionChanges = changes.filter { $0.uri.fileURL?.standardizedFileURL == selectionFile }
+        let projectChanges = changes.filter { $0.uri.fileURL?.standardizedFileURL != selectionFile }
+        var reasons: XcodeProjectUpdateReasons = []
+        if !selectionChanges.isEmpty { reasons.insert(.indexBuildContext) }
+        if XcodeFileChangeClassifier(rootURL: project.rootURL, buildRootURL: project.buildRootURL)
+            .requiresReload(for: projectChanges) {
+            reasons.insert(.projectStructure)
+        }
+        reload.pendingReasons.formUnion(reasons)
+        return !reasons.isEmpty
     }
+}
+
+/// File events that require an update; the stored values might still be unchanged.
+struct XcodeProjectUpdateReasons: OptionSet, Sendable {
+    let rawValue: UInt8
+
+    static let indexBuildContext = Self(rawValue: 1 << 0)
+    static let projectStructure = Self(rawValue: 1 << 1)
 }
 
 struct XcodeFileChangeClassifier {

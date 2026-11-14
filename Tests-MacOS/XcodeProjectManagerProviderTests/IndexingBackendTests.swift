@@ -1,5 +1,6 @@
 import Foundation
 import SourceKitBSPProtocol
+import Support
 import Testing
 @testable import XcodeProjectManagement
 @testable import XcodeProjectManagerProvider
@@ -107,6 +108,60 @@ struct IndexingBackendTests {
         }
     }
 
+    @Test
+    func selectionChangesKeepTheBackendAndProjectModel() async throws {
+        let root = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let created = CrossPlatformLock(initialState: [RecordingIndexingBackend]())
+        let toolchain = XcodeToolchain(workingDirectory: root)
+        let backend = XcodeProjectManager(
+            rootURL: root, toolchain: toolchain, projectLocator: XcodeProjectLocator(),
+            settingsLoader: XcodeSettingsLoader(commandBuilder: XcodeBuildCommandBuilder(), toolchain: toolchain)
+        )
+        let manager = XcodeBSPProjectManager(backend: backend, indexingFactory: { _ in
+            let index = RecordingIndexingBackend(root: root)
+            created.withLock { $0.append(index) }
+            return index
+        })
+        do {
+            try await manager.initialize()
+            let project = try #require(await manager.project)
+            let index = try #require(created.withLock { $0.first })
+            let graph = await backend.buildGraphVersion
+            let file = XcodeIndexingSelection.file(in: project.buildRootURL)
+            let release = XcodeIndexingSelection(platform: "iphonesimulator", configuration: "Release")
+            _ = try release.save(in: project.buildRootURL)
+            #expect(await manager.shouldReloadProject(for: [.init(uri: URI(file), kind: .changed)]))
+            try await manager.updateBuildGraph()
+            #expect(created.withLock { $0.count } == 1)
+            #expect(await backend.buildGraphVersion == graph)
+            #expect(await index.selectionUpdates == [release])
+            #expect(await !index.stopped)
+
+            try FileManager.default.removeItem(at: file)
+            #expect(await manager.shouldReloadProject(for: [.init(uri: URI(file), kind: .deleted)]))
+            try await manager.updateBuildGraph()
+            #expect(created.withLock { $0.count } == 1)
+            #expect(await index.selectionUpdates == [release, nil])
+            #expect(await backend.buildGraphVersion == graph)
+
+            // A project edit must take precedence over a selection update in the same batch.
+            _ = try release.save(in: project.buildRootURL)
+            #expect(await manager.shouldReloadProject(for: [
+                .init(uri: URI(file), kind: .changed),
+                .init(uri: URI(root.appendingPathComponent("Hello.xcodeproj/project.pbxproj")), kind: .changed)
+            ]))
+            try await manager.updateBuildGraph()
+            #expect(created.withLock { $0.count } == 2)
+            #expect(await backend.buildGraphVersion != graph)
+            #expect(await index.stopped)
+            await manager.shutdown()
+        } catch {
+            await manager.shutdown()
+            throw error
+        }
+    }
+
     private func configurationRoot(_ contents: String?) throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(
@@ -137,6 +192,7 @@ private actor RecordingIndexingBackend: XcodeIndexingBackend {
     var stopped = false
     var invalidated = false
     var fail = false
+    var selectionUpdates: [XcodeIndexingSelection?] = []
 
     init(root: URL) {
         self.indexStoreURL = root.appendingPathComponent("Index/Store")
@@ -159,6 +215,10 @@ private actor RecordingIndexingBackend: XcodeIndexingBackend {
 
     func invalidateInputs() {
         invalidated = true
+    }
+
+    func updateSelection(_ selection: XcodeIndexingSelection?) {
+        selectionUpdates.append(selection)
     }
 
     func failNextPreparation() {

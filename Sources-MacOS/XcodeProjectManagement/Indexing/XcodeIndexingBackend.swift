@@ -25,6 +25,7 @@ public protocol XcodeIndexingBackend: Sendable {
     func prepare(targets: [XcodeTargetIdentifier], log: (@Sendable (String) -> Void)?) async throws
         -> [XcodeTargetIdentifier]
     func invalidateInputs() async
+    func updateSelection(_ selection: XcodeIndexingSelection?) async throws
     func shutdown() async
 }
 
