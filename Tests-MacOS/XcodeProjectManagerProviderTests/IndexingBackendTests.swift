@@ -75,6 +75,17 @@ struct IndexingBackendTests {
         #expect(await index.requestedTarget?.targetName == "Hello")
         #expect(try await manager.buildIndex(for: [target.id]) == [])
         #expect(await index.preparedTargets.map(\.targetName) == ["Hello"])
+        // Dispatch through the shared provider API, as watched file notifications do.
+        let provider: any ProjectManager = manager
+        await provider.invalidateIndexInputs(for: [.init(uri: URI(file), kind: .changed)])
+        #expect(await index.preservedArguments == [true])
+        await provider.invalidateIndexInputs(for: [])
+        #expect(await index.preservedArguments == [true])
+        let selection = XcodeIndexingSelection.file(in: project.buildRootURL)
+        await provider.invalidateIndexInputs(for: [.init(uri: URI(selection), kind: .changed)])
+        #expect(await index.preservedArguments == [true, true])
+        await provider.invalidateIndexInputs(for: [.init(uri: URI(file), kind: .created)])
+        #expect(await index.preservedArguments == [true, true, false])
         await manager.invalidateIndexInputs()
         #expect(await index.invalidated)
         await index.failNextPreparation()
@@ -191,6 +202,7 @@ private actor RecordingIndexingBackend: XcodeIndexingBackend {
     var preparedTargets: [XcodeTargetIdentifier] = []
     var stopped = false
     var invalidated = false
+    var preservedArguments: [Bool] = []
     var fail = false
     var selectionUpdates: [XcodeIndexingSelection?] = []
 
@@ -213,8 +225,9 @@ private actor RecordingIndexingBackend: XcodeIndexingBackend {
         return []
     }
 
-    func invalidateInputs() {
+    func invalidateInputs(preservingArguments: Bool) {
         invalidated = true
+        preservedArguments.append(preservingArguments)
     }
 
     func updateSelection(_ selection: XcodeIndexingSelection?) {

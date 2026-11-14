@@ -30,6 +30,15 @@ available until its last cached plan or active query releases it. Later requests
 can introduce other targets through the same build service session. Separate
 requests are not automatically combined.
 
+Concurrent compiler-option requests for the same target and file share one
+query. Files in the same target and build description share the source-list
+query. Cancelling one caller does not cancel work that other callers still need.
+Ordinary source edits preserve cached arguments but advance the preparation
+generation, so a new prepare request does not reuse work started before the edit.
+Project configuration changes, generated files, and unknown inputs invalidate
+the arguments. Preparation also invalidates them because scripts and dependency
+builds can produce inputs used by other targets.
+
 Evicted plans are recreated when needed. Preparation
 compares published options only for the target being prepared.
 Logs distinguish queued work, work that has acquired the build lock, and elapsed

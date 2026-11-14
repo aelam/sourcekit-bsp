@@ -37,7 +37,6 @@ public struct WorkspaceDidChangeWatchedFilesNotification: ContextualNotification
         contextualHandler: Handler
     ) async throws where Handler.Context == BSPServerService {
         try await contextualHandler.withContext { service in
-            if !params.changes.isEmpty { await service.invalidateIndexInputs() }
             try await service.filesDidChange(params.changes)
         }
     }

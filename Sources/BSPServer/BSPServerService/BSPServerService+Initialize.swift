@@ -62,6 +62,7 @@ public extension BSPServerService {
             }
             return ProjectFileChange(uri: change.uri, kind: kind)
         }
+        await projectManager.invalidateIndexInputs(for: events)
         guard await projectManager.shouldReloadProject(for: events) else { return }
         do {
             try await reloadProject()
