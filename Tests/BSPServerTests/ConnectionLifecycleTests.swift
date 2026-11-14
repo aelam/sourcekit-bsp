@@ -1,7 +1,7 @@
 import Foundation
-import JSONRPCConnection
 import Testing
 @testable import BSPServer
+@testable import JSONRPCConnection
 
 actor MemoryTransport: JSONRPCServerTransport {
     nonisolated let messageStream: AsyncStream<JSONRPCMessage>
@@ -83,7 +83,11 @@ private actor LifecycleHandler: MessageHandler {
 }
 
 private struct LifecycleRequest: RequestType {
-    struct Params: Codable { let block: Bool }
+    struct Params: Codable {
+        let block: Bool
+        let returnNilOnCancellation: Bool?
+    }
+
     struct Response: ResponseType {
         var jsonrpc = "2.0"
         let id: RequestID
@@ -97,7 +101,9 @@ private struct LifecycleRequest: RequestType {
 
     func handle(handler: MessageHandler, id: RequestID) async -> ResponseType? {
         guard let handler = handler as? LifecycleHandler else { return nil }
-        return await Response(id: id, result: handler.request(block: params.block))
+        let result = await handler.request(block: params.block)
+        if Task.isCancelled, params.returnNilOnCancellation == true { return nil }
+        return Response(id: id, result: result)
     }
 }
 
@@ -112,8 +118,8 @@ private struct LifecycleNotification: NotificationType {
 }
 
 struct ConnectionLifecycleTests {
-    @Test(.timeLimit(.minutes(1)))
-    func cancellationBypassesNotificationsAndReadsWaitForUpdates() async throws {
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func cancellationBypassesNotificationsAndReadsWaitForUpdates(returnsNil: Bool) async throws {
         let transport = MemoryTransport()
         let handler = LifecycleHandler()
         let connection = JSONRPCConnection(
@@ -127,7 +133,9 @@ struct ConnectionLifecycleTests {
         try await connection.listen()
         var events = handler.events.makeAsyncIterator()
         var responses = transport.output.makeAsyncIterator()
-        try await transport.receive(#"{"jsonrpc":"2.0","id":"build","method":"test/read","params":{"block":true}}"#)
+        try await transport.receive(
+            #"{"jsonrpc":"2.0","id":"build","method":"test/read","params":{"block":true,"returnNilOnCancellation":\#(returnsNil)}}"#
+        )
         #expect(await events.next() == "request")
         try await transport.receive(#"{"jsonrpc":"2.0","method":"test/update"}"#)
         #expect(await events.next() == "notification")
@@ -144,6 +152,54 @@ struct ConnectionLifecycleTests {
         #expect(result["id"] as? Int == 2)
         #expect(result["result"] as? Int == 42)
         #expect(await transport.sent.count == 2)
+        await connection.close()
+    }
+
+    @Test(.timeLimit(.minutes(1)), arguments: ["7", #""7""#])
+    func cancellationMatchesExactIDsAndIgnoresUnknownRequests(id: String) async throws {
+        let transport = MemoryTransport()
+        let handler = LifecycleHandler()
+        let connection = JSONRPCConnection(
+            transport: transport,
+            messageRegistry: MessageRegistry(requests: [LifecycleRequest.self], notifications: []),
+            messageHandler: handler
+        )
+        try await connection.listen()
+        var events = handler.events.makeAsyncIterator()
+        var responses = transport.output.makeAsyncIterator()
+        try await transport.receive(
+            #"{"jsonrpc":"2.0","id":\#(id),"method":"test/read","params":{"block":true}}"#
+        )
+        #expect(await events.next() == "request")
+
+        let otherID = id == "7" ? #""7""# : "7"
+        try await transport.receive(
+            #"{"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":\#(otherID)}}"#
+        )
+        try await transport.receive(#"{"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":"missing"}}"#)
+        try await transport.receive(#"{"jsonrpc":"2.0","method":"$/cancelRequest","params":{}}"#)
+        try await transport.receive(#"{"jsonrpc":"2.0","id":"probe","method":"test/read","params":{"block":false}}"#)
+        let probe = try #require(await responses.next())
+        #expect(try JSONDecoder().decode(LifecycleRequest.Response.self, from: probe).id == .string("probe"))
+        #expect(await !handler.cancelled)
+
+        try await transport.receive(
+            #"{"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":\#(id)}}"#
+        )
+        let data = try #require(await responses.next())
+        let cancelled = try JSONDecoder().decode(JSONRPCErrorResponse.self, from: data)
+        #expect(try cancelled.id == JSONDecoder().decode(RequestID.self, from: Data(id.utf8)))
+        #expect(cancelled.error.code == -32800)
+        #expect(await handler.cancelled)
+
+        // A late cancellation must not produce another response or affect a later request.
+        try await transport.receive(
+            #"{"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":\#(id)}}"#
+        )
+        try await transport.receive(#"{"jsonrpc":"2.0","id":"later","method":"test/read","params":{"block":false}}"#)
+        let later = try #require(await responses.next())
+        #expect(try JSONDecoder().decode(LifecycleRequest.Response.self, from: later).id == .string("later"))
+        #expect(await transport.sent.count == 3)
         await connection.close()
     }
 }
