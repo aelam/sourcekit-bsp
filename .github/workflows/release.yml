@@ -99,15 +99,21 @@ jobs:
 
     - name: Create Release Archive
       run: |
+        set -euo pipefail
+        build_dir="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
         mkdir -p release
-        cp .build/apple/Products/Release/sourcekit-bsp release/sourcekit-bsp
-        chmod +x release/sourcekit-bsp
+        cp "$build_dir/sourcekit-bsp" "$build_dir/SWBBuildServiceBundle" release/
+        for resource in "$build_dir"/*.bundle "$build_dir"/*.resources "$build_dir"/*.dylib; do
+          if [ -e "$resource" ]; then
+            cp -R "$resource" release/
+          fi
+        done
 
         # Create tar.gz
-        tar -czf sourcekit-bsp-macos-universal.tar.gz -C release sourcekit-bsp
+        tar -czf sourcekit-bsp-macos-universal.tar.gz -C release .
 
         # Create zip
-        cd release && zip ../sourcekit-bsp-macos-universal.zip sourcekit-bsp && cd ..
+        cd release && zip -r ../sourcekit-bsp-macos-universal.zip . && cd ..
 
     - name: Generate Checksums
       run: |
@@ -148,8 +154,10 @@ jobs:
 
           #### Manual Installation
           1. Download `sourcekit-bsp-macos-universal.tar.gz`
-          2. Extract the binary: `tar -xzf sourcekit-bsp-macos-universal.tar.gz`
-          3. Move the executable to PATH: `sudo mv sourcekit-bsp /usr/local/bin/`
+          2. Create installation directories: `mkdir -p ~/.local/lib/sourcekit-bsp ~/.local/bin`
+          3. Extract all components: `tar -xzf sourcekit-bsp-macos-universal.tar.gz -C ~/.local/lib/sourcekit-bsp`
+          4. Link the server: `ln -sf ~/.local/lib/sourcekit-bsp/sourcekit-bsp ~/.local/bin/sourcekit-bsp`
+          5. Add `~/.local/bin` to PATH. Keep the build service and resource bundles beside the server.
 
           ### Usage
           ```bash

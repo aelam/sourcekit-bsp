@@ -16,8 +16,9 @@ Put the flag after the executable in `.bsp/*.json`'s `argv` so each editor
 connection enables it. It is off by default and does not start SourceKit-LSP
 background indexing.
 
-This requires a server built with `SOURCEKIT_BSP_SWIFT_BUILD=1` and its matching
-build service and resources. See [build and setup](../../README.md#index-preparation-for-xcode-projects).
+macOS builds include Swift Build support by default. Keep the matching build service
+and resources beside the server. Mint installs them together.
+See [build and setup](../../README.md#index-preparation-for-xcode-projects).
 
 Preparation generates indexing inputs without linking or packaging the application.
 The last destination and configuration resolved when Build, Run, Test, or Debug

@@ -1,4 +1,3 @@
-#if SWIFT_BUILD_INDEXING
 import Foundation
 import Logger
 import SwiftBuild
@@ -76,8 +75,14 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
 
     init(snapshot: XcodeProjectSnapshot, serviceExecutable: URL? = nil) throws {
         self.snapshot = snapshot
-        self.serviceExecutable = serviceExecutable ?? URL(fileURLWithPath: CommandLine.arguments[0])
-            .resolvingSymlinksInPath().deletingLastPathComponent().appendingPathComponent("SWBBuildServiceBundle")
+        if let serviceExecutable {
+            self.serviceExecutable = serviceExecutable
+        } else if let executable = Bundle.main.executableURL {
+            self.serviceExecutable = executable.resolvingSymlinksInPath()
+                .deletingLastPathComponent().appendingPathComponent("SWBBuildServiceBundle")
+        } else {
+            throw XcodeProjectError.invalidConfig("Cannot locate the running BSP executable")
+        }
         self.selection = try XcodeIndexingSelection.load(in: snapshot.xcodeGlobalSettings.derivedDataPath)
         self.arena = snapshot.xcodeGlobalSettings.derivedDataPath.appendingPathComponent("Index.noindex")
         self.indexStoreURL = snapshot.xcodeGlobalSettings.indexStoreURL
@@ -485,4 +490,3 @@ private final class IndexPlanningDelegate: SWBPlanningOperationDelegate, Sendabl
         .deferred
     }
 }
-#endif

@@ -30,8 +30,9 @@ Download the latest `sourcekit-bsp-macos-universal.tar.gz` from the
 [GitHub Releases](https://github.com/aelam/sourcekit-bsp/releases/latest) page.
 
 ```sh
-tar -xzf sourcekit-bsp-macos-universal.tar.gz
-sudo mv sourcekit-bsp /usr/local/bin/
+mkdir -p ~/.local/lib/sourcekit-bsp ~/.local/bin
+tar -xzf sourcekit-bsp-macos-universal.tar.gz -C ~/.local/lib/sourcekit-bsp
+ln -sf ~/.local/lib/sourcekit-bsp/sourcekit-bsp ~/.local/bin/sourcekit-bsp
 sourcekit-bsp --help
 ```
 
@@ -41,10 +42,14 @@ Or build and install the executables directly from this Swift package with Mint:
 mint install aelam/sourcekit-bsp
 ```
 
+Keep the server, `SWBBuildServiceBundle`, and resource bundles together.
+Mint installs these components automatically. For a manual installation, add
+`~/.local/bin` to your `PATH`.
+
 ## Build
 
-Requires Swift 6.1 or later. Xcode operations also require macOS 13+, Xcode, and
-your project's SDKs and simulator runtimes. On Linux, install the Swift toolchain
+On macOS, building requires Swift 6.2+, macOS 15+, Xcode, and your project's SDKs
+and simulator runtimes. Linux builds require Swift 6.1+. On Linux, install the Swift toolchain
 and run `swift build` without `DEVELOPER_DIR`.
 
 ```sh
@@ -156,12 +161,12 @@ The server starts Swift Build when it receives the first indexing request.
 It plans the requested target and its dependencies instead of planning every
 target during the BSP connection handshake.
 
-This feature requires macOS 15+, Swift 6.2+, and a server built with Swift Build
-support. A default build or Mint installation does not include this support.
-Build it from this repository with the selected Xcode toolchain:
+macOS builds and Mint installations include Swift Build support by default.
+The launch flag controls whether the server uses it. Build from this repository
+with the selected Xcode toolchain:
 
 ```sh
-SOURCEKIT_BSP_SWIFT_BUILD=1 swift build --build-system swiftbuild --product sourcekit-bsp
+swift build --product sourcekit-bsp
 ```
 
 Point `.bsp/*.json` at `.build/debug/sourcekit-bsp`. Keep the matching
