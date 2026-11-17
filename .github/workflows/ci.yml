@@ -29,7 +29,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 30
     env:
-      SWIFTPM_EXECUTION_TESTS: 'SwiftPMTestingTests|SwiftPMSingleTestTests'
+      SWIFTPM_EXECUTION_TESTS: 'SwiftPMTestingTests|SwiftPMSingleTestTests|SwiftPMExecutionTests'
 
     steps:
     - name: Checkout
@@ -63,7 +63,7 @@ jobs:
       run: |
         set -euo pipefail
         echo "Running tests in macOS CI mode..."
-        # Nested SwiftPM test builds run separately from Xcode integration builds.
+        # Nested SwiftPM builds run separately from Xcode integration builds.
         swift test --enable-code-coverage --skip "$SWIFTPM_EXECUTION_TESTS"
         COVERAGE_JSON="$(swift test --show-codecov-path)"
         cp "$(dirname "$COVERAGE_JSON")/default.profdata" "$RUNNER_TEMP/main-tests.profdata"
@@ -71,7 +71,7 @@ jobs:
         CI: true
         MACOS_CI: true
 
-    - name: Test SwiftPM test execution
+    - name: Test SwiftPM build and test execution
       run: swift test --skip-build --enable-code-coverage --filter "$SWIFTPM_EXECUTION_TESTS"
       env:
         CI: true
@@ -122,7 +122,13 @@ jobs:
         ' coverage.info
 
     - name: Test process coordination and project loading with one cooperative thread
-      run: swift test --skip-build --filter 'DeviceDAPRelayTests|LLDBDAPServerTests|XcodeBuildFileLockTests|XcodeProjectManagerTests|SwiftPM'
+      shell: bash
+      run: |
+        set -euo pipefail
+        swift test --skip-build \
+          --filter 'DeviceDAPRelayTests|LLDBDAPServerTests|XcodeBuildFileLockTests|XcodeProjectManagerTests|SwiftPM' \
+          --skip "$SWIFTPM_EXECUTION_TESTS"
+        swift test --skip-build --filter "$SWIFTPM_EXECUTION_TESTS"
       env:
         LIBDISPATCH_COOPERATIVE_POOL_STRICT: "1"
 
