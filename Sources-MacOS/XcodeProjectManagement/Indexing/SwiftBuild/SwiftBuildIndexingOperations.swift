@@ -6,6 +6,7 @@ struct SwiftBuildIndexingOperations {
     struct PlanningKey: Hashable, Sendable {
         let target: XcodeTargetIdentifier
         let contextVersion: UUID
+        let inputsVersion: UUID
     }
 
     struct PreparationKey: Hashable, Sendable {
@@ -22,7 +23,7 @@ struct SwiftBuildIndexingOperations {
     struct SourcesKey: Hashable, Sendable {
         let target: XcodeTargetIdentifier
         let contextVersion: UUID
-        let descriptionID: SWBBuildDescriptionID
+        let descriptionVersion: UUID
     }
 
     private struct Pending {
@@ -31,6 +32,7 @@ struct SwiftBuildIndexingOperations {
     }
 
     let initialization = IndexPreparationCoordinator<String>()
+    let primaryPlanning = IndexPreparationCoordinator<UUID>()
     let planning = SharedIndexPreparationCoordinator<PlanningKey, SwiftBuildIndexingPlan>()
     let preparation = SharedIndexPreparationCoordinator<PreparationKey, IndexPreparationChanges>()
     let arguments = SharedIndexPreparationCoordinator<ArgumentsKey, [String]?>()

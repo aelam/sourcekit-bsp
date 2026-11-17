@@ -19,33 +19,44 @@ macOS builds include Swift Build by default. Mint installs the matching
 `SWBBuildServiceBundle` executable and resource bundles with the server.
 Keep these components together when copying a build manually.
 
-BSP connection initialization does not start Swift Build or create an indexing
-plan. The first compiler-option or preparation request loads the workspace and
-plans the requested target and its dependencies. Concurrent requests for the
-same target share planning work. The server retains up to four recent plans
-through Swift Build's description-lifetime API. Active queries retain their
-plans until completion. A prepare request with multiple targets uses one build
-operation. Its per-target plans share one retained build description, which stays
-available until its last cached plan or active query releases it. Later requests
-can introduce other targets through the same build service session. Separate
-requests are not automatically combined.
+BSP connection initialization does not start Swift Build. The first compiler-option
+or preparation request loads the workspace. When a build context is available,
+the backend plans the selected scheme's build roots together. All covered targets
+and dependencies share that description, even if a dependency is queried first.
+Concurrent requests share initial planning. The selected description stays cached;
+up to three supplemental descriptions cover targets outside that graph. Without
+selected roots, the backend plans requested targets and keeps four descriptions.
+The cache limit counts descriptions, not targets. Active queries retain their
+descriptions until completion.
+
+A prepare request uses the shared request and limits execution to the requested
+targets. Later requests can introduce other targets through the same session.
+Separate preparation requests are not automatically combined. Changing roots,
+platform, architecture, or configuration resets the indexing context and reuses
+the loaded workspace session.
 
 Concurrent compiler-option requests for the same target and file share one
-query. Files in the same target and build description share the source-list
-query. Cancelling one caller does not cancel work that other callers still need.
+query. Files in the same target and description share the source-list query.
+Cached descriptions can serve new files without waiting for the build lock.
+Cancelling one caller does not cancel work that other callers still need.
 Ordinary source edits preserve cached arguments but advance the preparation
 generation, so a new prepare request does not reuse work started before the edit.
 Project configuration changes, generated files, and unknown inputs invalidate
-the arguments. Preparation also invalidates them because scripts and dependency
-builds can produce inputs used by other targets.
+the arguments. If preparation reuses the description in memory, cached arguments
+stay valid. A changed ID or a `CreateBuildDescription` task invalidates overlapping
+graphs and their published arguments. Swift Build can recreate a graph under the
+same ID when file-system inputs, such as recursive header search paths, change.
+The backend reports affected targets without querying every file again;
+later compiler-option requests refresh those arguments. Queries started before
+invalidation cannot publish stale results.
 
-Evicted plans are recreated when needed. Preparation
-compares published options only for the target being prepared.
-Logs distinguish queued work, work that has acquired the build lock, and elapsed
-time. Initial planning can still take time for a target with many dependencies.
+Workspace loading does not hold the DerivedData build lock. Description creation
+and preparation still use it. Logs distinguish queued work, work that has acquired
+the lock, and elapsed time. Initial planning of a large scheme can still take time.
 
-The platform follows the last destination resolved for Build, Run, Debug, or
-Test. Before the first selection, the backend uses the project's simulator
+The roots, platform, and configuration follow the last context resolved for Build,
+Run, Debug, or Test. Roots include the action targets and the scheme's build entries
+for running. Before the first selection, the backend uses the project's simulator
 platform when it can determine one, or iOS Simulator as the fallback.
 
 The backend preserves the project's existing `Index.noindex/DataStore` and

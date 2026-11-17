@@ -5,8 +5,6 @@ import SwiftBuild
 actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
     nonisolated let indexStoreURL: URL
     nonisolated let indexDatabaseURL: URL
-    private typealias Plan = SwiftBuildIndexingPlan
-    private typealias BuildDescription = Plan.BuildDescription
 
     private let snapshot: XcodeProjectSnapshot
     private let serviceExecutable: URL
@@ -46,7 +44,7 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
         guard !operations.isStopped else { throw CancellationError() }
         guard workspace == nil else { return }
         _ = try await operations.initialization.prepare(for: "workspace") { _ in
-            try await self.perform("load workspace") { backend in
+            try await self.perform("load workspace", serializeBuild: false) { backend in
                 guard backend.workspace == nil else { return true }
                 backend.workspace = try await SwiftBuildIndexingWorkspace.load(
                     snapshot: backend.snapshot, serviceExecutable: backend.serviceExecutable
@@ -55,88 +53,6 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
                 return true
             }
         }
-    }
-
-    private func plan(for target: XcodeTargetIdentifier, version: UUID) async throws -> Plan {
-        try await ensureLoaded()
-        try checkContext(version)
-        if let cached = context.plans.plan(for: target) { return cached }
-        let key = SwiftBuildIndexingOperations.PlanningKey(target: target, contextVersion: version)
-        return try await operations.planning.prepare(for: key) { _ in
-            try await self.perform("plan \(target.targetName)") { backend in
-                try backend.checkContext(version)
-                if let cached = backend.context.plans.plan(for: target) { return cached }
-                return try await backend.createPlan(for: target, version: version)
-            }
-        }
-    }
-
-    private func createPlan(for target: XcodeTargetIdentifier, version: UUID) async throws -> Plan {
-        guard let session = workspace?.session
-        else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
-        let (targetRequest, guid) = try await makeTargetRequest(for: target)
-        try checkContext(version)
-        statistics.buildDescriptions += 1
-        let operation = try await session.createBuildOperationForBuildDescriptionOnly(
-            request: targetRequest, delegate: IndexPlanningDelegate(), retainBuildDescription: true
-        )
-        let plan = try await consumePlan(operation, request: targetRequest, guid: guid) {
-            logger.debug("Index planning: \($0)")
-        }
-        try checkContext(version)
-        context.plans.insert(plan, for: target)
-        return plan
-    }
-
-    private func makeTargetRequest(for target: XcodeTargetIdentifier) async throws -> (SWBBuildRequest, String) {
-        let guid = try await resolveGUID(target)
-        var targetRequest = context.request
-        targetRequest.add(target: SWBConfiguredTarget(guid: guid))
-        targetRequest.buildCommand = .prepareForIndexing(buildOnlyTheseTargets: [guid], enableIndexBuildArena: true)
-        return (targetRequest, guid)
-    }
-
-    private func consumePlan(
-        _ operation: SWBBuildOperation, request: SWBBuildRequest, guid: String,
-        log: (@Sendable (String) -> Void)?
-    ) async throws -> Plan {
-        let description = try await consumeDescription(operation, log: log)
-        return try await makePlan(request: request, description: description, guid: guid)
-    }
-
-    private func consumeDescription(
-        _ operation: SWBBuildOperation, log: (@Sendable (String) -> Void)?
-    ) async throws -> BuildDescription {
-        guard let session = workspace?.session
-        else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
-        var identifier: String?
-        do {
-            try await consume(operation, log: log) { event in
-                if case let .reportBuildDescription(info) = event { identifier = info.buildDescriptionID }
-            }
-            guard let identifier
-            else { throw XcodeProjectError.invalidConfig("Swift Build returned no build description") }
-            return BuildDescription(id: SWBBuildDescriptionID(identifier), session: session)
-        } catch {
-            if let identifier { await session.releaseBuildDescription(id: SWBBuildDescriptionID(identifier)) }
-            throw error
-        }
-    }
-
-    private func makePlan(
-        request: SWBBuildRequest,
-        description: BuildDescription,
-        guid: String
-    ) async throws -> Plan {
-        guard let session = workspace?.session
-        else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
-        let targets = try await session.selectConfiguredTargetsForIndex(
-            targets: [SWBTargetGUID(rawValue: guid)], buildDescription: description.id, buildRequest: request
-        )
-        guard targets.count == 1, let identifier = targets.first else {
-            throw XcodeProjectError.invalidConfig("Swift Build cannot select one index configuration: \(guid)")
-        }
-        return Plan(request: request, description: description, target: identifier)
     }
 
     func compilerArguments(for target: XcodeTargetIdentifier, file: URL) async throws -> [String] {
@@ -208,11 +124,11 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
     private func sourcePaths(
         for target: XcodeTargetIdentifier, plan: Plan, version: UUID
     ) async throws -> [URL: AbsolutePath] {
-        if let cached = context.plans.paths(for: target, descriptionID: plan.descriptionID) {
+        if let cached = context.plans.paths(for: target, descriptionVersion: plan.description.version) {
             return cached
         }
         let key = SwiftBuildIndexingOperations.SourcesKey(
-            target: target, contextVersion: version, descriptionID: plan.descriptionID
+            target: target, contextVersion: version, descriptionVersion: plan.description.version
         )
         return try await operations.sources.prepare(for: key) { _ in
             try await self.querySourcePaths(for: target, plan: plan, version: version)
@@ -224,7 +140,7 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
     ) async throws -> [URL: AbsolutePath] {
         defer { withExtendedLifetime(plan) {} }
         try checkContext(version)
-        if let cached = context.plans.paths(for: target, descriptionID: plan.descriptionID) { return cached }
+        if let cached = context.plans.paths(for: target, descriptionVersion: plan.description.version) { return cached }
         guard let session = workspace?.session
         else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
         statistics.sourceQueries += 1
@@ -236,7 +152,7 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
             (URL(fileURLWithPath: $0.path.pathString).resolvingSymlinksInPath(), $0.path)
         }, uniquingKeysWith: { first, _ in first })
         try checkContext(version)
-        context.plans.storePaths(paths, for: target, descriptionID: plan.descriptionID)
+        context.plans.storePaths(paths, for: target, descriptionVersion: plan.description.version)
         return paths
     }
 
@@ -294,40 +210,31 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
     ) async throws -> [XcodeTargetIdentifier] {
         guard let session = workspace?.session
         else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
-        var batchRequest = context.request
         var guids: [String] = []
         for target in targets {
             try Task.checkCancellation()
-            let guid = try await resolveGUID(target)
-            guids.append(guid)
-            batchRequest.add(target: SWBConfiguredTarget(guid: guid))
+            try await guids.append(resolveGUID(target))
         }
         try checkContext(version)
+        let shared = try await sharedDescription(for: targets, guids: Set(guids), version: version)
+        var batchRequest = shared.request
         batchRequest.buildCommand = .prepareForIndexing(buildOnlyTheseTargets: guids, enableIndexBuildArena: true)
         let operation = try await session.createBuildOperation(
             request: batchRequest, delegate: IndexPlanningDelegate(), retainBuildDescription: true
         )
         let description = try await consumeDescription(operation, log: log)
         try checkContext(version)
-        // Preparation can generate inputs for dependencies and other consumers, including through scripts.
-        context.arguments.invalidate()
-        let inputs = context.arguments.version
-        var changed: Set<XcodeTargetIdentifier> = []
-        for (target, guid) in zip(targets, guids) {
-            try Task.checkCancellation()
-            let prepared = try await makePlan(request: batchRequest, description: description, guid: guid)
-            try checkContext(version)
-            context.plans.insert(prepared, for: target)
-            // Refresh this target before another preparation can evict its description.
-            // Unrelated targets can hold expired IDs and must not fail this preparation.
-            let previousOptions = context.arguments.published(for: target)
-            for (key, previous) in previousOptions {
-                let current = try await arguments(for: target, file: key.file, plan: prepared)
-                try checkContext(version)
-                if current != previous { changed.insert(target) }
-                context.arguments.publish(current, for: key, version: inputs)
-            }
-        }
+        // Compiler arguments come from the description's task graph, not the generated file contents.
+        // A no-op preparation must not invalidate options or query every previously indexed file.
+        // Swift Build can recreate a graph under the same ID after file-system inputs change.
+        guard description.id != shared.description.id || description.wasLoadedOrCreated else { return [] }
+        let updated = try await describe(request: shared.request, description: description, version: version)
+        let affectedGUIDs = context.plans.replace(shared, with: updated)
+        let changed = Set(context.arguments.targets.filter { target in
+            guard let guid = workspace?.targetGUIDs[target] else { return false }
+            return affectedGUIDs.contains(guid)
+        })
+        context.arguments.invalidate(targets: changed)
         return changed.sorted { $0.rawValue < $1.rawValue }
     }
 
@@ -409,6 +316,7 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
         await operations.arguments.stop()
         await operations.preparation.stop()
         await operations.planning.stop()
+        await operations.primaryPlanning.stop()
         await operations.sources.stop()
         await operations.initialization.stop()
         for completion in operations.cancelPending() {
@@ -417,6 +325,147 @@ actor SwiftBuildIndexingBackend: XcodeIndexingBackend {
         context.plans = SwiftBuildIndexingPlanCache()
         await workspace?.close()
         workspace = nil
+    }
+}
+
+private extension SwiftBuildIndexingBackend {
+    typealias Plan = SwiftBuildIndexingPlan
+    typealias BuildDescription = Plan.BuildDescription
+
+    func plan(for target: XcodeTargetIdentifier, version: UUID) async throws -> Plan {
+        try await ensureLoaded()
+        try checkContext(version)
+        if let cached = context.plans.plan(for: target) { return cached }
+        let key = SwiftBuildIndexingOperations.PlanningKey(
+            target: target, contextVersion: version, inputsVersion: context.arguments.version
+        )
+        return try await operations.planning.prepare(for: key) { _ in
+            let guid = try await self.resolveGUID(target)
+            return try await self.existingOrNewPlan(for: target, guid: guid, version: version)
+        }
+    }
+
+    func existingOrNewPlan(for target: XcodeTargetIdentifier, guid: String, version: UUID) async throws -> Plan {
+        try checkContext(version)
+        if let cached = context.plans.plan(for: target) { return cached }
+        if !context.plans.hasPrimaryDescription, let roots = context.buildContext?.rootTargets, !roots.isEmpty {
+            _ = try await operations.primaryPlanning.prepare(for: version) { _ in
+                try await self.perform("plan selected targets") { backend in
+                    try backend.checkContext(version)
+                    if !backend.context.plans.hasPrimaryDescription {
+                        _ = try await backend.createDescription(roots: roots, primary: true, version: version)
+                    }
+                    return true
+                }
+            }
+            try checkContext(version)
+        }
+        if let shared = context.plans.description(covering: [guid]) {
+            return try await bindPlan(for: target, guid: guid, shared: shared, version: version)
+        }
+        return try await perform("plan \(target.targetName)") { backend in
+            try backend.checkContext(version)
+            let shared = try await backend.sharedDescription(for: [target], guids: [guid], version: version)
+            return try await backend.bindPlan(for: target, guid: guid, shared: shared, version: version)
+        }
+    }
+
+    /// Called under the build lock; another request may have already planned the requested targets.
+    func sharedDescription(
+        for targets: [XcodeTargetIdentifier], guids: Set<String>, version: UUID
+    ) async throws -> SwiftBuildIndexingDescription {
+        if let shared = context.plans.description(covering: guids) { return shared }
+        if !context.plans.hasPrimaryDescription, let roots = context.buildContext?.rootTargets, !roots.isEmpty {
+            _ = try await createDescription(roots: roots, primary: true, version: version)
+            if let shared = context.plans.description(covering: guids) { return shared }
+        }
+        return try await createDescription(roots: targets, primary: false, version: version)
+    }
+
+    func createDescription(
+        roots: [XcodeTargetIdentifier], primary: Bool, version: UUID
+    ) async throws -> SwiftBuildIndexingDescription {
+        guard let session = workspace?.session
+        else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
+        var request = context.request
+        for root in roots {
+            try await request.add(target: SWBConfiguredTarget(guid: resolveGUID(root)))
+        }
+        try checkContext(version)
+        statistics.buildDescriptions += 1
+        let operation = try await session.createBuildOperationForBuildDescriptionOnly(
+            request: request, delegate: IndexPlanningDelegate(), retainBuildDescription: true
+        )
+        let description = try await consumeDescription(operation) { logger.debug("Index planning: \($0)") }
+        let shared = try await describe(request: request, description: description, version: version)
+        context.plans.insert(shared, primary: primary)
+        return shared
+    }
+
+    func describe(
+        request: SWBBuildRequest, description: BuildDescription, version: UUID
+    ) async throws -> SwiftBuildIndexingDescription {
+        guard let session = workspace?.session
+        else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
+        let targets = try await session.configuredTargets(buildDescription: description.id, buildRequest: request)
+        try checkContext(version)
+        return SwiftBuildIndexingDescription(
+            request: request,
+            description: description,
+            targetGUIDs: Set(targets.map(\.identifier.targetGUID.rawValue))
+        )
+    }
+
+    func bindPlan(
+        for target: XcodeTargetIdentifier, guid: String, shared: SwiftBuildIndexingDescription, version: UUID
+    ) async throws -> Plan {
+        let plan = try await makePlan(request: shared.request, description: shared.description, guid: guid)
+        try checkContext(version)
+        context.plans.insert(plan, for: target)
+        return plan
+    }
+
+    func consumeDescription(
+        _ operation: SWBBuildOperation, log: (@Sendable (String) -> Void)?
+    ) async throws -> BuildDescription {
+        guard let session = workspace?.session
+        else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
+        var identifier: String?
+        var wasLoadedOrCreated = false
+        do {
+            try await consume(operation, log: log) { event in
+                switch event {
+                case let .reportBuildDescription(info): identifier = info.buildDescriptionID
+                case let .taskStarted(info) where info.ruleInfo == "CreateBuildDescription":
+                    wasLoadedOrCreated = true
+                default: break
+                }
+            }
+            guard let identifier
+            else { throw XcodeProjectError.invalidConfig("Swift Build returned no build description") }
+            return BuildDescription(
+                id: SWBBuildDescriptionID(identifier), session: session, wasLoadedOrCreated: wasLoadedOrCreated
+            )
+        } catch {
+            if let identifier { await session.releaseBuildDescription(id: SWBBuildDescriptionID(identifier)) }
+            throw error
+        }
+    }
+
+    func makePlan(
+        request: SWBBuildRequest,
+        description: BuildDescription,
+        guid: String
+    ) async throws -> Plan {
+        guard let session = workspace?.session
+        else { throw XcodeProjectError.invalidConfig("Swift Build is not ready") }
+        let targets = try await session.selectConfiguredTargetsForIndex(
+            targets: [SWBTargetGUID(rawValue: guid)], buildDescription: description.id, buildRequest: request
+        )
+        guard targets.count == 1, let identifier = targets.first else {
+            throw XcodeProjectError.invalidConfig("Swift Build cannot select one index configuration: \(guid)")
+        }
+        return Plan(request: request, description: description, target: identifier)
     }
 }
 

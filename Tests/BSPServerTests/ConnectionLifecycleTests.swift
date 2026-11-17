@@ -134,7 +134,10 @@ struct ConnectionLifecycleTests {
         var events = handler.events.makeAsyncIterator()
         var responses = transport.output.makeAsyncIterator()
         try await transport.receive(
-            #"{"jsonrpc":"2.0","id":"build","method":"test/read","params":{"block":true,"returnNilOnCancellation":\#(returnsNil)}}"#
+            #"""
+            {"jsonrpc":"2.0","id":"build","method":"test/read",
+             "params":{"block":true,"returnNilOnCancellation":\#(returnsNil)}}
+            """#
         )
         #expect(await events.next() == "request")
         try await transport.receive(#"{"jsonrpc":"2.0","method":"test/update"}"#)

@@ -4,6 +4,20 @@ import Testing
 
 struct XcodeIndexingSelectionTests {
     @Test
+    func normalizesRootsAndReadsSelectionsFromOlderServers() throws {
+        let first = XcodeTargetIdentifier(projectFilePath: "/tmp/App.xcodeproj", targetName: "App")
+        let second = XcodeTargetIdentifier(projectFilePath: "/tmp/App.xcodeproj", targetName: "Tests")
+        let selection = XcodeIndexingSelection(platform: "macosx", rootTargets: [second, first, second])
+        #expect(selection == XcodeIndexingSelection(platform: "macosx", rootTargets: [first, second]))
+        let encoded = try JSONEncoder().encode(selection)
+        #expect(try JSONDecoder().decode(XcodeIndexingSelection.self, from: encoded) == selection)
+        let legacy = Data(#"{"platform":"macosx","configuration":"Debug"}"#.utf8)
+        let decoded = try JSONDecoder().decode(XcodeIndexingSelection.self, from: legacy)
+        #expect(decoded.rootTargets == nil)
+        #expect(decoded.configuration == "Debug")
+    }
+
+    @Test
     func persistsAcrossReadersAndDoesNotRewriteUnchangedSelection() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
