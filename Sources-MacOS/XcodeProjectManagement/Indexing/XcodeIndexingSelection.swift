@@ -1,16 +1,24 @@
 import Foundation
 import SourceKitBSPProtocol
+import XcodeProj
 
 /// The indexing inputs derived from the client's shared build selection.
 public struct XcodeIndexingSelection: Codable, Equatable, Sendable {
     public let platform: String?
     public let architecture: String?
     public let configuration: String?
+    public let rootTargets: [XcodeTargetIdentifier]?
 
-    public init(platform: String?, architecture: String? = nil, configuration: String? = nil) {
+    public init(
+        platform: String?,
+        architecture: String? = nil,
+        configuration: String? = nil,
+        rootTargets: [XcodeTargetIdentifier]? = nil
+    ) {
         self.platform = platform
         self.architecture = architecture
         self.configuration = configuration
+        self.rootTargets = rootTargets.map { Array(Set($0)).sorted { $0.rawValue < $1.rawValue } }
     }
 
     public static func file(in derivedData: URL) -> URL {
@@ -37,8 +45,19 @@ public struct XcodeIndexingSelection: Codable, Equatable, Sendable {
 public extension XcodeProjectManager {
     func indexingSelection(_ context: BuildContext) throws -> XcodeIndexingSelection {
         let selection = context.selection
+        var roots = Set(context.targets.map { XcodeTargetIdentifier(rawValue: $0.uri.stringValue) })
+        if let scheme = projectSnapshot?.schemes.first(where: {
+            $0.path.resolvingSymlinksInPath().standardizedFileURL.absoluteString == selection["xcode.scheme"]
+        }) {
+            let parsed = try XCScheme(pathString: scheme.path.path)
+            for entry in parsed.buildAction?.buildActionEntries ?? [] where entry.buildFor.contains(.running) {
+                try roots.insert(contextTarget(for: entry.buildableReference, scheme: scheme).targetIdentifier)
+            }
+        }
         guard let id = selection["xcode.destination"] else {
-            return XcodeIndexingSelection(platform: nil, configuration: selection["xcode.configuration"])
+            return XcodeIndexingSelection(
+                platform: nil, configuration: selection["xcode.configuration"], rootTargets: Array(roots)
+            )
         }
         guard let destination = destinationLoader.allDestinations.first(where: { $0.id == id }) else {
             throw BuildContextError.invalid("The selected destination is unavailable")
@@ -54,7 +73,8 @@ public extension XcodeProjectManager {
         return XcodeIndexingSelection(
             platform: platform.rawValue,
             architecture: destination.buildContextMetadata.architecture,
-            configuration: selection["xcode.configuration"]
+            configuration: selection["xcode.configuration"],
+            rootTargets: Array(roots)
         )
     }
 }

@@ -188,7 +188,7 @@ struct SwiftPMExecutionTests {
         let buildLogs = CapturedLines()
         #expect(try await manager.startBuild(
             targetIdentifiers: [app.id],
-            arguments: buildArguments
+            arguments: ["--jobs", "1"] + buildArguments
         ) { buildLogs.append($0) } == .ok)
         #expect(!buildLogs.lines.isEmpty)
         let outputs = try await manager.outputPaths(for: [app.id])

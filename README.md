@@ -216,8 +216,10 @@ Preparation omits some compilation work, so its modules do not replace normal
 application build products. Sharing the index store does not guarantee that
 SourceKit-LSP can reuse every index record from an Xcode build.
 
-The indexing platform and configuration follow the resolved destination when
-Build, Run, Test, or Debug starts. Changing a menu selection alone does not update
+The indexing roots, platform, and configuration follow the resolved build context
+when Build, Run, Test, or Debug starts. Targets and dependencies in that scope share
+one Swift Build description. Requests outside that graph use supplemental
+descriptions. Changing a menu selection alone does not update
 the indexing context. This uses existing BSP requests and file notifications.
 See [Swift Build indexing](Docs/Swift-Build-Indexing.md) for validation commands.
 
@@ -431,7 +433,7 @@ Compiler-information requests such as `buildTarget/scalacOptions`,
 compiler inputs. This extension instead lists selectable execution settings.
 Selecting these settings does not change the language server's indexing context.
 With `--enable-build-target-prepare` enabled, starting an operation synchronizes the resolved
-destination and configuration with the indexing backend.
+scheme roots, destination, and configuration with the indexing backend.
 
 ### Negotiate the extension
 

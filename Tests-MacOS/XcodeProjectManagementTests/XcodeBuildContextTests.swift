@@ -308,6 +308,8 @@ extension XcodeBuildContextTests {
         let id = try BSPBuildTargetIdentifier(uri: URI(string: target.targetIdentifier.rawValue))
         let context = try await fixture.manager.resolveContext(.init(scope: .init(targets: [id]), operation: .compile))
         #expect(context.selection["xcode.configuration"] == "Debug")
+        let indexing = try await fixture.manager.indexingSelection(context)
+        #expect(Set(indexing.rootTargets?.map(\.targetName) ?? []) == ["Hello", "HelloTests"])
         let command = try await fixture.manager.contextBuildCommand(context, arguments: nil)
         #expect(command.contains("build-for-testing"))
         #expect(command.contains("-only-testing:HelloTests"))
