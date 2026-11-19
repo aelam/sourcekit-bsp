@@ -2,6 +2,15 @@ import Foundation
 import SourceKitBSPProtocol
 
 extension XcodeDestination {
+    var genericDeviceDestination: String? {
+        guard type == .device, platform != .macOS else { return nil }
+        return "generic/platform=\(platform.rawValue)"
+    }
+
+    var isAvailableForBuild: Bool {
+        isAvailable || (state == "disconnected" && genericDeviceDestination != nil)
+    }
+
     var buildContextMetadata: BuildContextDestination {
         let kind: String = if !isRunnable {
             "generic"
