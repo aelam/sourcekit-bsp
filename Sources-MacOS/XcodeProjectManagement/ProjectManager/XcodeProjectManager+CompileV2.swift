@@ -24,11 +24,11 @@ public extension XcodeProjectManager {
         }
 
         let projectBuildConfiguration = try buildConfiguration(for: xcodeTarget, arguments: arguments)
-        let arguments = try argumentsWithoutScheme(buildArguments(
+        let arguments = try compileDestinationArguments(argumentsWithoutScheme(buildArguments(
             for: xcodeTarget,
             configuration: configuration,
             arguments: arguments
-        ))
+        )))
 
         let buildAction: XcodeBuildCommand.BuildAction = xcodeTarget.xcodeProductType.isTestBundle ?
             .buildForTesting : .build
@@ -58,6 +58,18 @@ public extension XcodeProjectManager {
             workingDirectory: rootURL,
             outputHandler: outputHandler
         )
+    }
+
+    internal func compileDestinationArguments(_ arguments: [String]) -> [String] {
+        var result = arguments
+        let inventory = destinationLoader.allDestinations
+        // Compile uses the device's platform even if it disconnects after context resolution.
+        for index in result.indices where result[index] == "-destination" && result.indices.contains(index + 1) {
+            guard let destination = inventory.first(where: { result[index + 1] == "id=\($0.id)" }),
+                  let generic = destination.genericDeviceDestination else { continue }
+            result[index + 1] = generic
+        }
+        return result
     }
 
     internal func resolvedBuildSettings(

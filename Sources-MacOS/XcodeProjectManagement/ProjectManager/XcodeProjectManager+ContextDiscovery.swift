@@ -148,9 +148,9 @@ extension XcodeProjectManager {
             BuildContextOption(
                 id: destination.id,
                 label: destination.name,
-                description: destination.isRunnable ? nil : "Build only",
-                reason: destination.isAvailable ? nil : "This destination is offline or unavailable",
-                availability: destination.isAvailable,
+                description: destination.isRunnable && destination.isAvailable ? nil : "Build only",
+                reason: destination.isAvailableForBuild ? nil : "This destination is offline or unavailable",
+                availability: destination.isAvailableForBuild,
                 dataKind: BuildContextDestination.dataKind,
                 data: destination.buildContextMetadata.encodeToLSPAny()
             )

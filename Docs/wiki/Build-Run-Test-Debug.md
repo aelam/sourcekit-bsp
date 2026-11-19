@@ -24,6 +24,10 @@ python3 Scripts/bsp_client.py --server "$bsp_server" --project "$bsp_project" \
 ```
 
 `compile` streams Xcode output and uses `build-for-testing` for test bundles.
+A known physical device can remain selected while offline. Compile uses its
+platform's generic destination, so xcodebuild does not wait for the device.
+The shared destination list preserves its disconnected state and marks it as
+build-only. Run, Debug, and Test still require an available execution destination.
 `run` launches an existing product; use the same configuration, destination, and
 DerivedData as the compile request.
 

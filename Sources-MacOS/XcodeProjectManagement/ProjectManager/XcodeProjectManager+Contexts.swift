@@ -364,7 +364,8 @@ extension XcodeProjectManager {
     private func contextDestinationReason(
         _ destination: XcodeDestination, plan: XcodeContextScheme, operation: BuildContextOperation
     ) -> String? {
-        if !destination.isAvailable { return "This destination is offline or unavailable" }
+        let available = operation == .compile ? destination.isAvailableForBuild : destination.isAvailable
+        if !available { return "This destination is offline or unavailable" }
         if operation != .compile,
            !destination.isRunnable { return "A concrete destination is required for this operation" }
         if operation == .debug, plan.buildsTests,

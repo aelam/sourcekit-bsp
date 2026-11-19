@@ -59,7 +59,7 @@ public extension XcodeProjectManager {
         if plan.buildsTests, let testPlan = try contextTestPlanName(scheme: scheme) {
             flags += ["-testPlan", testPlan]
         }
-        return flags + extra
+        return (context.operation == .compile ? compileDestinationArguments(flags) : flags) + extra
     }
 
     func compileContext(

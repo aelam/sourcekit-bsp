@@ -54,7 +54,12 @@ struct XcodeBuildContextTests {
         await #expect(throws: BuildContextError.self) { try await resolution.value }
         #expect(await inventory.calls == 2)
         let refreshed = try await fixture.manager.contextOptions(.init(selection: selection))
-        #expect(refreshed.dimensions.last?.options.first { $0.id == "BSP-DEVICE" }?.availability == false)
+        let device = try #require(refreshed.dimensions.last?.options.first { $0.id == "BSP-DEVICE" })
+        #expect(device.availability == true)
+        let metadata = try JSONDecoder().decode(
+            BuildContextDestination.self, from: JSONEncoder().encode(device.data)
+        )
+        #expect(metadata.state == "disconnected")
         await #expect(throws: BuildContextError.self) {
             try await fixture.manager.resolveContext(.init(operation: .run, selection: selection))
         }
@@ -132,7 +137,12 @@ struct XcodeBuildContextTests {
         await inventory.resume()
         try await reload.value
         let refreshed = try await fixture.manager.contextOptions(.init(selection: selection))
-        #expect(refreshed.dimensions.last?.options.first { $0.id == "BSP-DEVICE" }?.availability == false)
+        let device = try #require(refreshed.dimensions.last?.options.first { $0.id == "BSP-DEVICE" })
+        #expect(device.availability == true)
+        let metadata = try JSONDecoder().decode(
+            BuildContextDestination.self, from: JSONEncoder().encode(device.data)
+        )
+        #expect(metadata.state == "disconnected")
         #expect(await inventory.calls == 3)
     }
 
